@@ -1,0 +1,54 @@
+[
+  {
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "exchange": "NASDAQ",
+    "industry": "Consumer Electronics",
+    "quote": { "price": 310.34, "changePct": 0.32, "marketCap": "$3.8T" },
+    "valuation": { "pe": 32.5, "forwardPe": 28.0, "evEbitda": 24.5, "ps": 8.2, "pb": 48.0 },
+    "margins": { "gross": 46.2, "operating": 31.5, "net": 24.0 },
+    "growth": { "revenueYoY": 4.5, "epsYoY": 8.0 },
+    "cashFlow": { "fcf": "$108B", "fcfMargin": 28.0 },
+    "insiders": { "ownershipPct": 0.1, "recentTrades": "Net selling (routine 10b5-1)" },
+    "peers": [{ "symbol": "MSFT", "pe": 35 }, { "symbol": "GOOGL", "pe": 22 }]
+  },
+  {
+    "symbol": "CSCO",
+    "name": "Cisco Systems, Inc.",
+    "exchange": "NASDAQ",
+    "industry": "Networking Equipment",
+    "quote": { "price": 110.23, "changePct": -0.73, "marketCap": "$440B" },
+    "valuation": { "pe": 33.5, "forwardPe": 16.5, "evEbitda": 18.0, "ps": 7.8, "pb": 5.2 },
+    "margins": { "gross": 64.9, "operating": 20.8, "net": 18.0 },
+    "growth": { "revenueYoY": 5.3, "epsYoY": -1.4 },
+    "cashFlow": { "fcf": "$13.3B", "fcfMargin": 23.5 },
+    "insiders": { "ownershipPct": 0.2, "recentTrades": "Minimal open-market activity" },
+    "peers": [{ "symbol": "ANET", "pe": 45 }, { "symbol": "JNPR", "pe": null }]
+  },
+  {
+    "symbol": "PANW",
+    "name": "Palo Alto Networks, Inc.",
+    "exchange": "NASDAQ",
+    "industry": "Cybersecurity",
+    "quote": { "price": 350.9, "changePct": -1.95, "marketCap": "$275B" },
+    "valuation": { "pe": 100.0, "forwardPe": 45.0, "evEbitda": 55.0, "ps": 12.5, "pb": 9.8 },
+    "margins": { "gross": 72.0, "operating": 10.0, "net": 8.0 },
+    "growth": { "revenueYoY": 15.0, "epsYoY": 20.0 },
+    "cashFlow": { "fcf": "$3.2B", "fcfMargin": 18.0 },
+    "insiders": { "ownershipPct": 2.5, "recentTrades": "CEO periodic sales" },
+    "peers": [{ "symbol": "CRWD", "pe": 85 }, { "symbol": "FTNT", "pe": 42 }]
+  },
+  {
+    "symbol": "NET",
+    "name": "Cloudflare, Inc.",
+    "exchange": "NYSE",
+    "industry": "Cloud Infrastructure / CDN",
+    "quote": { "price": 280.35, "changePct": -4.36, "marketCap": "$97B" },
+    "valuation": { "pe": null, "forwardPe": 120.0, "evEbitda": 180.0, "ps": 28.0, "pb": 35.0 },
+    "margins": { "gross": 75.0, "operating": -5.0, "net": -8.0 },
+    "growth": { "revenueYoY": 28.0, "epsYoY": null },
+    "cashFlow": { "fcf": "$180M", "fcfMargin": 5.0 },
+    "insiders": { "ownershipPct": 10.0, "recentTrades": "Founder-led; limited sales" },
+    "peers": [{ "symbol": "AKAM", "pe": 25 }, { "symbol": "FSLY", "pe": null }]
+  }
+]

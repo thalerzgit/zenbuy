@@ -1,0 +1,21 @@
+{
+  "name": "zenbuy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy --config dist/zenbuy/wrangler.json",
+    "types": "wrangler types",
+    "check": "wrangler check",
+    "smoke": "node tools/smoke-test.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.12.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3",
+    "wrangler": "^4.33.0"
+  }
+}

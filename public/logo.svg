@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 48" role="img" aria-label="ZenBuy.info">
+  <circle cx="24" cy="24" r="18" fill="none" stroke="#6B8F71" stroke-width="2"/>
+  <circle cx="24" cy="24" r="4" fill="#6B8F71"/>
+  <text x="52" y="32" font-family="DM Sans, system-ui, sans-serif" font-size="22" font-weight="600" fill="#1a1a1a">ZenBuy</text>
+  <text x="158" y="32" font-family="DM Sans, system-ui, sans-serif" font-size="22" font-weight="400" fill="#6B8F71">.info</text>
+</svg>

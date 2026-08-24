@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "zenbuy",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2025-08-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "e7da16eeb3dd4ce995d1b97b813a7847"
+    }
+  ],
+  "vars": {
+    "ZENBUY_MODEL": "claude-sonnet-4-20250514",
+    "RATE_LIMIT_DAILY": "5",
+    "CACHE_TTL_SECONDS": "86400"
+  },
+  "routes": [
+    {
+      "pattern": "zenbuy.info",
+      "custom_domain": true
+    }
+  ]
+}
