@@ -24,6 +24,10 @@
     {
       "pattern": "zenbuy.info",
       "custom_domain": true
+    },
+    {
+      "pattern": "www.zenbuy.info",
+      "custom_domain": true
     }
   ]
 }
