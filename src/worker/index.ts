@@ -91,6 +91,13 @@ async function handleSearch(request: Request, env: Env): Promise<Response> {
   }
 }
 
+/** Public client config (Turnstile site key is public by design). */
+async function handleConfig(env: Env): Promise<Response> {
+  return json({
+    turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? "",
+  });
+}
+
 async function handleResearch(request: Request, env: Env): Promise<Response> {
   if (!env.FINNHUB_API_KEY || !env.ANTHROPIC_API_KEY) {
     return json({ error: "Research service not configured" }, 503);
@@ -261,6 +268,10 @@ export default {
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS });
+    }
+
+    if (url.pathname === "/api/config") {
+      return handleConfig(env);
     }
 
     if (url.pathname === "/api/search") {
