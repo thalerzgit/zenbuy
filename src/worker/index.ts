@@ -143,7 +143,20 @@ async function handleHealth(env: Env): Promise<Response> {
         }
       );
       out.anthropic = r.status;
-      if (!r.ok) out.anthropicDetail = (await r.text()).slice(0, 200);
+      if (!r.ok) {
+        out.anthropicDetail = (await r.text()).slice(0, 200);
+        // A retired model id is the likeliest cause; name the valid ones.
+        const list = await fetch("https://api.anthropic.com/v1/models?limit=30", {
+          headers: {
+            "x-api-key": env.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+        });
+        if (list.ok) {
+          const body = (await list.json()) as { data?: Array<{ id?: string }> };
+          out.availableModels = (body.data ?? []).map((m) => m.id).filter(Boolean);
+        }
+      }
     } catch {
       out.anthropic = "unreachable";
     }
