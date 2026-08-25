@@ -125,6 +125,8 @@ export function mountApp(root: HTMLElement): void {
   const asOfEl = report.querySelector("#as-of") as HTMLParagraphElement;
 
   let debounce: ReturnType<typeof setTimeout>;
+  let searchAbort: AbortController | null = null;
+  const searchCache = new Map<string, Array<{ symbol: string; name: string }>>();
 
   function renderChips(): void {
     chips.innerHTML = "";
@@ -153,44 +155,65 @@ export function mountApp(root: HTMLElement): void {
     formError.classList.add("hidden");
   }
 
-  async function search(q: string): Promise<void> {
-    if (q.length < 1) {
+  function renderResults(rows: Array<{ symbol: string; name: string }>): void {
+    dropdown.innerHTML = "";
+    if (!rows.length) {
       dropdown.classList.add("hidden");
       return;
     }
+    rows.forEach((row) => {
+      const item = el("button", "dropdown-item");
+      item.type = "button";
+      item.innerHTML = `<strong>${row.symbol}</strong> <span>${row.name}</span>`;
+      item.onclick = () => {
+        if (state.picks.length >= 4) return;
+        if (state.picks.some((p) => p.symbol === row.symbol)) return;
+        state.picks.push({ symbol: row.symbol, name: row.name });
+        renderChips();
+        input.value = "";
+        dropdown.classList.add("hidden");
+      };
+      dropdown.append(item);
+    });
+    dropdown.classList.remove("hidden");
+  }
+
+  async function search(q: string): Promise<void> {
+    if (q.length < 2) {
+      dropdown.classList.add("hidden");
+      return;
+    }
+
+    const memo = searchCache.get(q.toLowerCase());
+    if (memo) {
+      renderResults(memo);
+      return;
+    }
+
+    searchAbort?.abort();
+    const ctrl = new AbortController();
+    searchAbort = ctrl;
+
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+        signal: ctrl.signal,
+      });
       const data = (await res.json()) as {
         results?: Array<{ symbol: string; name: string }>;
+        throttled?: boolean;
       };
-      dropdown.innerHTML = "";
-      if (!data.results?.length) {
-        dropdown.classList.add("hidden");
-        return;
-      }
-      data.results.forEach((row) => {
-        const item = el("button", "dropdown-item");
-        item.type = "button";
-        item.innerHTML = `<strong>${row.symbol}</strong> <span>${row.name}</span>`;
-        item.onclick = () => {
-          if (state.picks.length >= 4) return;
-          if (state.picks.some((p) => p.symbol === row.symbol)) return;
-          state.picks.push({ symbol: row.symbol, name: row.name });
-          renderChips();
-          input.value = "";
-          dropdown.classList.add("hidden");
-        };
-        dropdown.append(item);
-      });
-      dropdown.classList.remove("hidden");
+      const rows = data.results ?? [];
+      // Don't memoize throttled misses — they'd stick as "no matches".
+      if (!data.throttled) searchCache.set(q.toLowerCase(), rows);
+      renderResults(rows);
     } catch {
-      dropdown.classList.add("hidden");
+      if (!ctrl.signal.aborted) dropdown.classList.add("hidden");
     }
   }
 
   input.addEventListener("input", () => {
     clearTimeout(debounce);
-    debounce = setTimeout(() => search(input.value.trim()), 220);
+    debounce = setTimeout(() => search(input.value.trim()), 320);
   });
 
   document.addEventListener("click", (e) => {
