@@ -9,6 +9,7 @@ import {
   getFundamentalsCached,
   isStalePayload,
   oldestAsOf,
+  parseKeyPool,
   searchSymbols,
   type FundamentalsPayload,
   type SymbolResult,
@@ -114,11 +115,33 @@ async function handleHealth(env: Env): Promise<Response> {
   const out: Record<string, unknown> = {
     model,
     keys: {
-      finnhub: Boolean(env.FINNHUB_API_KEY),
+      finnhub: parseKeyPool(env.FINNHUB_API_KEY ?? "").length,
       anthropic: Boolean(env.ANTHROPIC_API_KEY),
       turnstile: Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY),
     },
   };
+
+  // Are keyless quote sources usable from Cloudflare's egress? Both refuse
+  // most datacenter IPs, so probe before relying on either as a fallback.
+  const probes: Array<[string, string]> = [
+    ["stooq", "https://stooq.com/q/l/?s=amzn.us&f=sd2t2ohlcv&h&e=csv"],
+    [
+      "yahoo",
+      "https://query1.finance.yahoo.com/v8/finance/chart/AMZN?range=1d&interval=1d",
+    ],
+  ];
+  const backup: Record<string, unknown> = {};
+  await Promise.all(
+    probes.map(async ([name, probeUrl]) => {
+      try {
+        const r = await fetch(probeUrl);
+        backup[name] = r.status;
+      } catch {
+        backup[name] = "unreachable";
+      }
+    })
+  );
+  out.backup = backup;
 
   if (env.FINNHUB_API_KEY) {
     try {
