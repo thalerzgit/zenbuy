@@ -1,3 +1,5 @@
+import type { Badges } from "./parse";
+
 export async function cacheGet<T>(kv: KVNamespace, key: string): Promise<T | null> {
   const raw = await kv.get(key, "json");
   return (raw as T) ?? null;
@@ -27,7 +29,7 @@ export function rateLimitKey(ip: string): string {
 
 export interface CachedReport {
   markdown: string;
-  badges: Record<string, string | undefined>;
+  badges: Badges;
   bottomLineHtml: string;
   bodyHtml: string;
   scorecardHtml: string;
