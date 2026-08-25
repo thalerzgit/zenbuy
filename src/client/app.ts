@@ -89,18 +89,20 @@ export function mountApp(root: HTMLElement): void {
 
   const report = el("section", "report-panel hidden");
   report.innerHTML = `
-    <div class="report-layout">
-      <aside id="sticky-pane" class="sticky-pane">
+    <header class="report-hero">
+      <div class="hero-head">
         <div id="report-title-wrap"></div>
         <div id="badge-strip" class="badge-strip"></div>
+      </div>
+      <div class="hero-grid">
         <div id="bottom-line" class="bottom-line loading">
           <div class="skeleton-lines"><span></span><span></span><span></span></div>
         </div>
         <div id="scorecard-wrap" class="scorecard-wrap"></div>
-      </aside>
-      <div id="scroll-body" class="scroll-body loading">
-        <div class="skeleton-lines"><span></span><span></span><span></span><span></span></div>
       </div>
+    </header>
+    <div id="report-body" class="report-body loading">
+      <div class="skeleton-lines"><span></span><span></span><span></span><span></span></div>
     </div>
     <p id="as-of" class="as-of hidden"></p>
   `;
@@ -129,7 +131,7 @@ export function mountApp(root: HTMLElement): void {
   const badgeStrip = report.querySelector("#badge-strip") as HTMLDivElement;
   const bottomLine = report.querySelector("#bottom-line") as HTMLDivElement;
   const scorecardWrap = report.querySelector("#scorecard-wrap") as HTMLDivElement;
-  const scrollBody = report.querySelector("#scroll-body") as HTMLDivElement;
+  const reportBody = report.querySelector("#report-body") as HTMLDivElement;
   const asOfEl = report.querySelector("#as-of") as HTMLParagraphElement;
 
   let debounce: ReturnType<typeof setTimeout>;
@@ -252,10 +254,44 @@ export function mountApp(root: HTMLElement): void {
     bottomLine.innerHTML =
       '<div class="skeleton-lines"><span></span><span></span><span></span></div>';
     scorecardWrap.innerHTML = "";
-    scrollBody.className = "scroll-body loading";
-    scrollBody.innerHTML =
+    reportBody.className = "report-body loading";
+    reportBody.innerHTML =
       '<div class="skeleton-lines"><span></span><span></span><span></span><span></span></div>';
     asOfEl.classList.add("hidden");
+  }
+
+  /**
+   * Concurrent reports tag every header with its ticker ("FUNDAMENTALS — CRWV")
+   * so sections stay attributable. Repeating it on all nine headers of every
+   * company reads as noise, so lift it into one divider per company instead.
+   */
+  function groupByTicker(container: HTMLElement, withDividers: boolean): void {
+    let current = "";
+    container.querySelectorAll("h2").forEach((h2) => {
+      const match = (h2.textContent ?? "").match(
+        /^(.*?)\s+—\s+([A-Z][A-Z0-9.\-]{0,11})$/
+      );
+      if (!match) return;
+
+      const [, heading, ticker] = match;
+      h2.textContent = heading;
+
+      if (!withDividers) {
+        const tag = el("span", "h2-ticker", ticker);
+        h2.append(" ", tag);
+        return;
+      }
+      if (ticker !== current) {
+        current = ticker;
+        h2.parentElement?.insertBefore(el("div", "ticker-divider", ticker), h2);
+      }
+    });
+  }
+
+  function setReportBody(html: string): void {
+    reportBody.className = "report-body revealed";
+    reportBody.innerHTML = html;
+    groupByTicker(reportBody, true);
   }
 
   function renderBadges(badges: Badges): void {
@@ -288,6 +324,7 @@ export function mountApp(root: HTMLElement): void {
     if (payload.bottomLineHtml) {
       bottomLine.className = "bottom-line revealed";
       bottomLine.innerHTML = payload.bottomLineHtml;
+      groupByTicker(bottomLine, false);
     }
     if (payload.scorecardHtml) {
       scorecardWrap.innerHTML = payload.scorecardHtml;
@@ -400,8 +437,7 @@ export function mountApp(root: HTMLElement): void {
           }
 
           if (event === "body") {
-            scrollBody.className = "scroll-body revealed";
-            scrollBody.innerHTML = String(payload.html ?? "");
+            setReportBody(String(payload.html ?? ""));
           }
 
           if (event === "badges") {
@@ -411,7 +447,7 @@ export function mountApp(root: HTMLElement): void {
           if (event === "done") {
             reportId = String(payload.reportId ?? "");
             fullView = {
-              bodyHtml: scrollBody.innerHTML,
+              bodyHtml: reportBody.innerHTML,
               bottomLineHtml: bottomLine.innerHTML,
             };
             showingLayman = false;
@@ -471,7 +507,7 @@ export function mountApp(root: HTMLElement): void {
   async function runSimplify(): Promise<void> {
     // Second press returns to the analyst report — no need to refetch.
     if (showingLayman && fullView) {
-      scrollBody.innerHTML = fullView.bodyHtml;
+      reportBody.innerHTML = fullView.bodyHtml;
       bottomLine.innerHTML = fullView.bottomLineHtml;
       badgeStrip.classList.remove("hidden");
       scorecardWrap.classList.remove("hidden");
@@ -511,8 +547,7 @@ export function mountApp(root: HTMLElement): void {
           applySticky(payload as Parameters<typeof applySticky>[0]);
         }
         if (event === "body") {
-          scrollBody.className = "scroll-body revealed";
-          scrollBody.innerHTML = String(payload.html ?? "");
+          setReportBody(String(payload.html ?? ""));
         }
         if (event === "done") {
           showingLayman = true;

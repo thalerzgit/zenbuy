@@ -135,7 +135,9 @@ export function renderMarkdown(md: string): string {
           return `<tr>${tds}</tr>`;
         })
         .join("");
-      return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
+      // Wrapped so a wide table scrolls on a phone instead of crushing its
+      // columns into three-line headers.
+      return `<div class="table-scroll"><table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
     }
   );
 
@@ -143,7 +145,7 @@ export function renderMarkdown(md: string): string {
   return parts
     .map((p) => {
       const t = p.trim();
-      if (/^<(h[23]|ul|table)/.test(t)) return t;
+      if (/^<(h[23]|ul|table|div)/.test(t)) return t;
       return `<p>${t.replace(/\n/g, "<br/>")}</p>`;
     })
     .join("");
