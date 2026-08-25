@@ -102,6 +102,57 @@ async function handleSearch(request: Request, env: Env): Promise<Response> {
   }
 }
 
+/**
+ * Upstream reachability, so a failing report can be diagnosed without
+ * solving a Turnstile challenge. Reports statuses only — never key material.
+ */
+async function handleHealth(env: Env): Promise<Response> {
+  const cached = await cacheGet<Record<string, unknown>>(env.CACHE, "health");
+  if (cached) return json({ ...cached, cached: true });
+
+  const model = env.ZENBUY_MODEL || "claude-sonnet-4-20250514";
+  const out: Record<string, unknown> = {
+    model,
+    keys: {
+      finnhub: Boolean(env.FINNHUB_API_KEY),
+      anthropic: Boolean(env.ANTHROPIC_API_KEY),
+      turnstile: Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY),
+    },
+  };
+
+  if (env.FINNHUB_API_KEY) {
+    try {
+      const r = await fetch(
+        `https://finnhub.io/api/v1/quote?symbol=AAPL&token=${env.FINNHUB_API_KEY}`
+      );
+      out.finnhub = r.status;
+    } catch {
+      out.finnhub = "unreachable";
+    }
+  }
+
+  if (env.ANTHROPIC_API_KEY) {
+    try {
+      const r = await fetch(
+        `https://api.anthropic.com/v1/models/${encodeURIComponent(model)}`,
+        {
+          headers: {
+            "x-api-key": env.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+        }
+      );
+      out.anthropic = r.status;
+      if (!r.ok) out.anthropicDetail = (await r.text()).slice(0, 200);
+    } catch {
+      out.anthropic = "unreachable";
+    }
+  }
+
+  await cacheSet(env.CACHE, "health", out, 60).catch(() => {});
+  return json(out);
+}
+
 /** Public client config (Turnstile site key is public by design). */
 async function handleConfig(env: Env): Promise<Response> {
   return json({
@@ -319,6 +370,9 @@ export default {
 
     if (url.pathname === "/api/config") {
       return handleConfig(env);
+    }
+    if (url.pathname === "/api/health") {
+      return handleHealth(env);
     }
 
     if (url.pathname === "/api/search") {
