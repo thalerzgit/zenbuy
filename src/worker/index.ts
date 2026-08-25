@@ -11,6 +11,7 @@ import {
   oldestAsOf,
   searchSymbols,
   type FundamentalsPayload,
+  type SymbolResult,
 } from "./finnhub";
 import {
   parseReport,
@@ -83,12 +84,21 @@ async function handleSearch(request: Request, env: Env): Promise<Response> {
     return json({ error: "Search unavailable" }, 503);
   }
 
+  // Typeahead fires per keystroke; cache so prefixes don't burn the Finnhub quota.
+  const key = `search:${q.toLowerCase()}`;
+  const cached = await cacheGet<SymbolResult[]>(env.CACHE, key);
+  if (cached) return json({ results: cached });
+
   try {
     const results = await searchSymbols(env.FINNHUB_API_KEY, q);
+    // Misses are cheap to re-check later; hits are stable.
+    const ttl = results.length ? 86_400 : 3_600;
+    await cacheSet(env.CACHE, key, results, ttl).catch(() => {});
     return json({ results });
   } catch (e) {
-    console.error(e);
-    return json({ error: randomError(), retry: true }, 502);
+    console.error("search failed", e);
+    // A throttled lookup should just show no suggestions, not an error banner.
+    return json({ results: [], throttled: true });
   }
 }
 
