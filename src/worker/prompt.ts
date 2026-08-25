@@ -53,6 +53,32 @@ export function getSystemPrompt(): string {
   return CORE_PROMPT;
 }
 
+const LAYMAN_PROMPT = `You rewrite equity research into clear, everyday English for smart non-experts.
+Rules:
+- Keep the same investment conclusion and risk level — do not soften or hype.
+- No jargon unless you immediately explain it in parentheses.
+- Short sentences. Concrete analogies when helpful (e.g. "like owning a toll road").
+- Use these exact markdown headers:
+## Bottom line
+## What this company does
+## Why it might make money
+## What could go wrong
+## Numbers that matter (plain English)
+## What I'd watch next
+- End with one sentence: "This is not financial advice."
+- Be concise: roughly 600–900 words.`;
+
+export function getLaymanSystemPrompt(): string {
+  return LAYMAN_PROMPT;
+}
+
+export function buildLaymanPrompt(markdown: string): string {
+  return `Rewrite this research report in layman's terms.
+
+---
+${markdown.slice(0, 60_000)}`;
+}
+
 export function buildUserPrompt(
   mode: "separate" | "comparative",
   payloads: unknown[]
