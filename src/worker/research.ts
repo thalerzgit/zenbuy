@@ -183,6 +183,23 @@ export async function streamResearch(
   }
 }
 
+const PROGRESS_INTERVAL_MS = 200;
+
+/**
+ * Tag every section header with its ticker.
+ *
+ * splitReport() drops anything ahead of the first "## BOTTOM LINE", so a
+ * separate "## TICKER: X" heading survives for later tickers but vanishes for
+ * the first one. Labelling the headers themselves keeps all N reports
+ * attributable, and the parsers match on header prefixes so they still work.
+ */
+function labelHeaders(markdown: string, symbol: string): string {
+  return markdown.replace(
+    /^##[ \t]+(.+)$/gm,
+    (_m, heading: string) => `## ${heading.trim()} — ${symbol}`
+  );
+}
+
 export interface ParallelHandlers {
   onProgress: (assembled: string) => void;
   onDone: (assembled: string) => void;
@@ -204,11 +221,19 @@ export async function streamResearchParallel(
 
   const assemble = (): string =>
     payloads
-      .map((p, i) =>
-        sections[i] ? `## TICKER: ${p.symbol}\n\n${sections[i]}` : ""
-      )
+      .map((p, i) => (sections[i] ? labelHeaders(sections[i], p.symbol) : ""))
       .filter(Boolean)
       .join("\n\n");
+
+  // Assembling re-copies every section, so emit on a cadence rather than per
+  // token; the client repaint is throttled again downstream.
+  let lastEmit = 0;
+  const emit = (force = false): void => {
+    const now = Date.now();
+    if (!force && now - lastEmit < PROGRESS_INTERVAL_MS) return;
+    lastEmit = now;
+    handlers.onProgress(assemble());
+  };
 
   await Promise.all(
     payloads.map(async (payload, i) => {
@@ -223,20 +248,20 @@ export async function streamResearchParallel(
           const errText = await res.text();
           console.error("Anthropic error", payload.symbol, res.status, errText);
           failures.push(payload.symbol);
-          sections[i] = `_${analysisErrorMessage(res.status)}_`;
-          handlers.onProgress(assemble());
+          sections[i] = `## BOTTOM LINE\n\n_${analysisErrorMessage(res.status)}_`;
+          emit(true);
           return;
         }
 
         await readAnalysisStream(res, (text) => {
           sections[i] += text;
-          handlers.onProgress(assemble());
+          emit();
         });
       } catch (e) {
         console.error("parallel analysis failed", payload.symbol, e);
         failures.push(payload.symbol);
-        sections[i] = "_Analysis unavailable for this ticker._";
-        handlers.onProgress(assemble());
+        sections[i] = "## BOTTOM LINE\n\n_Analysis unavailable for this ticker._";
+        emit(true);
       }
     })
   );
