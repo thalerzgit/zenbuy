@@ -10,6 +10,7 @@ import {
   isStalePayload,
   oldestAsOf,
   searchSymbols,
+  type FundamentalsPayload,
 } from "./finnhub";
 import {
   parseReport,
@@ -182,17 +183,43 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
           return;
         }
 
-        const payloads = await Promise.all(
+        // One flaky ticker (delisted, or a throttled Finnhub call) must not
+        // sink the whole report.
+        const settled = await Promise.allSettled(
           symbols.map((s) =>
             getFundamentalsCached(env.CACHE, env.FINNHUB_API_KEY, s, ttl)
           )
         );
+
+        const payloads: FundamentalsPayload[] = [];
+        const skipped: string[] = [];
+        settled.forEach((r, i) => {
+          if (r.status === "fulfilled") payloads.push(r.value);
+          else {
+            skipped.push(symbols[i]);
+            console.error("fundamentals failed", symbols[i], r.reason);
+          }
+        });
+
+        if (!payloads.length) {
+          send("error", {
+            error: `We couldn't pull market data for ${skipped.join(", ")}. The data feed may be rate limited — try again in a moment.`,
+            retry: true,
+            code: "fundamentals_unavailable",
+          });
+          controller.close();
+          return;
+        }
+
+        // Comparative needs at least two names to compare.
+        const effectiveMode = payloads.length > 1 ? mode : "separate";
 
         const showAsOf = isStalePayload(payloads);
         send("meta", {
           cached: false,
           asOf: oldestAsOf(payloads),
           showAsOf,
+          skipped,
           symbols: payloads.map((p) => ({
             symbol: p.symbol,
             name: p.name,
@@ -203,7 +230,7 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
         let full = "";
         let stickySent = false;
 
-        await streamResearch(env, mode, payloads, {
+        await streamResearch(env, effectiveMode, payloads, {
           onDelta(text) {
             full += text;
             if (!stickySent && /^##\s*FUNDAMENTALS/im.test(full)) {
@@ -228,7 +255,12 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
             const report = emitParsed(send, markdown);
             report.asOf = oldestAsOf(payloads);
             report.stale = showAsOf;
-            cacheSet(env.CACHE, cacheKey, report, ttl).catch(console.error);
+            // Key on what actually made the report, not what was requested.
+            const doneKey = reportCacheKey(
+              effectiveMode,
+              payloads.map((p) => p.symbol)
+            );
+            cacheSet(env.CACHE, doneKey, report, ttl).catch(console.error);
             incrementRateLimit(env, ip).catch(console.error);
             send("done", { badges: report.badges });
           },
@@ -237,8 +269,13 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
           },
         });
       } catch (e) {
-        console.error(e);
-        send("error", { error: randomError(), retry: true });
+        console.error("research failed", e);
+        send("error", {
+          error:
+            "We couldn't finish that report. The data feed or analysis service hiccuped — try again?",
+          retry: true,
+          code: "research_failed",
+        });
       } finally {
         controller.close();
       }
