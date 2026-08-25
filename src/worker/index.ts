@@ -317,6 +317,9 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
           asOf: oldestAsOf(payloads),
           showAsOf,
           skipped,
+          degraded: payloads
+            .filter((p) => p.dataQuality === "degraded")
+            .map((p) => p.symbol),
           symbols: payloads.map((p) => ({
             symbol: p.symbol,
             name: p.name,

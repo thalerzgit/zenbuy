@@ -54,7 +54,16 @@ export function buildUserPrompt(
   mode: "separate" | "comparative",
   payloads: unknown[]
 ): string {
-  const dataPolicy = `Injected data (cite as Fact · Finnhub · date):\n${JSON.stringify(payloads, null, 2)}`;
+  const degraded = payloads
+    .filter((p) => (p as { dataQuality?: string }).dataQuality === "degraded")
+    .map((p) => (p as { symbol?: string }).symbol)
+    .filter(Boolean);
+
+  const degradedNote = degraded.length
+    ? `\n\nLIMITED DATA: ${degraded.join(", ")} arrived from a backup feed carrying price only — no margins, multiples, insiders, peers or news. Say so explicitly in BOTTOM LINE, base the verdict on what is present, and mark every missing input "Not available" rather than estimating it.`
+    : "";
+
+  const dataPolicy = `Injected data (cite using each entry's _citation):\n${JSON.stringify(payloads, null, 2)}${degradedNote}`;
 
   if (mode === "comparative") {
     return `${dataPolicy}
