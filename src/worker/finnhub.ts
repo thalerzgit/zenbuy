@@ -310,14 +310,14 @@ export async function fetchFundamentals(
 
   const latestRec = Array.isArray(recRaw) && recRaw.length ? recRaw[0] : null;
 
-  const marketCapRaw = num(profile.marketCapitalization as number);
+  const marketCapRaw = num(profile?.marketCapitalization as number);
   const marketCap = marketCapRaw != null ? fmtCap(marketCapRaw * 1e6) : null;
 
   return {
     symbol: sym,
-    name: String(profile.name ?? sym),
-    exchange: (profile.exchange as string) ?? null,
-    industry: (profile.finnhubIndustry as string) ?? null,
+    name: String(profile?.name ?? sym),
+    exchange: (profile?.exchange as string) ?? null,
+    industry: (profile?.finnhubIndustry as string) ?? null,
     asOf: asOf.toISOString(),
     dataAgeHours: 0,
     dataQuality: "full",

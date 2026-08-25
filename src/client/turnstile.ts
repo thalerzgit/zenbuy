@@ -51,6 +51,7 @@ let token = "";
 let pending: Pending | null = null;
 let mountAttempted = false;
 let onInteractive: InteractiveHandler | null = null;
+let warming = false;
 
 /** Lets the UI prompt for a tap when Turnstile shows a real challenge. */
 export function setTurnstileInteractiveHandler(
@@ -216,6 +217,17 @@ function mountWidget(): void {
       token = "";
     },
     "before-interactive-callback": () => {
+      // A pre-warm must stay invisible: popping a checkbox before the user
+      // has asked for anything is worse than solving on the tap.
+      if (warming) {
+        clearPending(new Error("warm-up abandoned"));
+        try {
+          if (widgetId) ts.reset(widgetId);
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
       // Managed mode can escalate to a checkbox; make sure it's on screen
       // and stop the silent timeout from firing while the user acts.
       document
@@ -312,6 +324,25 @@ export async function obtainTurnstileToken(): Promise<string> {
 
   const api = await waitForApi();
   return beginSolve(api);
+}
+
+/**
+ * Solve ahead of the Generate tap so verification isn't on the critical path.
+ * Tokens stay valid for ~5 minutes and the widget reports expiry, so a warm
+ * token is reused if it's still good. Silent by design: an escalation to a
+ * visible challenge abandons the warm-up and leaves it to the tap.
+ */
+export function warmTurnstileToken(): void {
+  if (warming || pending || token) return;
+  if (siteKeyResolved && !siteKey) return;
+  warming = true;
+  void obtainTurnstileToken()
+    .catch(() => {
+      /* the real solve happens on tap */
+    })
+    .finally(() => {
+      warming = false;
+    });
 }
 
 /** Invalidate token after siteverify (tokens are single-use). */

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy --config dist/zenbuy/wrangler.json",
     "types": "wrangler types",
+    "typecheck": "wrangler types && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "check": "wrangler check",
     "smoke": "node tools/smoke-test.mjs"
   },

@@ -44,7 +44,10 @@ STRUCTURE — use these exact markdown headers:
 (5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + 5-year + 18-year outlook)
 
 FORMATTING
-Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.`;
+Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.
+
+BREVITY
+Respect the word budget in the request as a hard cap. Density beats length: never restate a number you have already given, never recap a previous section, and drop any bullet that carries no number, fact, or decision. Prefer a 4-column table over prose when comparing.`;
 
 export function getSystemPrompt(): string {
   return CORE_PROMPT;
@@ -72,7 +75,7 @@ Write ONE comparative decision report covering ALL companies above.
 Start with ## BOTTOM LINE ranking which name to own first for aggressive 18-year compounding, with relative Buy/Hold/Sell for each ticker.
 Then for each company use subsections under shared headers (## FUNDAMENTALS, ## THESIS VALIDATION, etc.) with clear ### TICKER headings.
 End with ## SUMMARY scorecards per ticker plus one Overall portfolio recommendation.
-Target ~3500 words total.`;
+Hard cap 2200 words total.`;
   }
 
   if (payloads.length === 1) {
@@ -80,12 +83,12 @@ Target ~3500 words total.`;
     return `${dataPolicy}
 
 Replace [TICKER] with ${p.symbol ?? "the company"}.
-Target ~2500 words.`;
+Hard cap 1500 words.`;
   }
 
   return `${dataPolicy}
 
 Produce separate full reports for EACH company in the injected array.
 Start each report with ## TICKER: SYMBOL then the full structure (## BOTTOM LINE through ## SUMMARY).
-Target ~2500 words per company.`;
+Hard cap 1500 words per company.`;
 }

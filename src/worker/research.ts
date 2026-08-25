@@ -79,23 +79,18 @@ async function resolveLiveModel(env: Env, rejected: string): Promise<string | nu
   }
 }
 
-export async function streamResearch(
+/** One analysis request, with a single self-healing retry on a dead model id. */
+async function requestAnalysis(
   env: Env,
-  mode: "separate" | "comparative",
-  payloads: FundamentalsPayload[],
-  handlers: StreamHandlers
-): Promise<void> {
+  user: string,
+  maxTokens: number
+): Promise<Response> {
   const body = {
     model: env.ZENBUY_MODEL || "claude-sonnet-5",
-    max_tokens: 16384,
+    max_tokens: maxTokens,
     stream: true,
     system: getSystemPrompt(),
-    messages: [
-      {
-        role: "user",
-        content: buildUserPrompt(mode, payloads),
-      },
-    ],
+    messages: [{ role: "user", content: user }],
   };
 
   const post = (): Promise<Response> =>
@@ -117,17 +112,14 @@ export async function streamResearch(
     }
   }
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Anthropic error", res.status, errText);
-    handlers.onError(analysisErrorMessage(res.status));
-    return;
-  }
+  return res;
+}
 
-  if (!res.body) {
-    handlers.onError("Empty response stream");
-    return;
-  }
+async function readAnalysisStream(
+  res: Response,
+  onText: (text: string) => void
+): Promise<string> {
+  if (!res.body) throw new Error("Empty response stream");
 
   let full = "";
   const reader = res.body.getReader();
@@ -152,7 +144,7 @@ export async function streamResearch(
         };
         if (evt.type === "content_block_delta" && evt.delta?.text) {
           full += evt.delta.text;
-          handlers.onDelta(evt.delta.text);
+          onText(evt.delta.text);
         }
       } catch {
         /* ignore partial json */
@@ -160,7 +152,101 @@ export async function streamResearch(
     }
   }
 
-  handlers.onDone(full);
+  return full;
+}
+
+export async function streamResearch(
+  env: Env,
+  mode: "separate" | "comparative",
+  payloads: FundamentalsPayload[],
+  handlers: StreamHandlers
+): Promise<void> {
+  const res = await requestAnalysis(
+    env,
+    buildUserPrompt(mode, payloads),
+    mode === "comparative" ? 12_000 : 8_000
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Anthropic error", res.status, errText);
+    handlers.onError(analysisErrorMessage(res.status));
+    return;
+  }
+
+  try {
+    const full = await readAnalysisStream(res, handlers.onDelta);
+    handlers.onDone(full);
+  } catch (e) {
+    console.error("stream read failed", e);
+    handlers.onError("The analysis stream dropped. Try again?");
+  }
+}
+
+export interface ParallelHandlers {
+  onProgress: (assembled: string) => void;
+  onDone: (assembled: string) => void;
+  onError: (message: string) => void;
+}
+
+/**
+ * Separate reports for N tickers used to be one completion emitting N x ~2500
+ * words serially, so wall time scaled with the total. Running one request per
+ * ticker concurrently makes it scale with the slowest single report instead.
+ */
+export async function streamResearchParallel(
+  env: Env,
+  payloads: FundamentalsPayload[],
+  handlers: ParallelHandlers
+): Promise<void> {
+  const sections = payloads.map(() => "");
+  const failures: string[] = [];
+
+  const assemble = (): string =>
+    payloads
+      .map((p, i) =>
+        sections[i] ? `## TICKER: ${p.symbol}\n\n${sections[i]}` : ""
+      )
+      .filter(Boolean)
+      .join("\n\n");
+
+  await Promise.all(
+    payloads.map(async (payload, i) => {
+      try {
+        const res = await requestAnalysis(
+          env,
+          buildUserPrompt("separate", [payload]),
+          8_000
+        );
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error("Anthropic error", payload.symbol, res.status, errText);
+          failures.push(payload.symbol);
+          sections[i] = `_${analysisErrorMessage(res.status)}_`;
+          handlers.onProgress(assemble());
+          return;
+        }
+
+        await readAnalysisStream(res, (text) => {
+          sections[i] += text;
+          handlers.onProgress(assemble());
+        });
+      } catch (e) {
+        console.error("parallel analysis failed", payload.symbol, e);
+        failures.push(payload.symbol);
+        sections[i] = "_Analysis unavailable for this ticker._";
+        handlers.onProgress(assemble());
+      }
+    })
+  );
+
+  if (failures.length === payloads.length) {
+    handlers.onError("Analysis service didn't respond. Try again in a moment?");
+    return;
+  }
+
+  handlers.onDone(assemble());
 }
 
 export async function verifyTurnstile(

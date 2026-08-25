@@ -3,6 +3,7 @@ import {
   obtainTurnstileToken,
   resetTurnstile,
   setTurnstileInteractiveHandler,
+  warmTurnstileToken,
 } from "./turnstile";
 
 export interface SymbolPick {
@@ -173,6 +174,12 @@ export function mountApp(root: HTMLElement): void {
         renderChips();
         input.value = "";
         dropdown.classList.add("hidden");
+
+        // Warm the slow parts now rather than after the Generate tap.
+        void fetch(
+          `/api/prefetch?symbol=${encodeURIComponent(row.symbol)}`
+        ).catch(() => {});
+        warmTurnstileToken();
       };
       dropdown.append(item);
     });

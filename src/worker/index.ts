@@ -2,6 +2,7 @@ import { randomError } from "./errors";
 import {
   cacheGet,
   cacheSet,
+  fundCacheKey,
   reportCacheKey,
   type CachedReport,
 } from "./cache";
@@ -23,6 +24,7 @@ import {
   checkRateLimit,
   incrementRateLimit,
   streamResearch,
+  streamResearchParallel,
   verifyTurnstile,
 } from "./research";
 
@@ -101,6 +103,48 @@ async function handleSearch(request: Request, env: Env): Promise<Response> {
     // A throttled lookup should just show no suggestions, not an error banner.
     return json({ results: [], throttled: true });
   }
+}
+
+/**
+ * Warm a symbol's fundamentals while the user is still picking tickers, so
+ * the ~11 Finnhub calls per symbol aren't sitting on the critical path when
+ * they hit Generate. Cheap and idempotent: a warm cache returns immediately.
+ */
+async function handlePrefetch(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const url = new URL(request.url);
+  const symbol = url.searchParams.get("symbol")?.toUpperCase().trim();
+  if (!symbol || !/^[A-Z0-9.\-]{1,12}$/.test(symbol)) {
+    return json({ ok: false }, 400);
+  }
+  if (!env.FINNHUB_API_KEY) return json({ ok: false }, 503);
+
+  if (await env.CACHE.get(fundCacheKey(symbol))) {
+    return json({ ok: true, cached: true });
+  }
+
+  // Warming costs upstream quota, so cap it per IP per day.
+  const guard = `pf:${clientIp(request)}:${new Date().toISOString().slice(0, 10)}`;
+  const used = Number((await env.CACHE.get(guard)) || 0);
+  if (used >= 120) return json({ ok: false, code: "prefetch_limit" });
+  ctx.waitUntil(
+    env.CACHE.put(guard, String(used + 1), { expirationTtl: 86_400 })
+  );
+
+  const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
+  ctx.waitUntil(
+    getFundamentalsCached(env.CACHE, env.FINNHUB_API_KEY, symbol, ttl).then(
+      () => undefined,
+      (e) => {
+        console.warn("prefetch failed", symbol, e);
+      }
+    )
+  );
+
+  return json({ ok: true, warming: true });
 }
 
 /**
@@ -327,47 +371,79 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
           })),
         });
 
-        let full = "";
         let stickySent = false;
+        let lastBodyAt = 0;
+        let lastBodyLen = 0;
 
-        await streamResearch(env, effectiveMode, payloads, {
-          onDelta(text) {
-            full += text;
-            if (!stickySent && /^##\s*FUNDAMENTALS/im.test(full)) {
-              const partial = parseReport(full);
-              if (partial.bottomLine) {
-                send("sticky", {
-                  bottomLineHtml: renderMarkdown(partial.bottomLine),
-                  badges: partial.badges,
-                  scorecardHtml: "",
-                });
-                stickySent = true;
-              }
+        // Re-rendering markdown on every token is wasted work on a phone;
+        // paint on a cadence instead.
+        const BODY_INTERVAL_MS = 250;
+        const BODY_GROWTH = 600;
+
+        const renderProgress = (full: string, force = false): void => {
+          if (!stickySent && /^##\s*FUNDAMENTALS/im.test(full)) {
+            const partial = parseReport(full);
+            if (partial.bottomLine) {
+              send("sticky", {
+                bottomLineHtml: renderMarkdown(partial.bottomLine),
+                badges: partial.badges,
+                scorecardHtml: "",
+              });
+              stickySent = true;
             }
-            if (stickySent) {
-              const bodyPart = parseReport(full).body;
-              if (bodyPart.length > 40) {
-                send("body", { html: renderMarkdown(bodyPart), streaming: true });
-              }
-            }
-          },
-          onDone(markdown) {
-            const report = emitParsed(send, markdown);
-            report.asOf = oldestAsOf(payloads);
-            report.stale = showAsOf;
-            // Key on what actually made the report, not what was requested.
-            const doneKey = reportCacheKey(
-              effectiveMode,
-              payloads.map((p) => p.symbol)
-            );
-            cacheSet(env.CACHE, doneKey, report, ttl).catch(console.error);
-            incrementRateLimit(env, ip).catch(console.error);
-            send("done", { badges: report.badges });
-          },
-          onError(message) {
-            send("error", { error: message || randomError(), retry: true });
-          },
-        });
+          }
+          if (!stickySent) return;
+
+          const now = Date.now();
+          const grown = full.length - lastBodyLen;
+          if (!force && now - lastBodyAt < BODY_INTERVAL_MS && grown < BODY_GROWTH) {
+            return;
+          }
+
+          const bodyPart = parseReport(full).body;
+          if (bodyPart.length > 40) {
+            lastBodyAt = now;
+            lastBodyLen = full.length;
+            send("body", { html: renderMarkdown(bodyPart), streaming: true });
+          }
+        };
+
+        const finish = (markdown: string): void => {
+          const report = emitParsed(send, markdown);
+          report.asOf = oldestAsOf(payloads);
+          report.stale = showAsOf;
+          // Key on what actually made the report, not what was requested.
+          const doneKey = reportCacheKey(
+            effectiveMode,
+            payloads.map((p) => p.symbol)
+          );
+          cacheSet(env.CACHE, doneKey, report, ttl).catch(console.error);
+          incrementRateLimit(env, ip).catch(console.error);
+          send("done", { badges: report.badges });
+        };
+
+        const fail = (message: string): void => {
+          send("error", { error: message || randomError(), retry: true });
+        };
+
+        // Separate reports are independent, so generate them concurrently.
+        if (effectiveMode === "separate" && payloads.length > 1) {
+          await streamResearchParallel(env, payloads, {
+            onProgress: (assembled) => renderProgress(assembled),
+            onDone: finish,
+            onError: fail,
+          });
+        } else {
+          let full = "";
+          await streamResearch(env, effectiveMode, payloads, {
+            onDelta(text) {
+              full += text;
+              renderProgress(full);
+            },
+            onDone: finish,
+            onError: fail,
+          });
+        }
       } catch (e) {
         console.error("research failed", e);
         send("error", {
@@ -412,6 +488,9 @@ export default {
     }
     if (url.pathname === "/api/health") {
       return handleHealth(env);
+    }
+    if (url.pathname === "/api/prefetch") {
+      return handlePrefetch(request, env, ctx);
     }
 
     if (url.pathname === "/api/search") {
