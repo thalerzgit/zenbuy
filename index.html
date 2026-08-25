@@ -8,13 +8,20 @@
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://challenges.cloudflare.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
       rel="stylesheet"
     />
+    <!-- Stub before api.js so onload can never race the Vite module. -->
+    <script>
+      window.onZenbuyTurnstileLoad = function () {
+        window.dispatchEvent(new Event("zenbuy-turnstile-ready"));
+      };
+    </script>
+    <!-- defer only (no async): predictable order with the onload stub above -->
     <script
-      src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
-      async
+      src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onZenbuyTurnstileLoad"
       defer
     ></script>
   </head>

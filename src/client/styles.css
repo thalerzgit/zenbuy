@@ -405,6 +405,14 @@ input[type="text"]:focus {
 .turnstile {
   margin-top: 0.75rem;
   min-height: 0;
+  min-width: min(100%, 300px);
+  /* Keep CF iframe above skeleton/error chrome if a challenge appears */
+  position: relative;
+  z-index: 2;
+}
+
+.turnstile iframe {
+  max-width: 100%;
 }
 
 .form-error {

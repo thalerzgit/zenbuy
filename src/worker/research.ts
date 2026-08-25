@@ -111,14 +111,28 @@ export async function verifyTurnstile(
   const form = new FormData();
   form.append("secret", env.TURNSTILE_SECRET_KEY);
   form.append("response", token);
-  form.append("remoteip", ip);
+  if (ip && ip !== "unknown") form.append("remoteip", ip);
 
-  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    body: form,
-  });
-  const data = (await res.json()) as { success?: boolean };
-  return !!data.success;
+  try {
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        body: form,
+      }
+    );
+    const data = (await res.json()) as {
+      success?: boolean;
+      "error-codes"?: string[];
+    };
+    if (!data.success) {
+      console.warn("turnstile siteverify failed", data["error-codes"] ?? []);
+    }
+    return !!data.success;
+  } catch (e) {
+    console.error("turnstile siteverify error", e);
+    return false;
+  }
 }
 
 export async function checkRateLimit(env: Env, ip: string): Promise<boolean> {

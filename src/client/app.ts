@@ -1,3 +1,9 @@
+import {
+  initTurnstile,
+  obtainTurnstileToken,
+  resetTurnstile,
+} from "./turnstile";
+
 export interface SymbolPick {
   symbol: string;
   name: string;
@@ -10,10 +16,6 @@ interface Badges {
   sentiment?: string;
   conviction?: string;
 }
-
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
-
-let turnstileWidgetId: string | undefined;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -195,24 +197,7 @@ export function mountApp(root: HTMLElement): void {
     if (!searchWrap.contains(e.target as Node)) dropdown.classList.add("hidden");
   });
 
-  function initTurnstile(): void {
-    if (!TURNSTILE_SITE_KEY || turnstileWidgetId) return;
-    const ts = (window as unknown as { turnstile?: { render: Function } }).turnstile;
-    if (!ts) return;
-    turnstileWidgetId = ts.render("#turnstile", {
-      sitekey: TURNSTILE_SITE_KEY,
-      theme: "light",
-      size: "invisible",
-    });
-  }
-
-  window.addEventListener("load", initTurnstile);
-
-  function getTurnstileToken(): string {
-    if (!TURNSTILE_SITE_KEY || !turnstileWidgetId) return "";
-    const ts = (window as unknown as { turnstile?: { getResponse: Function } }).turnstile;
-    return ts?.getResponse(turnstileWidgetId) ?? "";
-  }
+  initTurnstile();
 
   function resetReportUi(): void {
     titleWrap.innerHTML = "";
@@ -267,7 +252,7 @@ export function mountApp(root: HTMLElement): void {
     hideError();
     state.loading = true;
     submitBtn.disabled = true;
-    submitBtn.textContent = "Generating…";
+    submitBtn.textContent = "Verifying…";
     reportPanel.classList.remove("hidden");
     printBtn.classList.add("hidden");
     resetReportUi();
@@ -275,16 +260,24 @@ export function mountApp(root: HTMLElement): void {
     const mode =
       state.picks.length > 1 ? state.mode : ("separate" as ReportMode);
 
+    let turnstileToken = "";
     try {
+      // Must run inside the click gesture on iOS Safari.
+      turnstileToken = await obtainTurnstileToken();
+      submitBtn.textContent = "Generating…";
+
       const res = await fetch("/api/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbols: state.picks.map((p) => p.symbol),
           mode,
-          turnstileToken: getTurnstileToken(),
+          turnstileToken,
         }),
       });
+
+      // Tokens are single-use — always refresh for the next attempt.
+      resetTurnstile();
 
       if (!res.ok) {
         const err = (await res.json()) as { error?: string; retry?: boolean };
@@ -351,8 +344,13 @@ export function mountApp(root: HTMLElement): void {
           }
         }
       }
-    } catch {
-      showError("The market is meditating a bit too hard. Try again?", true);
+    } catch (e) {
+      resetTurnstile();
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : "The market is meditating a bit too hard. Try again?";
+      showError(msg, true);
     } finally {
       state.loading = false;
       submitBtn.textContent = "Generate report";
