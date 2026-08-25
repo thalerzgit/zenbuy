@@ -1,14 +1,12 @@
 /**
  * Cloudflare Turnstile client helper.
  *
- * iOS Safari is sensitive to auto-running challenges on page load (ITP /
- * third-party iframe timing). We render with execution:"execute" and only
- * call turnstile.execute() inside a user gesture (Generate / Retry), then
- * wait for the success callback before POSTing /api/research.
+ * Site key is loaded at runtime from `/api/config` (Worker secret
+ * TURNSTILE_SITE_KEY) so CI deploys don't need a Vite build-time key.
+ * VITE_TURNSTILE_SITE_KEY remains an optional local override.
  *
- * Important: when the API is already loaded, execute() must run in the same
- * synchronous turn as the click handler — any await/rAF before execute can
- * drop the user-gesture privilege on WebKit.
+ * iOS Safari: render with execution:"execute" and call turnstile.execute()
+ * inside the Generate click gesture, then wait for the callback before POST.
  */
 
 export type TurnstileAPI = {
@@ -30,9 +28,8 @@ declare global {
   }
 }
 
-const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+const VITE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 const CONTAINER = "#turnstile";
-/** iOS can hang on "Verifying…" — fail to a clear retry instead of forever. */
 const SOLVE_TIMEOUT_MS = 25_000;
 const API_WAIT_MS = 15_000;
 const READY_EVENT = "zenbuy-turnstile-ready";
@@ -43,6 +40,8 @@ type Pending = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+let siteKey = VITE_SITE_KEY;
+let siteKeyResolved = Boolean(VITE_SITE_KEY);
 let widgetId: string | undefined;
 let token = "";
 let pending: Pending | null = null;
@@ -70,6 +69,21 @@ function settleSuccess(next: string): void {
   p.resolve(next);
 }
 
+async function resolveSiteKey(): Promise<string> {
+  if (siteKeyResolved) return siteKey;
+  siteKeyResolved = true;
+  try {
+    const res = await fetch("/api/config");
+    if (res.ok) {
+      const data = (await res.json()) as { turnstileSiteKey?: string };
+      if (data.turnstileSiteKey) siteKey = data.turnstileSiteKey;
+    }
+  } catch {
+    /* keep vite / empty */
+  }
+  return siteKey;
+}
+
 function waitForApi(): Promise<TurnstileAPI> {
   return new Promise((resolve, reject) => {
     const existing = getApi();
@@ -93,7 +107,6 @@ function waitForApi(): Promise<TurnstileAPI> {
 
     window.addEventListener(READY_EVENT, onReady);
 
-    // Chain onto any stub installed by index.html (module can load after onload).
     const prev = window.onZenbuyTurnstileLoad;
     window.onZenbuyTurnstileLoad = () => {
       try {
@@ -122,35 +135,39 @@ function waitForApi(): Promise<TurnstileAPI> {
 }
 
 export function isTurnstileEnabled(): boolean {
-  return Boolean(SITE_KEY);
+  return Boolean(siteKey);
 }
 
 export function initTurnstile(): void {
-  if (!SITE_KEY || mountAttempted) return;
+  if (mountAttempted) return;
   mountAttempted = true;
-  void waitForApi()
-    .then(() => mountWidget())
-    .catch(() => {
-      // Leave widget unmounted; obtainTurnstileToken will surface the error.
+  void (async () => {
+    await resolveSiteKey();
+    if (!siteKey) {
       mountAttempted = false;
-    });
+      return;
+    }
+    try {
+      await waitForApi();
+      mountWidget();
+    } catch {
+      mountAttempted = false;
+    }
+  })();
 }
 
 function mountWidget(): void {
   const ts = getApi();
-  if (!SITE_KEY || !ts || widgetId) return;
+  if (!siteKey || !ts || widgetId) return;
 
   const el = document.querySelector(CONTAINER);
   if (!el) return;
 
   widgetId = ts.render(CONTAINER, {
-    sitekey: SITE_KEY,
+    sitekey: siteKey,
     theme: "light",
-    // Valid sizes: normal | flexible | compact (not "invisible").
     size: "flexible",
-    // Only show UI when CF needs a tap — keeps desktop clean, helps mobile.
     appearance: "interaction-only",
-    // Defer challenge until Generate — critical for iOS Safari user-gesture.
     execution: "execute",
     retry: "auto",
     "refresh-expired": "auto",
@@ -166,7 +183,6 @@ function mountWidget(): void {
       } catch {
         /* ignore */
       }
-      // Signal we handled the error so CF doesn't leave a stuck widget.
       return true;
     },
     "expired-callback": () => {
@@ -203,7 +219,7 @@ function beginSolve(ts: TurnstileAPI): Promise<string> {
       return Promise.resolve(existing);
     }
   } catch {
-    /* fall through to execute */
+    /* fall through */
   }
 
   token = "";
@@ -231,8 +247,6 @@ function beginSolve(ts: TurnstileAPI): Promise<string> {
     pending = { resolve, reject, timer };
 
     try {
-      // Reset clears a stuck "Verifying…" iframe, then execute in THIS turn
-      // (no rAF/await) so iOS keeps the user-gesture context.
       ts.reset(widgetId);
       ts.execute(widgetId!);
     } catch {
@@ -244,21 +258,20 @@ function beginSolve(ts: TurnstileAPI): Promise<string> {
 }
 
 /**
- * Obtain a fresh Turnstile token. Must be invoked directly from a click
- * handler on iOS (before other awaits in that handler, ideally).
- * Resolves to "" when Turnstile is not configured (dev / optional).
+ * Obtain a fresh Turnstile token. Invoke from a click handler on iOS.
+ * Resolves to "" when Turnstile is not configured.
  */
-export function obtainTurnstileToken(): Promise<string> {
-  if (!SITE_KEY) return Promise.resolve("");
+export async function obtainTurnstileToken(): Promise<string> {
+  await resolveSiteKey();
+  if (!siteKey) return "";
 
   const ts = getApi();
   if (ts && (widgetId || document.querySelector(CONTAINER))) {
-    // Fast path: sync execute inside the click turn.
     return beginSolve(ts);
   }
 
-  // Slow path: script still loading — gesture may be lost; best-effort.
-  return waitForApi().then((api) => beginSolve(api));
+  const api = await waitForApi();
+  return beginSolve(api);
 }
 
 /** Invalidate token after siteverify (tokens are single-use). */

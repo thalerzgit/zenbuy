@@ -29,10 +29,13 @@ Create a KV namespace and set the id in `wrangler.jsonc`:
 wrangler kv namespace create CACHE
 ```
 
-Client Turnstile site key (build-time):
+Client Turnstile site key:
+
+- **Production:** Worker secret `TURNSTILE_SITE_KEY` → exposed via `GET /api/config`
+- **Optional local override:**
 
 ```bash
-# .env / Cloudflare Pages env var
+# .env (local only)
 VITE_TURNSTILE_SITE_KEY=your_site_key
 ```
 
@@ -44,10 +47,40 @@ Turnstile tips (esp. mobile Safari):
 
 ## Deploy
 
-1. Push to `thalerzgit/zenbuy` on GitHub
-2. Connect repo to Cloudflare Pages (or `npm run deploy`)
-3. Point `zenbuy.info` apex to Pages; redirect `www` → apex
-4. Set secrets in CF dashboard
+Production deploys from GitHub Actions on every push to `main`
+(`.github/workflows/deploy.yml`), via `wrangler deploy`.
+
+### One-time GitHub secrets
+
+Repo → **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+|--------|--------|
+| `CLOUDFLARE_API_TOKEN` | API token with **Edit Cloudflare Workers** + zone **Workers Routes/DNS** on `zenbuy.info` |
+
+Account ID is already in `wrangler.jsonc` (`7841b36fdc9d3c3ae48bd119503d3df5`).
+
+Recommended token (dashboard → API Tokens → Create Custom Token), name e.g. `GitHub to Cloudflare - ZenBuy`:
+
+- **All accounts** — D1 Edit, Cloudflare Pages Edit, Workers R2 Storage Edit, Workers KV Storage Edit, Workers Scripts Edit, Account Settings Read
+- **thalerz → zenbuy.info** — Workers Routes Edit, DNS Edit
+- **All users** — User Details Read
+
+Worker runtime secrets (`FINNHUB_API_KEY`, `ANTHROPIC_API_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`, …) stay in the Cloudflare Worker — set once with `wrangler secret put`. The client loads the public Turnstile site key from `GET /api/config`.
+
+Manual redeploy: Actions → **Deploy** → **Run workflow**.
+
+```bash
+# Local deploy (same as CI)
+npm run deploy
+```
+
+### Legacy / dashboard notes
+
+1. Push to `thalerzgit/zenbuy` on GitHub (`main`)
+2. Confirm the **Deploy** workflow is green
+3. `zenbuy.info` / `www.zenbuy.info` are Worker custom domains
+4. Set Worker secrets in the CF dashboard or via Wrangler
 
 ## API
 

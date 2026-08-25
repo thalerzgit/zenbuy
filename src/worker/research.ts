@@ -105,7 +105,8 @@ export async function verifyTurnstile(
   token: string,
   ip: string
 ): Promise<boolean> {
-  if (!env.TURNSTILE_SECRET_KEY) return true;
+  // Match production: only enforce when both keys are configured.
+  if (!env.TURNSTILE_SECRET_KEY || !env.TURNSTILE_SITE_KEY) return true;
   if (!token) return false;
 
   const form = new FormData();
