@@ -2,6 +2,7 @@ import {
   initTurnstile,
   obtainTurnstileToken,
   resetTurnstile,
+  setTurnstileInteractiveHandler,
 } from "./turnstile";
 
 export interface SymbolPick {
@@ -221,6 +222,11 @@ export function mountApp(root: HTMLElement): void {
   });
 
   initTurnstile();
+
+  setTurnstileInteractiveHandler((interactive) => {
+    if (!state.loading) return;
+    submitBtn.textContent = interactive ? "Tap the check above" : "Verifying…";
+  });
 
   function resetReportUi(): void {
     titleWrap.innerHTML = "";
