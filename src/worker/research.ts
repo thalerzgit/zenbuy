@@ -45,6 +45,40 @@ function analysisErrorMessage(status: number): string {
   return `Analysis unavailable (${status}). Try again?`;
 }
 
+const FALLBACK_MODEL_KEY = "model:fallback";
+
+/**
+ * Model ids get retired, which otherwise takes every report down until
+ * someone edits a var. Resolve a live id once and remember it for a day.
+ */
+async function resolveLiveModel(env: Env, rejected: string): Promise<string | null> {
+  const cached = await env.CACHE.get(FALLBACK_MODEL_KEY);
+  if (cached && cached !== rejected) return cached;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models?limit=30", {
+      headers: {
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: Array<{ id?: string }> };
+    const ids = (body.data ?? []).map((m) => m.id).filter(Boolean) as string[];
+    const pick =
+      ids.find((id) => id.startsWith("claude-sonnet") && id !== rejected) ??
+      ids.find((id) => id !== rejected) ??
+      null;
+    if (pick) {
+      await env.CACHE.put(FALLBACK_MODEL_KEY, pick, { expirationTtl: 86_400 });
+    }
+    return pick;
+  } catch (e) {
+    console.error("model resolve failed", e);
+    return null;
+  }
+}
+
 export async function streamResearch(
   env: Env,
   mode: "separate" | "comparative",
@@ -52,7 +86,7 @@ export async function streamResearch(
   handlers: StreamHandlers
 ): Promise<void> {
   const body = {
-    model: env.ZENBUY_MODEL || "claude-sonnet-4-20250514",
+    model: env.ZENBUY_MODEL || "claude-sonnet-5",
     max_tokens: 16384,
     stream: true,
     system: getSystemPrompt(),
@@ -64,11 +98,24 @@ export async function streamResearch(
     ],
   };
 
-  const res = await fetch(anthropicUrl(env), {
-    method: "POST",
-    headers: anthropicHeaders(env),
-    body: JSON.stringify(body),
-  });
+  const post = (): Promise<Response> =>
+    fetch(anthropicUrl(env), {
+      method: "POST",
+      headers: anthropicHeaders(env),
+      body: JSON.stringify(body),
+    });
+
+  let res = await post();
+
+  if (res.status === 404) {
+    console.error("Anthropic model rejected", body.model, await res.text());
+    const live = await resolveLiveModel(env, body.model);
+    if (live) {
+      console.warn("retrying with model", live);
+      body.model = live;
+      res = await post();
+    }
+  }
 
   if (!res.ok) {
     const errText = await res.text();
