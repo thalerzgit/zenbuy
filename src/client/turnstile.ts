@@ -30,9 +30,13 @@ declare global {
 
 const VITE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 const CONTAINER = "#turnstile";
-const SOLVE_TIMEOUT_MS = 25_000;
+const SOLVE_TIMEOUT_MS = 30_000;
+/** A visible challenge waits on a human, so the silent budget doesn't apply. */
+const INTERACTIVE_TIMEOUT_MS = 120_000;
 const API_WAIT_MS = 15_000;
 const READY_EVENT = "zenbuy-turnstile-ready";
+
+export type InteractiveHandler = (interactive: boolean) => void;
 
 type Pending = {
   resolve: (token: string) => void;
@@ -46,9 +50,31 @@ let widgetId: string | undefined;
 let token = "";
 let pending: Pending | null = null;
 let mountAttempted = false;
+let onInteractive: InteractiveHandler | null = null;
+
+/** Lets the UI prompt for a tap when Turnstile shows a real challenge. */
+export function setTurnstileInteractiveHandler(
+  fn: InteractiveHandler | null
+): void {
+  onInteractive = fn;
+}
 
 function getApi(): TurnstileAPI | undefined {
   return window.turnstile;
+}
+
+function armPendingTimeout(ms: number, message: string): void {
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pending.timer = setTimeout(() => {
+    token = "";
+    try {
+      if (widgetId) getApi()?.reset(widgetId);
+    } catch {
+      /* ignore */
+    }
+    clearPending(new Error(message));
+  }, ms);
 }
 
 function clearPending(err?: Error): void {
@@ -56,8 +82,8 @@ function clearPending(err?: Error): void {
   clearTimeout(pending.timer);
   const p = pending;
   pending = null;
-  if (err) p.reject(err);
-  else p.reject(new Error("Verification cancelled."));
+  onInteractive?.(false);
+  p.reject(err ?? new Error("Verification cancelled."));
 }
 
 function settleSuccess(next: string): void {
@@ -66,6 +92,7 @@ function settleSuccess(next: string): void {
   clearTimeout(pending.timer);
   const p = pending;
   pending = null;
+  onInteractive?.(false);
   p.resolve(next);
 }
 
@@ -188,6 +215,33 @@ function mountWidget(): void {
     "expired-callback": () => {
       token = "";
     },
+    "before-interactive-callback": () => {
+      // Managed mode can escalate to a checkbox; make sure it's on screen
+      // and stop the silent timeout from firing while the user acts.
+      document
+        .querySelector(CONTAINER)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+      armPendingTimeout(
+        INTERACTIVE_TIMEOUT_MS,
+        "The human check is still waiting on a tap. Try once more?"
+      );
+      onInteractive?.(true);
+    },
+    "after-interactive-callback": () => {
+      armPendingTimeout(
+        SOLVE_TIMEOUT_MS,
+        "Verification is taking too long. Tap retry — Safari sometimes needs a second pass."
+      );
+      onInteractive?.(false);
+    },
+    "unsupported-callback": () => {
+      clearPending(
+        new Error(
+          "This browser can't complete the human check. Try again outside Private Browsing."
+        )
+      );
+      return true;
+    },
     "timeout-callback": () => {
       token = "";
       clearPending(
@@ -226,25 +280,11 @@ function beginSolve(ts: TurnstileAPI): Promise<string> {
   if (pending) clearPending();
 
   return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      token = "";
-      try {
-        ts.reset(widgetId);
-      } catch {
-        /* ignore */
-      }
-      if (!pending) return;
-      clearTimeout(pending.timer);
-      const p = pending;
-      pending = null;
-      p.reject(
-        new Error(
-          "Verification is taking too long. Tap retry — Safari sometimes needs a second pass."
-        )
-      );
-    }, SOLVE_TIMEOUT_MS);
-
-    pending = { resolve, reject, timer };
+    pending = { resolve, reject, timer: setTimeout(() => {}, 0) };
+    armPendingTimeout(
+      SOLVE_TIMEOUT_MS,
+      "Verification is taking too long. Tap retry — Safari sometimes needs a second pass."
+    );
 
     try {
       ts.reset(widgetId);
