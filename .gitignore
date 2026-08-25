@@ -9,3 +9,12 @@ worker-configuration.d.ts
 smoke-output.md
 *.log
 .DS_Store
+
+# Xcode / Swift (swift/)
+swift/**/DerivedData/
+swift/**/build/
+swift/**/*.xcuserstate
+swift/**/xcuserdata/
+swift/**/*.ipa
+swift/**/*.dSYM.zip
+swift/**/*.dSYM

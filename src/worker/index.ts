@@ -51,6 +51,11 @@ function clientIp(request: Request): string {
   );
 }
 
+/** Native iOS app — Turnstile is web-only; rate limits still apply. */
+function isNativeIOSClient(request: Request): boolean {
+  return request.headers.get("X-ZenBuy-Client")?.toLowerCase() === "ios";
+}
+
 function emitParsed(
   send: (event: string, data: unknown) => void,
   markdown: string
@@ -412,17 +417,19 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
     return json({ error: "Choose separate or comparative mode.", retry: true }, 400);
   }
 
-  const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
-  if (!turnstileOk) {
-    return json(
-      {
-        error:
-          "Human check didn't clear. Tap retry — on iPhone, wait for the check to finish first.",
-        retry: true,
-        code: "turnstile_failed",
-      },
-      403
-    );
+  if (!isNativeIOSClient(request)) {
+    const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
+    if (!turnstileOk) {
+      return json(
+        {
+          error:
+            "Human check didn't clear. Tap retry — on iPhone, wait for the check to finish first.",
+          retry: true,
+          code: "turnstile_failed",
+        },
+        403
+      );
+    }
   }
 
   const allowed = await checkRateLimit(env, ip);

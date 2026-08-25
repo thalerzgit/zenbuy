@@ -1,0 +1,7 @@
+#include "Shared.xcconfig"
+
+// Set your Apple Developer Team ID (10-character string from developer.apple.com).
+// DEVELOPMENT_TEAM = XXXXXXXXXX
+
+// Uncomment to point at a local Vite/Wrangler dev server during API work:
+// ZENBUY_API_BASE_URL = http:/$()/localhost:5173

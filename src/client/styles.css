@@ -1,13 +1,18 @@
 :root {
-  --sage: #6b8f71;
-  --sage-light: #e8f0e9;
-  --sage-dark: #4a6b50;
+  --green: #3d862d;
+  --green-dark: #336e25;
+  --green-light: #e8f4e5;
+  --green-positive: #008248;
+  --insight-gold: #c9a227;
+  --sage: var(--green);
+  --sage-light: var(--green-light);
+  --sage-dark: var(--green-dark);
   --ink: #1a1a1a;
   --muted: #5c5c5c;
-  --bg: #fafaf8;
+  --bg: #ffffff;
   --card: #ffffff;
-  --border: #e8e8e4;
-  --bull: #2d6a4f;
+  --border: #e0e0e0;
+  --bull: var(--green-positive);
   --bear: #9b2226;
   --neutral: #6c757d;
   --radius: 14px;
@@ -35,12 +40,63 @@ body {
 }
 
 .site-header {
-  padding: 1.5rem 1.25rem 0.5rem;
+  padding: 0;
   text-align: center;
+  background: var(--green-dark);
+  color: #fff;
 }
 
 .brand {
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 1.35rem 1.25rem 1.15rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-mark {
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.12));
+}
+
+.brand-lockup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 0.15rem;
+}
+
+.brand-name {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: #fff;
+}
+
+.brand-tld {
+  font-weight: 500;
+  color: var(--insight-gold);
+}
+
+.brand-oracle {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  font-style: italic;
+}
+
+.brand-tag {
+  margin: 0.15rem 0 0;
+  color: var(--insight-gold);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .tagline {

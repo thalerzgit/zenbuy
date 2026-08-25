@@ -90,7 +90,7 @@ npm run deploy
 | `/api/config` | GET | Public client config (Turnstile site key) |
 | `/api/health` | GET | Config summary; `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
 | `/api/prefetch?symbol=` | GET | Warms a symbol's fundamentals into KV so they're not on the critical path |
-| `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken }` |
+| `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken? }` — Turnstile required for web; native iOS sends `X-ZenBuy-Client: ios` and skips it |
 
 ## Rate limits and resilience
 

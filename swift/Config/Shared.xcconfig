@@ -1,0 +1,17 @@
+// ZenBuy iOS — shared build settings
+// Override DEVELOPMENT_TEAM in Debug.xcconfig / Release.xcconfig after joining the Apple Developer Program.
+
+PRODUCT_NAME = ZenBuy
+PRODUCT_BUNDLE_IDENTIFIER = info.zenbuy.app
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 1
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+
+SWIFT_VERSION = 5.0
+SWIFT_STRICT_CONCURRENCY = complete
+
+// Production API (override in Debug for local Worker if needed)
+ZENBUY_API_BASE_URL = https:/$()/zenbuy.info

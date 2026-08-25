@@ -40,10 +40,14 @@ export function mountApp(root: HTMLElement): void {
 
   const header = el("header", "site-header");
   header.innerHTML = `
-    <a class="brand" href="/">
-      <img src="/logo.svg" alt="ZenBuy.info" width="160" height="32" />
+    <a class="brand" href="/" aria-label="ZenBuy.info home">
+      <img class="brand-mark" src="/logo-mark.svg" alt="" width="44" height="44" />
+      <span class="brand-lockup">
+        <span class="brand-name">ZenBuy<span class="brand-tld">.info</span></span>
+        <span class="brand-oracle">The insight you wished you had—earlier.</span>
+        <span class="brand-tag">Know before you trade</span>
+      </span>
     </a>
-    <p class="tagline">Know before you trade</p>
   `;
 
   const main = el("main", "site-main");
