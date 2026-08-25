@@ -1,3 +1,4 @@
+import { fetchBackupQuote, type BackupQuote } from "./backup";
 import { resolvePeerSymbols } from "./peers";
 
 export interface SymbolResult {
@@ -34,6 +35,9 @@ export interface FundamentalsPayload {
   };
   peers: Array<{ symbol: string; pe: number | null; ps: number | null }>;
   nextCatalysts: { earningsDate: string | null };
+  /** "degraded" means the backup feed supplied price only. */
+  dataQuality: "full" | "degraded";
+  source: "finnhub" | "yahoo";
   news: Array<{ headline: string; date: string; source: string; url: string | null }>;
   analystTrend: {
     period: string | null;
@@ -166,6 +170,47 @@ export async function searchSymbols(
   return out;
 }
 
+/** Price-only shape for when the backup feed is all we have. */
+function degradedPayload(
+  sym: string,
+  backup: BackupQuote,
+  asOf: Date
+): FundamentalsPayload {
+  const empty = { pe: null, forwardPe: null, evEbitda: null, ps: null, pb: null };
+  return {
+    symbol: sym,
+    name: backup.name ?? sym,
+    exchange: backup.exchange,
+    industry: null,
+    asOf: asOf.toISOString(),
+    dataAgeHours: 0,
+    dataQuality: "degraded",
+    source: "yahoo",
+    quote: {
+      price: backup.price,
+      changePct: backup.changePct,
+      marketCap: null,
+    },
+    valuation: empty,
+    margins: { gross: null, operating: null, net: null },
+    growth: { revenueYoY: null, epsYoY: null },
+    cashFlow: { fcfPerShare: null, fcfMargin: null },
+    insiders: { ownershipPct: null, recentTrades: [] },
+    peers: [],
+    nextCatalysts: { earningsDate: null },
+    news: [],
+    analystTrend: {
+      period: null,
+      strongBuy: null,
+      buy: null,
+      hold: null,
+      sell: null,
+      strongSell: null,
+    },
+    _citation: `Fact · Yahoo Finance · ${asOf.toISOString().slice(0, 10)}`,
+  };
+}
+
 export async function fetchFundamentals(
   apiKey: string,
   symbol: string
@@ -177,8 +222,10 @@ export async function fetchFundamentals(
 
   const [profile, quote, metricsRaw, insiderRaw, peersRaw, earningsRaw, newsRaw, recRaw] =
     await Promise.all([
-      finnhub<Record<string, unknown>>(apiKey, `/stock/profile2?symbol=${sym}`),
-      finnhub<Record<string, number>>(apiKey, `/quote?symbol=${sym}`),
+      // Optional so a throttled feed falls through to the backup instead of
+      // throwing; a missing identity is caught below.
+      finnhub<Record<string, unknown>>(apiKey, `/stock/profile2?symbol=${sym}`, true),
+      finnhub<Record<string, number>>(apiKey, `/quote?symbol=${sym}`, true),
       // Metrics enrich the report but must not sink it when the tier throttles.
       finnhub<{ metric?: Record<string, number> }>(
         apiKey,
@@ -215,7 +262,9 @@ export async function fetchFundamentals(
   const hasProfile = Boolean(profile?.name || profile?.ticker);
   const hasQuote = num(quote?.c) != null;
   if (!hasProfile && !hasQuote) {
-    throw new Error(`Unknown symbol: ${sym}`);
+    const backup = await fetchBackupQuote(sym);
+    if (!backup) throw new Error(`Unknown symbol: ${sym}`);
+    return degradedPayload(sym, backup, asOf);
   }
 
   const m = metricsRaw?.metric ?? {};
@@ -271,6 +320,8 @@ export async function fetchFundamentals(
     industry: (profile.finnhubIndustry as string) ?? null,
     asOf: asOf.toISOString(),
     dataAgeHours: 0,
+    dataQuality: "full",
+    source: "finnhub",
     quote: {
       price: num(quote?.c),
       changePct: num(quote?.dp),

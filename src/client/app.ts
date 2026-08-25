@@ -352,6 +352,10 @@ export function mountApp(root: HTMLElement): void {
             if (skipped.length) {
               notes.push(`No data for ${skipped.join(", ")} — left out of this report.`);
             }
+            const degraded = (payload.degraded as string[] | undefined) ?? [];
+            if (degraded.length) {
+              notes.push(`Limited data for ${degraded.join(", ")} — price only.`);
+            }
             if (notes.length) {
               asOfEl.textContent = notes.join(" · ");
               asOfEl.classList.remove("hidden");
