@@ -17,7 +17,7 @@
     }
   ],
   "vars": {
-    "ZENBUY_MODEL": "claude-sonnet-4-20250514",
+    "ZENBUY_MODEL": "claude-sonnet-5",
     "RATE_LIMIT_DAILY": "5",
     "CACHE_TTL_SECONDS": "86400"
   },
