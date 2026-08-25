@@ -316,8 +316,15 @@ export function mountApp(root: HTMLElement): void {
               ? symbols.map((s) => s.symbol).join(" · ")
               : state.picks.map((p) => p.symbol).join(" · ");
             titleWrap.append(title);
-            if (payload.showAsOf) {
-              asOfEl.textContent = `Data as of ${payload.asOf}`;
+
+            const skipped = (payload.skipped as string[] | undefined) ?? [];
+            const notes: string[] = [];
+            if (payload.showAsOf) notes.push(`Data as of ${payload.asOf}`);
+            if (skipped.length) {
+              notes.push(`No data for ${skipped.join(", ")} — left out of this report.`);
+            }
+            if (notes.length) {
+              asOfEl.textContent = notes.join(" · ");
               asOfEl.classList.remove("hidden");
             }
           }

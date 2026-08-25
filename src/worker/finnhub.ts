@@ -60,18 +60,51 @@ function fmtCap(n: number | null): string | null {
   return `$${n.toFixed(0)}`;
 }
 
+/** Finnhub free tier allows ~60 req/min; a multi-ticker report bursts well past that. */
+const MAX_ATTEMPTS = 4;
+const RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function backoffMs(attempt: number, retryAfter: string | null): number {
+  const header = Number(retryAfter);
+  if (Number.isFinite(header) && header > 0) return Math.min(header * 1000, 6_000);
+  const base = 350 * 2 ** (attempt - 1);
+  return Math.min(base, 4_000) + Math.floor(Math.random() * 250);
+}
+
 async function finnhub<T>(
   apiKey: string,
   path: string,
   optional = false
 ): Promise<T | null> {
   const url = `https://finnhub.io/api/v1${path}${path.includes("?") ? "&" : "?"}token=${apiKey}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    if (optional) return null;
-    throw new Error(`Finnhub ${res.status} on ${path.split("?")[0]}`);
+  let lastStatus = 0;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (e) {
+      if (attempt === MAX_ATTEMPTS) {
+        if (optional) return null;
+        throw new Error(`Finnhub unreachable on ${path.split("?")[0]}`);
+      }
+      await sleep(backoffMs(attempt, null));
+      continue;
+    }
+
+    if (res.ok) return (await res.json()) as T;
+
+    lastStatus = res.status;
+    if (!RETRY_STATUSES.has(res.status) || attempt === MAX_ATTEMPTS) break;
+    await sleep(backoffMs(attempt, res.headers.get("Retry-After")));
   }
-  return res.json() as Promise<T>;
+
+  if (optional) return null;
+  throw new Error(`Finnhub ${lastStatus} on ${path.split("?")[0]}`);
 }
 
 export async function searchSymbols(
@@ -115,9 +148,11 @@ export async function fetchFundamentals(
     await Promise.all([
       finnhub<Record<string, unknown>>(apiKey, `/stock/profile2?symbol=${sym}`),
       finnhub<Record<string, number>>(apiKey, `/quote?symbol=${sym}`),
+      // Metrics enrich the report but must not sink it when the tier throttles.
       finnhub<{ metric?: Record<string, number> }>(
         apiKey,
-        `/stock/metric?symbol=${sym}&metric=all`
+        `/stock/metric?symbol=${sym}&metric=all`,
+        true
       ),
       finnhub<{ data?: Array<Record<string, unknown>> }>(
         apiKey,
@@ -146,7 +181,9 @@ export async function fetchFundamentals(
       ),
     ]);
 
-  if (!profile?.name && !profile?.ticker) {
+  const hasProfile = Boolean(profile?.name || profile?.ticker);
+  const hasQuote = num(quote?.c) != null;
+  if (!hasProfile && !hasQuote) {
     throw new Error(`Unknown symbol: ${sym}`);
   }
 
@@ -154,21 +191,23 @@ export async function fetchFundamentals(
   const autoPeerSymbols = Array.isArray(peersRaw)
     ? peersRaw.map((p) => p.symbol).filter(Boolean) as string[]
     : [];
-  const peerSymbols = resolvePeerSymbols(sym, autoPeerSymbols);
+  // Each peer costs another metric call; keep the burst small to avoid throttling.
+  const peerSymbols = resolvePeerSymbols(sym, autoPeerSymbols).slice(0, 3);
 
-  const peers: FundamentalsPayload["peers"] = [];
-  for (const ps of peerSymbols) {
-    const pm = await finnhub<{ metric?: Record<string, number> }>(
-      apiKey,
-      `/stock/metric?symbol=${ps}&metric=all`,
-      true
-    );
-    peers.push({
-      symbol: ps,
-      pe: num(pm?.metric?.peBasicExclExtraTTM ?? pm?.metric?.peTTM),
-      ps: num(pm?.metric?.psTTM),
-    });
-  }
+  const peerMetrics = await Promise.all(
+    peerSymbols.map((ps) =>
+      finnhub<{ metric?: Record<string, number> }>(
+        apiKey,
+        `/stock/metric?symbol=${ps}&metric=all`,
+        true
+      )
+    )
+  );
+  const peers: FundamentalsPayload["peers"] = peerSymbols.map((ps, i) => ({
+    symbol: ps,
+    pe: num(peerMetrics[i]?.metric?.peBasicExclExtraTTM ?? peerMetrics[i]?.metric?.peTTM),
+    ps: num(peerMetrics[i]?.metric?.psTTM),
+  }));
 
   const insiderRows = (insiderRaw?.data ?? []).slice(0, 10).map((row) => ({
     name: String(row.name ?? "Unknown"),

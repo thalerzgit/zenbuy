@@ -29,6 +29,22 @@ function anthropicHeaders(env: Env): Record<string, string> {
   return headers;
 }
 
+function analysisErrorMessage(status: number): string {
+  if (status === 401 || status === 403) {
+    return "Analysis service rejected our credentials. This needs a config fix.";
+  }
+  if (status === 404) {
+    return "The analysis model is unavailable. This needs a config fix.";
+  }
+  if (status === 429) {
+    return "Analysis service is rate limited right now. Give it a moment and retry?";
+  }
+  if (status === 529 || status >= 500) {
+    return "Analysis service is overloaded. Try again in a moment?";
+  }
+  return `Analysis unavailable (${status}). Try again?`;
+}
+
 export async function streamResearch(
   env: Env,
   mode: "separate" | "comparative",
@@ -56,8 +72,8 @@ export async function streamResearch(
 
   if (!res.ok) {
     const errText = await res.text();
-    handlers.onError(`Analysis unavailable (${res.status})`);
     console.error("Anthropic error", res.status, errText);
+    handlers.onError(analysisErrorMessage(res.status));
     return;
   }
 
