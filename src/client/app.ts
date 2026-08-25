@@ -57,7 +57,9 @@ export function mountApp(root: HTMLElement): void {
     <div id="chips" class="chips"></div>
     <div class="actions">
       <button id="submit-btn" type="button" class="btn primary" disabled>Generate report</button>
+      <button id="simplify-btn" type="button" class="btn ghost hidden">Explain in Lay Terms</button>
       <button id="print-btn" type="button" class="btn ghost hidden">Export PDF</button>
+      <button id="reset-btn" type="button" class="btn ghost hidden">Start New Report</button>
     </div>
     <div id="turnstile" class="turnstile"></div>
     <p id="form-error" class="form-error hidden"></p>
@@ -117,6 +119,10 @@ export function mountApp(root: HTMLElement): void {
   const chips = searchWrap.querySelector("#chips") as HTMLDivElement;
   const submitBtn = searchWrap.querySelector("#submit-btn") as HTMLButtonElement;
   const printBtn = searchWrap.querySelector("#print-btn") as HTMLButtonElement;
+  const simplifyBtn = searchWrap.querySelector(
+    "#simplify-btn"
+  ) as HTMLButtonElement;
+  const resetBtn = searchWrap.querySelector("#reset-btn") as HTMLButtonElement;
   const formError = searchWrap.querySelector("#form-error") as HTMLParagraphElement;
   const reportPanel = report;
   const titleWrap = report.querySelector("#report-title-wrap") as HTMLDivElement;
@@ -128,6 +134,10 @@ export function mountApp(root: HTMLElement): void {
 
   let debounce: ReturnType<typeof setTimeout>;
   let searchAbort: AbortController | null = null;
+  let reportId = "";
+  /** Snapshot of the analyst report so the lay rewrite can be toggled off. */
+  let fullView: { bodyHtml: string; bottomLineHtml: string } | null = null;
+  let showingLayman = false;
   const searchCache = new Map<string, Array<{ symbol: string; name: string }>>();
 
   function renderChips(): void {
@@ -284,6 +294,35 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
+  async function consumeStream(
+    res: Response,
+    onEvent: (event: string, payload: Record<string, unknown>) => void
+  ): Promise<void> {
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+
+      for (const chunk of chunks) {
+        const lines = chunk.split("\n");
+        let event = "message";
+        let data = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) event = line.slice(7);
+          if (line.startsWith("data: ")) data = line.slice(6);
+        }
+        if (!data) continue;
+        onEvent(event, JSON.parse(data) as Record<string, unknown>);
+      }
+    }
+  }
+
   async function runResearch(): Promise<void> {
     hideError();
     state.loading = true;
@@ -291,6 +330,13 @@ export function mountApp(root: HTMLElement): void {
     submitBtn.textContent = "Verifying…";
     reportPanel.classList.remove("hidden");
     printBtn.classList.add("hidden");
+    simplifyBtn.classList.add("hidden");
+    resetBtn.classList.add("hidden");
+    badgeStrip.classList.remove("hidden");
+    scorecardWrap.classList.remove("hidden");
+    showingLayman = false;
+    fullView = null;
+    reportId = "";
     resetReportUi();
 
     const mode =
@@ -321,28 +367,8 @@ export function mountApp(root: HTMLElement): void {
         return;
       }
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop() ?? "";
-
-        for (const chunk of chunks) {
-          const lines = chunk.split("\n");
-          let event = "message";
-          let data = "";
-          for (const line of lines) {
-            if (line.startsWith("event: ")) event = line.slice(7);
-            if (line.startsWith("data: ")) data = line.slice(6);
-          }
-          if (!data) continue;
-          const payload = JSON.parse(data) as Record<string, unknown>;
-
+      await consumeStream(res, (event, payload) => {
+        {
           if (event === "meta") {
             const symbols = payload.symbols as
               | Array<{ symbol: string; name: string }>
@@ -383,14 +409,24 @@ export function mountApp(root: HTMLElement): void {
           }
 
           if (event === "done") {
+            reportId = String(payload.reportId ?? "");
+            fullView = {
+              bodyHtml: scrollBody.innerHTML,
+              bottomLineHtml: bottomLine.innerHTML,
+            };
+            showingLayman = false;
+            simplifyBtn.textContent = "Explain in Lay Terms";
             printBtn.classList.remove("hidden");
+            resetBtn.classList.remove("hidden");
+            // Needs the cached report on the server to rewrite from.
+            if (reportId) simplifyBtn.classList.remove("hidden");
           }
 
           if (event === "error") {
             showError(String(payload.error), payload.retry !== false);
           }
         }
-      }
+      });
     } catch (e) {
       resetTurnstile();
       const msg =
@@ -430,6 +466,99 @@ export function mountApp(root: HTMLElement): void {
   printBtn.onclick = () => {
     reportPanel.dataset.printDate = new Date().toLocaleString();
     window.print();
+  };
+
+  async function runSimplify(): Promise<void> {
+    // Second press returns to the analyst report — no need to refetch.
+    if (showingLayman && fullView) {
+      scrollBody.innerHTML = fullView.bodyHtml;
+      bottomLine.innerHTML = fullView.bottomLineHtml;
+      badgeStrip.classList.remove("hidden");
+      scorecardWrap.classList.remove("hidden");
+      showingLayman = false;
+      simplifyBtn.textContent = "Explain in Lay Terms";
+      return;
+    }
+
+    hideError();
+    simplifyBtn.disabled = true;
+    simplifyBtn.textContent = "Verifying…";
+
+    try {
+      const turnstileToken = await obtainTurnstileToken();
+      simplifyBtn.textContent = "Rewriting…";
+
+      const res = await fetch("/api/simplify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId, turnstileToken }),
+      });
+
+      resetTurnstile();
+
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string; retry?: boolean };
+        showError(err.error || "Couldn't simplify that report.", err.retry !== false);
+        return;
+      }
+
+      // A plain-English rewrite has no scorecard or verdict badges.
+      badgeStrip.classList.add("hidden");
+      scorecardWrap.classList.add("hidden");
+
+      await consumeStream(res, (event, payload) => {
+        if (event === "sticky") {
+          applySticky(payload as Parameters<typeof applySticky>[0]);
+        }
+        if (event === "body") {
+          scrollBody.className = "scroll-body revealed";
+          scrollBody.innerHTML = String(payload.html ?? "");
+        }
+        if (event === "done") {
+          showingLayman = true;
+          simplifyBtn.textContent = "Show full report";
+        }
+        if (event === "error") {
+          showError(String(payload.error), payload.retry !== false);
+        }
+      });
+    } catch (e) {
+      resetTurnstile();
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : "The rewrite wandered off. Try again?";
+      showError(msg, true);
+    } finally {
+      simplifyBtn.disabled = false;
+      if (!showingLayman) simplifyBtn.textContent = "Explain in Lay Terms";
+    }
+  }
+
+  simplifyBtn.onclick = () => void runSimplify();
+
+  resetBtn.onclick = () => {
+    state.picks = [];
+    state.mode = "separate";
+    reportId = "";
+    fullView = null;
+    showingLayman = false;
+    renderChips();
+    hideError();
+    reportPanel.classList.add("hidden");
+    resetReportUi();
+    badgeStrip.classList.remove("hidden");
+    scorecardWrap.classList.remove("hidden");
+    printBtn.classList.add("hidden");
+    resetBtn.classList.add("hidden");
+    simplifyBtn.classList.add("hidden");
+    simplifyBtn.textContent = "Explain in Lay Terms";
+    input.value = "";
+    dropdown.classList.add("hidden");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Generate report";
+    input.focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   renderChips();

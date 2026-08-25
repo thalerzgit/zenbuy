@@ -1,4 +1,9 @@
-import { buildUserPrompt, getSystemPrompt } from "./prompt";
+import {
+  buildLaymanPrompt,
+  buildUserPrompt,
+  getLaymanSystemPrompt,
+  getSystemPrompt,
+} from "./prompt";
 import type { FundamentalsPayload } from "./finnhub";
 
 export interface StreamHandlers {
@@ -82,6 +87,7 @@ async function resolveLiveModel(env: Env, rejected: string): Promise<string | nu
 /** One analysis request, with a single self-healing retry on a dead model id. */
 async function requestAnalysis(
   env: Env,
+  system: string,
   user: string,
   maxTokens: number
 ): Promise<Response> {
@@ -89,7 +95,7 @@ async function requestAnalysis(
     model: env.ZENBUY_MODEL || "claude-sonnet-5",
     max_tokens: maxTokens,
     stream: true,
-    system: getSystemPrompt(),
+    system,
     messages: [{ role: "user", content: user }],
   };
 
@@ -163,6 +169,7 @@ export async function streamResearch(
 ): Promise<void> {
   const res = await requestAnalysis(
     env,
+    getSystemPrompt(),
     buildUserPrompt(mode, payloads),
     mode === "comparative" ? 12_000 : 8_000
   );
@@ -198,6 +205,35 @@ function labelHeaders(markdown: string, symbol: string): string {
     /^##[ \t]+(.+)$/gm,
     (_m, heading: string) => `## ${heading.trim()} — ${symbol}`
   );
+}
+
+/** Rewrite a finished report in plain English, same verdict and risk level. */
+export async function streamLayman(
+  env: Env,
+  markdown: string,
+  handlers: StreamHandlers
+): Promise<void> {
+  const res = await requestAnalysis(
+    env,
+    getLaymanSystemPrompt(),
+    buildLaymanPrompt(markdown),
+    4_096
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Anthropic error (layman)", res.status, errText);
+    handlers.onError(analysisErrorMessage(res.status));
+    return;
+  }
+
+  try {
+    const full = await readAnalysisStream(res, handlers.onDelta);
+    handlers.onDone(full);
+  } catch (e) {
+    console.error("layman stream read failed", e);
+    handlers.onError("The rewrite stream dropped. Try again?");
+  }
 }
 
 export interface ParallelHandlers {
@@ -240,6 +276,7 @@ export async function streamResearchParallel(
       try {
         const res = await requestAnalysis(
           env,
+          getSystemPrompt(),
           buildUserPrompt("separate", [payload]),
           8_000
         );

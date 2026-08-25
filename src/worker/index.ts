@@ -23,6 +23,7 @@ import {
 import {
   checkRateLimit,
   incrementRateLimit,
+  streamLayman,
   streamResearch,
   streamResearchParallel,
   verifyTurnstile,
@@ -245,6 +246,142 @@ async function handleConfig(env: Env): Promise<Response> {
   });
 }
 
+const SSE_HEADERS = {
+  ...CORS,
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
+};
+
+/**
+ * Rewrite a finished report in plain English.
+ *
+ * Takes the report's cache id rather than its markdown so a ~30KB document
+ * doesn't round-trip through the browser.
+ */
+async function handleSimplify(request: Request, env: Env): Promise<Response> {
+  if (!env.ANTHROPIC_API_KEY) {
+    return json({ error: "Research service not configured" }, 503);
+  }
+
+  const ip = clientIp(request);
+  let body: { reportId?: string; turnstileToken?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: randomError(), retry: true }, 400);
+  }
+
+  const reportId = (body.reportId ?? "").trim();
+  if (!reportId.startsWith("report:") || reportId.length > 200) {
+    return json(
+      { error: "Generate a report first, then try again.", retry: true },
+      400
+    );
+  }
+
+  const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
+  if (!turnstileOk) {
+    return json(
+      {
+        error:
+          "Human check didn't clear. Tap retry — on iPhone, wait for the check to finish first.",
+        retry: true,
+        code: "turnstile_failed",
+      },
+      403
+    );
+  }
+
+  const report = await cacheGet<CachedReport>(env.CACHE, reportId);
+  if (!report?.markdown || report.markdown.length < 80) {
+    return json(
+      {
+        error: "That report has expired. Generate it again to simplify it.",
+        retry: true,
+        code: "report_expired",
+      },
+      404
+    );
+  }
+
+  const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
+  const laymanKey = `layman:${reportId}`;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enc = new TextEncoder();
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(enc.encode(sseLine(event, data)));
+      };
+
+      try {
+        const cached = await cacheGet<{
+          bottomLineHtml: string;
+          bodyHtml: string;
+        }>(env.CACHE, laymanKey);
+
+        if (cached) {
+          send("sticky", {
+            bottomLineHtml: cached.bottomLineHtml,
+            badges: {},
+            scorecardHtml: "",
+          });
+          send("body", { html: cached.bodyHtml });
+          send("done", { layman: true, cached: true });
+          controller.close();
+          return;
+        }
+
+        let full = "";
+        let lastAt = 0;
+        await streamLayman(env, report.markdown, {
+          onDelta(text) {
+            full += text;
+            const now = Date.now();
+            if (full.length > 40 && now - lastAt >= 250) {
+              lastAt = now;
+              send("body", { html: renderMarkdown(full), streaming: true });
+            }
+          },
+          onDone(text) {
+            const bottomMatch = text.match(
+              /^##\s*Bottom line\b[^\n]*\n([\s\S]*?)(?=\n##\s+|$)/i
+            );
+            const bottomMd = (bottomMatch?.[1] ?? text.slice(0, 900)).trim();
+            const bottomLineHtml = renderMarkdown(
+              `## Bottom line\n\n${bottomMd}`
+            );
+            const bodyHtml = renderMarkdown(text);
+
+            send("sticky", { bottomLineHtml, badges: {}, scorecardHtml: "" });
+            send("body", { html: bodyHtml });
+            send("done", { layman: true });
+
+            cacheSet(env.CACHE, laymanKey, { bottomLineHtml, bodyHtml }, ttl).catch(
+              console.error
+            );
+          },
+          onError(message) {
+            send("error", { error: message || randomError(), retry: true });
+          },
+        });
+      } catch (e) {
+        console.error("simplify failed", e);
+        send("error", {
+          error: "We couldn't rewrite that report. Try again?",
+          retry: true,
+          code: "simplify_failed",
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, { headers: SSE_HEADERS });
+}
+
 async function handleResearch(request: Request, env: Env): Promise<Response> {
   if (!env.FINNHUB_API_KEY || !env.ANTHROPIC_API_KEY) {
     return json({ error: "Research service not configured" }, 503);
@@ -324,7 +461,7 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
             scorecardHtml: cached.scorecardHtml,
           });
           send("body", { html: cached.bodyHtml });
-          send("done", { badges: cached.badges });
+          send("done", { badges: cached.badges, reportId: cacheKey });
           controller.close();
           return;
         }
@@ -424,7 +561,7 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
           );
           cacheSet(env.CACHE, doneKey, report, ttl).catch(console.error);
           incrementRateLimit(env, ip).catch(console.error);
-          send("done", { badges: report.badges });
+          send("done", { badges: report.badges, reportId: doneKey });
         };
 
         const fail = (message: string): void => {
@@ -463,14 +600,7 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      ...CORS,
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }
 
 export default {
@@ -496,6 +626,9 @@ export default {
     }
     if (url.pathname === "/api/prefetch") {
       return handlePrefetch(request, env, ctx);
+    }
+    if (url.pathname === "/api/simplify" && request.method === "POST") {
+      return handleSimplify(request, env);
     }
 
     if (url.pathname === "/api/search") {
