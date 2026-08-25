@@ -15,7 +15,7 @@ npm run dev                 # http://localhost:5173
 ## Secrets (Wrangler)
 
 ```bash
-wrangler secret put FINNHUB_API_KEY
+wrangler secret put FINNHUB_API_KEY   # one key, or "key1,key2" to pool budgets
 wrangler secret put ANTHROPIC_API_KEY
 wrangler secret put AI_GATEWAY_ACCOUNT_ID   # optional
 wrangler secret put AI_GATEWAY_ID           # optional
@@ -86,8 +86,60 @@ npm run deploy
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/search?q=` | GET | Symbol autocomplete (Finnhub) |
+| `/api/search?q=` | GET | Symbol autocomplete (Finnhub), KV-cached per query |
+| `/api/config` | GET | Public client config (Turnstile site key) |
+| `/api/health` | GET | Upstream reachability and configured model — statuses only, never key material |
+| `/api/prefetch?symbol=` | GET | Warms a symbol's fundamentals into KV so they're not on the critical path |
 | `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken }` |
+
+## Rate limits and resilience
+
+The Finnhub free tier allows roughly 60 requests/minute, and a single
+multi-ticker report costs ~11 calls per symbol. Several things keep that
+within budget:
+
+- **Search results are KV-cached** (24h for hits, 1h for misses) and the
+  client debounces, memoizes, and aborts superseded lookups. Typeahead used
+  to spend one call per keystroke, which alone could exhaust the quota.
+- **`FINNHUB_API_KEY` accepts a comma-separated pool.** Each key carries its
+  own budget, so a `429` fails over to the next key immediately instead of
+  sleeping through a backoff.
+- **Throttled calls retry** with backoff honouring `Retry-After`, and
+  non-essential calls degrade to `null` rather than failing the report.
+- **Per-symbol isolation:** one unavailable ticker is reported as skipped and
+  the remaining tickers still produce a report.
+- **Keyless backup feed:** if Finnhub has no profile or quote for a symbol,
+  identity and price come from Yahoo's chart endpoint. The payload is marked
+  `dataQuality: "degraded"` and the report says which figures are
+  unavailable rather than estimating them. Price only — it is a last resort,
+  not a substitute.
+- **Model retirement self-heals:** a `404` on `ZENBUY_MODEL` resolves a live
+  model id from `/v1/models`, retries once, and caches the result for a day.
+
+## Latency
+
+Wall time is dominated by output tokens, so:
+
+- Separate reports for N tickers run as N concurrent requests, making wall
+  time track the slowest report rather than the sum.
+- Word caps are hard limits (1500/company, 2200 comparative) with
+  `max_tokens` sized to match.
+- `/api/prefetch` and a background Turnstile pre-solve fire when a ticker is
+  picked, keeping data fetching and verification off the critical path.
+- Body repaints are throttled rather than re-rendering markdown per token.
+
+## Typecheck
+
+`vite build` uses esbuild and does **not** typecheck, so run:
+
+```bash
+npm run typecheck
+```
+
+This generates `worker-configuration.d.ts` via `wrangler types`, then checks
+the client (`tsconfig.json`, DOM libs) and the worker
+(`tsconfig.worker.json`, Workers globals) separately — one shared config
+makes the two sets of globals collide. CI runs this before deploying.
 
 ## Smoke test
 
