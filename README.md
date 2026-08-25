@@ -32,9 +32,15 @@ wrangler kv namespace create CACHE
 Client Turnstile site key (build-time):
 
 ```bash
-# .env
+# .env / Cloudflare Pages env var
 VITE_TURNSTILE_SITE_KEY=your_site_key
 ```
+
+Turnstile tips (esp. mobile Safari):
+
+- Prefer a **Managed** widget in the Cloudflare dashboard (not Invisible-only).
+- The client runs the challenge on Generate (`execution: execute`) so iOS gets a user gesture.
+- Hostnames on the sitekey must include `zenbuy.info` (and `www` if used).
 
 ## Deploy
 

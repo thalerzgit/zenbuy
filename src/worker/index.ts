@@ -123,7 +123,15 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
 
   const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
   if (!turnstileOk) {
-    return json({ error: randomError(), retry: true }, 403);
+    return json(
+      {
+        error:
+          "Human check didn't clear. Tap retry — on iPhone, wait for the check to finish first.",
+        retry: true,
+        code: "turnstile_failed",
+      },
+      403
+    );
   }
 
   const allowed = await checkRateLimit(env, ip);
