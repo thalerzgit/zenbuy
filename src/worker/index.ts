@@ -151,10 +151,7 @@ async function handlePrefetch(
  * Upstream reachability, so a failing report can be diagnosed without
  * solving a Turnstile challenge. Reports statuses only — never key material.
  */
-async function handleHealth(env: Env): Promise<Response> {
-  const cached = await cacheGet<Record<string, unknown>>(env.CACHE, "health");
-  if (cached) return json({ ...cached, cached: true });
-
+async function handleHealth(request: Request, env: Env): Promise<Response> {
   const model = env.ZENBUY_MODEL || "claude-sonnet-5";
   const out: Record<string, unknown> = {
     model,
@@ -164,6 +161,14 @@ async function handleHealth(env: Env): Promise<Response> {
       turnstile: Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY),
     },
   };
+
+  // Probing costs real upstream quota, so keep it opt-in.
+  if (!new URL(request.url).searchParams.has("deep")) {
+    return json({ ...out, hint: "add ?deep=1 to probe upstreams" });
+  }
+
+  const cached = await cacheGet<Record<string, unknown>>(env.CACHE, "health");
+  if (cached) return json({ ...cached, cached: true });
 
   // Are keyless quote sources usable from Cloudflare's egress? Both refuse
   // most datacenter IPs, so probe before relying on either as a fallback.
@@ -487,7 +492,7 @@ export default {
       return handleConfig(env);
     }
     if (url.pathname === "/api/health") {
-      return handleHealth(env);
+      return handleHealth(request, env);
     }
     if (url.pathname === "/api/prefetch") {
       return handlePrefetch(request, env, ctx);
