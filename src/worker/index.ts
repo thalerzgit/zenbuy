@@ -110,7 +110,7 @@ async function handleHealth(env: Env): Promise<Response> {
   const cached = await cacheGet<Record<string, unknown>>(env.CACHE, "health");
   if (cached) return json({ ...cached, cached: true });
 
-  const model = env.ZENBUY_MODEL || "claude-sonnet-4-20250514";
+  const model = env.ZENBUY_MODEL || "claude-sonnet-5";
   const out: Record<string, unknown> = {
     model,
     keys: {

@@ -112,7 +112,7 @@ async function callAnthropic(system, user) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY not set");
 
-  const model = process.env.ZENBUY_MODEL || "claude-sonnet-4-20250514";
+  const model = process.env.ZENBUY_MODEL || "claude-sonnet-5";
   const t0 = Date.now();
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
