@@ -39,7 +39,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Vite plugin emits Worker bundle + wrangler config here
+          # Public account id (also in wrangler.jsonc)
+          accountId: "7841b36fdc9d3c3ae48bd119503d3df5"
           command: deploy --config dist/zenbuy/wrangler.json
           packageManager: npm

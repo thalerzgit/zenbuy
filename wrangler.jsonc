@@ -2,6 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "zenbuy",
   "main": "src/worker/index.ts",
+  "account_id": "7841b36fdc9d3c3ae48bd119503d3df5",
   "compatibility_date": "2025-08-24",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
