@@ -75,23 +75,43 @@ function backoffMs(attempt: number, retryAfter: string | null): number {
   return Math.min(base, 4_000) + Math.floor(Math.random() * 250);
 }
 
+/**
+ * FINNHUB_API_KEY accepts a comma-separated pool. Each key carries its own
+ * rate-limit budget, so a 429 can fail over instantly instead of sleeping.
+ */
+export function parseKeyPool(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+let keyCursor = 0;
+
 async function finnhub<T>(
   apiKey: string,
   path: string,
   optional = false
 ): Promise<T | null> {
-  const url = `https://finnhub.io/api/v1${path}${path.includes("?") ? "&" : "?"}token=${apiKey}`;
-  let lastStatus = 0;
+  const keys = parseKeyPool(apiKey);
+  if (!keys.length) {
+    if (optional) return null;
+    throw new Error("Finnhub key not configured");
+  }
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const budget = MAX_ATTEMPTS + keys.length - 1;
+  let lastStatus = 0;
+  let keysBurned = 0;
+
+  for (let attempt = 1; attempt <= budget; attempt++) {
+    const key = keys[keyCursor % keys.length];
+    const url = `https://finnhub.io/api/v1${path}${path.includes("?") ? "&" : "?"}token=${key}`;
+
     let res: Response;
     try {
       res = await fetch(url);
-    } catch (e) {
-      if (attempt === MAX_ATTEMPTS) {
-        if (optional) return null;
-        throw new Error(`Finnhub unreachable on ${path.split("?")[0]}`);
-      }
+    } catch {
+      if (attempt === budget) break;
       await sleep(backoffMs(attempt, null));
       continue;
     }
@@ -99,12 +119,23 @@ async function finnhub<T>(
     if (res.ok) return (await res.json()) as T;
 
     lastStatus = res.status;
-    if (!RETRY_STATUSES.has(res.status) || attempt === MAX_ATTEMPTS) break;
+    if (!RETRY_STATUSES.has(res.status) || attempt === budget) break;
+
+    // A fresh key has its own budget, so swapping beats waiting.
+    if ((res.status === 429 || res.status === 403) && keysBurned + 1 < keys.length) {
+      keyCursor++;
+      keysBurned++;
+      continue;
+    }
     await sleep(backoffMs(attempt, res.headers.get("Retry-After")));
   }
 
   if (optional) return null;
-  throw new Error(`Finnhub ${lastStatus} on ${path.split("?")[0]}`);
+  throw new Error(
+    lastStatus
+      ? `Finnhub ${lastStatus} on ${path.split("?")[0]}`
+      : `Finnhub unreachable on ${path.split("?")[0]}`
+  );
 }
 
 export async function searchSymbols(
