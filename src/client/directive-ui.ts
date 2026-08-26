@@ -38,7 +38,7 @@ export function loadStoredProfitHorizon(
     const raw = localStorage.getItem(HORIZON_STORAGE_KEY);
     if (raw) {
       const n = Number(raw);
-      if (Number.isFinite(n) && n >= 3 && n <= 25) return n;
+      if (Number.isFinite(n) && n >= 2 && n <= 25) return n;
     }
   } catch {
     /* ignore */

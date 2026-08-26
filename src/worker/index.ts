@@ -288,7 +288,7 @@ async function handleDiscover(request: Request, env: Env): Promise<Response> {
   const profitHorizonYears = Math.min(
     25,
     Math.max(
-      3,
+      2,
       Number(url.searchParams.get("horizon") ?? "") ||
         getInvestmentDirective(directive).promptHorizonYears
     )
@@ -714,7 +714,7 @@ async function handleResearch(
   const profitHorizonYears = Math.min(
     25,
     Math.max(
-      3,
+      2,
       Number(body.profitHorizonYears) ||
         getInvestmentDirective(directive).promptHorizonYears
     )

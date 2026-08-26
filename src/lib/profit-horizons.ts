@@ -9,6 +9,7 @@ export interface ProfitHorizonOption {
 
 /** Selectable profit windows — overlay on the investment goal. */
 export const PROFIT_HORIZON_OPTIONS: ProfitHorizonOption[] = [
+  { id: "2", years: 2, label: "0–3 yrs" },
   { id: "3", years: 3, label: "3–5 yrs" },
   { id: "7", years: 7, label: "5–10 yrs" },
   { id: "12", years: 12, label: "10–15 yrs" },

@@ -111,6 +111,7 @@ function horizonWeights(years: number): {
   value: number;
   stability: number;
 } {
+  if (years <= 3) return { growth: 0.15, income: 0.35, value: 0.3, stability: 0.2 };
   if (years <= 5) return { growth: 0.25, income: 0.35, value: 0.25, stability: 0.15 };
   if (years <= 10) return { growth: 0.4, income: 0.25, value: 0.2, stability: 0.15 };
   if (years <= 15) return { growth: 0.55, income: 0.2, value: 0.15, stability: 0.1 };
@@ -191,7 +192,14 @@ function buildReason(
   if (pe != null && pe > 0 && pe <= 18) parts.push(`P/E ${pe.toFixed(0)}`);
   if (f.industry) parts.push(f.industry);
 
-  const window = profitYears <= 5 ? "near-term" : profitYears <= 10 ? "medium-term" : "long-term";
+  const window =
+    profitYears <= 3
+      ? "short-term"
+      : profitYears <= 5
+        ? "near-term"
+        : profitYears <= 10
+          ? "medium-term"
+          : "long-term";
   const core = parts.length ? parts.slice(0, 3).join(" · ") : "quality fundamentals";
   return `Fits ${label} (${window} ~${profitYears}y): ${core}.`;
 }
