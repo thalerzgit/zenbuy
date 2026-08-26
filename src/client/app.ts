@@ -54,9 +54,9 @@ export function mountApp(root: HTMLElement): void {
   const main = el("main", "site-main");
   const searchWrap = el("section", "search-panel");
   searchWrap.innerHTML = `
-    <label class="search-label" for="symbol-input">Ticker or company name</label>
+    <label class="search-label" for="symbol-input">Ticker(s) or Corp. Name</label>
     <div class="search-row">
-      <input id="symbol-input" type="text" autocomplete="off" placeholder="AAPL, Apple, Palo Alto…" maxlength="64" />
+      <input id="symbol-input" type="text" autocomplete="off" placeholder="AAPL, NVDA, Apple…" maxlength="96" />
       <div id="dropdown" class="dropdown hidden" role="listbox"></div>
     </div>
     <div id="chips" class="chips"></div>
@@ -232,46 +232,51 @@ export function mountApp(root: HTMLElement): void {
     formError.classList.add("hidden");
   }
 
-  function renderResults(rows: Array<{ symbol: string; name: string }>): void {
-    dropdown.innerHTML = "";
-    if (!rows.length) {
-      dropdown.classList.add("hidden");
-      return;
-    }
-    rows.forEach((row) => {
-      const item = el("button", "dropdown-item");
-      item.type = "button";
-      item.innerHTML = `<strong>${row.symbol}</strong> <span>${row.name}</span>`;
-      item.onclick = () => {
-        if (state.picks.length >= 4) return;
-        if (state.picks.some((p) => p.symbol === row.symbol)) return;
-        state.picks.push({ symbol: row.symbol, name: row.name });
-        renderChips();
-        input.value = "";
-        dropdown.classList.add("hidden");
+  /** Ticker-shaped token (spaces around commas are trimmed before this runs). */
+  const TICKER_TOKEN = /^[A-Za-z][A-Za-z0-9.\-]{0,11}$/;
 
-        // Warm the slow parts now rather than after the Generate tap.
-        void fetch(
-          `/api/prefetch?symbol=${encodeURIComponent(row.symbol)}`
-        ).catch(() => {});
-        warmTurnstileToken();
+  /**
+   * Split comma-separated entry. Completed segments become chips; the trailing
+   * fragment (after the last comma) stays in the field for search.
+   * "AAPL, NVDA, " → done [AAPL, NVDA], rest ""
+   * "AAPL, NVDA, Crow" → done [AAPL, NVDA], rest "Crow"
+   */
+  function parseCommaInput(value: string): { done: string[]; rest: string } {
+    if (!value.includes(",")) return { done: [], rest: value };
+    const endsWithSep = /,\s*$/.test(value);
+    const parts = value.split(",");
+    if (endsWithSep) {
+      return {
+        done: parts.map((p) => p.trim()).filter(Boolean),
+        rest: "",
       };
-      dropdown.append(item);
-    });
-    dropdown.classList.remove("hidden");
+    }
+    const rest = parts[parts.length - 1] ?? "";
+    const done = parts
+      .slice(0, -1)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return { done, rest };
   }
 
-  async function search(q: string): Promise<void> {
-    if (q.length < 2) {
-      dropdown.classList.add("hidden");
-      return;
-    }
+  function addPick(pick: SymbolPick): boolean {
+    if (state.picks.length >= 4) return false;
+    if (state.picks.some((p) => p.symbol === pick.symbol)) return false;
+    state.picks.push(pick);
+    renderChips();
+    void fetch(`/api/prefetch?symbol=${encodeURIComponent(pick.symbol)}`).catch(
+      () => {}
+    );
+    warmTurnstileToken();
+    return true;
+  }
 
-    const memo = searchCache.get(q.toLowerCase());
-    if (memo) {
-      renderResults(memo);
-      return;
-    }
+  async function fetchSearchRows(
+    q: string
+  ): Promise<Array<{ symbol: string; name: string }>> {
+    const key = q.toLowerCase();
+    const memo = searchCache.get(key);
+    if (memo) return memo;
 
     searchAbort?.abort();
     const ctrl = new AbortController();
@@ -286,17 +291,132 @@ export function mountApp(root: HTMLElement): void {
         throttled?: boolean;
       };
       const rows = data.results ?? [];
-      // Don't memoize throttled misses — they'd stick as "no matches".
-      if (!data.throttled) searchCache.set(q.toLowerCase(), rows);
-      renderResults(rows);
+      if (!data.throttled) searchCache.set(key, rows);
+      return rows;
     } catch {
-      if (!ctrl.signal.aborted) dropdown.classList.add("hidden");
+      if (ctrl.signal.aborted) return [];
+      return [];
     }
+  }
+
+  async function resolveToken(token: string): Promise<SymbolPick | null> {
+    const q = token.trim();
+    if (!q) return null;
+    const rows = await fetchSearchRows(q);
+    const upper = q.toUpperCase();
+    const exact = rows.find((r) => r.symbol.toUpperCase() === upper);
+    if (exact) return { symbol: exact.symbol.toUpperCase(), name: exact.name };
+
+    // Company / partial name → best search hit.
+    if (!TICKER_TOKEN.test(q) && rows[0]) {
+      return {
+        symbol: rows[0].symbol.toUpperCase(),
+        name: rows[0].name,
+      };
+    }
+
+    // Ticker-shaped with no directory hit still commit (user intent is clear).
+    if (TICKER_TOKEN.test(q)) {
+      return { symbol: upper, name: upper };
+    }
+    return null;
+  }
+
+  async function commitTokens(tokens: string[]): Promise<void> {
+    const skipped: string[] = [];
+    for (const token of tokens) {
+      if (state.picks.length >= 4) {
+        skipped.push(token);
+        continue;
+      }
+      const pick = await resolveToken(token);
+      if (!pick) {
+        skipped.push(token);
+        continue;
+      }
+      if (!addPick(pick) && !state.picks.some((p) => p.symbol === pick.symbol)) {
+        skipped.push(token);
+      }
+    }
+    if (state.picks.length >= 4 && skipped.length) {
+      showError("You can analyze up to 4 tickers at a time.", false);
+    }
+  }
+
+  function renderResults(rows: Array<{ symbol: string; name: string }>): void {
+    dropdown.innerHTML = "";
+    if (!rows.length) {
+      dropdown.classList.add("hidden");
+      return;
+    }
+    rows.forEach((row) => {
+      const item = el("button", "dropdown-item");
+      item.type = "button";
+      item.innerHTML = `<strong>${row.symbol}</strong> <span>${row.name}</span>`;
+      item.onclick = () => {
+        addPick({ symbol: row.symbol, name: row.name });
+        input.value = "";
+        dropdown.classList.add("hidden");
+        input.focus();
+      };
+      dropdown.append(item);
+    });
+    dropdown.classList.remove("hidden");
+  }
+
+  async function search(q: string): Promise<void> {
+    if (q.length < 1) {
+      dropdown.classList.add("hidden");
+      return;
+    }
+    // Single-character company search is noisy; tickers can be 1–2 chars (F, GM).
+    if (q.length < 2 && !TICKER_TOKEN.test(q)) {
+      dropdown.classList.add("hidden");
+      return;
+    }
+
+    const rows = await fetchSearchRows(q);
+    if (searchAbort?.signal.aborted) return;
+    renderResults(rows);
+  }
+
+  async function handleTypedValue(): Promise<void> {
+    const { done, rest } = parseCommaInput(input.value);
+    if (done.length) {
+      input.value = rest;
+      dropdown.classList.add("hidden");
+      await commitTokens(done);
+    }
+    const q = input.value.trim();
+    if (q) await search(q);
+    else dropdown.classList.add("hidden");
   }
 
   input.addEventListener("input", () => {
     clearTimeout(debounce);
-    debounce = setTimeout(() => search(input.value.trim()), 320);
+    // Commit completed comma segments promptly; debounce only the live search.
+    if (input.value.includes(",")) {
+      debounce = setTimeout(() => void handleTypedValue(), 120);
+      return;
+    }
+    debounce = setTimeout(() => void handleTypedValue(), 320);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    clearTimeout(debounce);
+    const { done, rest } = parseCommaInput(input.value);
+    const tokens = [...done, rest.trim()].filter(Boolean);
+    void (async () => {
+      if (tokens.length) {
+        await commitTokens(tokens);
+        input.value = "";
+        dropdown.classList.add("hidden");
+      } else if (state.picks.length && !hasReport) {
+        submitBtn.click();
+      }
+    })();
   });
 
   document.addEventListener("click", (e) => {
