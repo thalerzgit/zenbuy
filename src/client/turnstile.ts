@@ -193,7 +193,7 @@ function mountWidget(): void {
 
   widgetId = ts.render(CONTAINER, {
     sitekey: siteKey,
-    theme: "light",
+    theme: "dark",
     size: "flexible",
     appearance: "interaction-only",
     execution: "execute",
