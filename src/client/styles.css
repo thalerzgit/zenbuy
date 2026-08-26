@@ -156,6 +156,18 @@ body {
   font-size: 0.88rem;
   line-height: 1.35;
   font-weight: 400;
+  min-height: 1.35em;
+  transition: opacity 0.32s ease;
+}
+
+.brand-oracle.brand-oracle-fade {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-oracle {
+    transition: none;
+  }
 }
 
 .brand-tag {
