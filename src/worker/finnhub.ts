@@ -98,7 +98,28 @@ export interface FundamentalsPayload {
     sell: number | null;
     strongSell: number | null;
   };
+  /** Recent quarterly EPS/revenue vs estimates (P1). */
+  earningsHistory: EarningsHistory;
   _citation: string;
+}
+
+export interface EarningsQuarter {
+  period: string | null;
+  quarter: number | null;
+  year: number | null;
+  epsActual: number | null;
+  epsEstimate: number | null;
+  epsSurprisePct: number | null;
+  revenueActualM: number | null;
+  revenueEstimateM: number | null;
+}
+
+export interface EarningsHistory {
+  recentQuarters: EarningsQuarter[];
+  beatStreak: number | null;
+  missStreak: number | null;
+  nextPrint: FundamentalsPayload["nextCatalysts"];
+  note: string;
 }
 
 function num(v: unknown): number | null {
@@ -367,6 +388,7 @@ function degradedPayload(
       sell: null,
       strongSell: null,
     },
+    earningsHistory: emptyEarningsHistory(),
     _citation: citationWithSources("Yahoo Finance", asOfEt, sources),
   };
 }
@@ -378,6 +400,145 @@ function emptyCatalysts(): FundamentalsPayload["nextCatalysts"] {
     earningsSessionEt: null,
     marketCalendar: "NYSE",
   };
+}
+
+function emptyEarningsHistory(
+  nextPrint: FundamentalsPayload["nextCatalysts"] = emptyCatalysts()
+): EarningsHistory {
+  return {
+    recentQuarters: [],
+    beatStreak: null,
+    missStreak: null,
+    nextPrint,
+    note: "No earnings history in feed",
+  };
+}
+
+function streakFromQuarters(
+  quarters: EarningsQuarter[],
+  kind: "beat" | "miss"
+): number | null {
+  let streak = 0;
+  for (const q of quarters) {
+    if (q.epsSurprisePct == null) break;
+    const beat = q.epsSurprisePct >= 0;
+    if ((kind === "beat" && beat) || (kind === "miss" && !beat)) streak++;
+    else break;
+  }
+  return streak > 0 ? streak : null;
+}
+
+function earningsFromFinnhubRows(
+  rows: Array<Record<string, unknown>>
+): EarningsQuarter[] {
+  return rows.slice(0, 8).map((row) => {
+    const actual = num(row.actual);
+    const estimate = num(row.estimate);
+    const surprisePct =
+      num(row.surprisePercent) ??
+      (actual != null && estimate != null && estimate !== 0
+        ? +(((actual - estimate) / Math.abs(estimate)) * 100).toFixed(2)
+        : null);
+    return {
+      period: row.period ? String(row.period) : null,
+      quarter: num(row.quarter),
+      year: num(row.year),
+      epsActual: actual,
+      epsEstimate: estimate,
+      epsSurprisePct: surprisePct,
+      revenueActualM: null,
+      revenueEstimateM: null,
+    };
+  });
+}
+
+function earningsFromCalendar(
+  calendar: Array<Record<string, unknown>>,
+  sym: string,
+  asOfEt: string
+): EarningsQuarter[] {
+  return calendar
+    .filter((row) => String(row.symbol ?? sym).toUpperCase() === sym)
+    .filter((row) => row.date && String(row.date) <= asOfEt)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 8)
+    .map((row) => {
+      const actual = num(row.epsActual);
+      const estimate = num(row.epsEstimate);
+      const surprisePct =
+        actual != null && estimate != null && estimate !== 0
+          ? +(((actual - estimate) / Math.abs(estimate)) * 100).toFixed(2)
+          : null;
+      return {
+        period: row.date ? String(row.date) : null,
+        quarter: num(row.quarter),
+        year: num(row.year),
+        epsActual: actual,
+        epsEstimate: estimate,
+        epsSurprisePct: surprisePct,
+        revenueActualM: num(row.revenueActual),
+        revenueEstimateM: num(row.revenueEstimate),
+      };
+    });
+}
+
+function buildEarningsHistory(
+  finnhubRows: Array<Record<string, unknown>> | null,
+  calendarRows: Array<Record<string, unknown>> | null,
+  sym: string,
+  asOfEt: string,
+  nextPrint: FundamentalsPayload["nextCatalysts"]
+): EarningsHistory {
+  const fromApi = finnhubRows ? earningsFromFinnhubRows(finnhubRows) : [];
+  const fromCal = calendarRows
+    ? earningsFromCalendar(calendarRows, sym, asOfEt)
+    : [];
+  const merged = fromApi.length ? fromApi : fromCal;
+  const beatStreak = streakFromQuarters(merged, "beat");
+  const missStreak = streakFromQuarters(merged, "miss");
+  const note =
+    merged.length > 0
+      ? `${merged.length} recent quarter(s) with EPS actual vs estimate in feed.`
+      : "No quarterly EPS surprises in feed.";
+  return {
+    recentQuarters: merged,
+    beatStreak,
+    missStreak,
+    nextPrint,
+    note,
+  };
+}
+
+export async function fetchEarningsHistory(
+  apiKey: string,
+  symbol: string
+): Promise<EarningsHistory> {
+  const sym = symbol.toUpperCase();
+  const asOfEt = nyseDateString();
+  const [finnhubRows, calendarRaw] = await Promise.all([
+    finnhub<Array<Record<string, unknown>>>(
+      apiKey,
+      `/stock/earnings?symbol=${sym}`,
+      true
+    ),
+    finnhub<{ earningsCalendar?: Array<Record<string, unknown>> }>(
+      apiKey,
+      `/calendar/earnings?from=${addCalendarDays(asOfEt, -400)}&to=${asOfEt}&symbol=${sym}`,
+      true
+    ),
+  ]);
+  const nextPrint = catalystsFromCalendar(
+    calendarRaw as { earningsCalendar?: Array<{ date?: string; hour?: string; symbol?: string }> } | null,
+    sym,
+    asOfEt
+  );
+  return buildEarningsHistory(
+    Array.isArray(finnhubRows) ? finnhubRows : null,
+    calendarRaw?.earningsCalendar ?? null,
+    sym,
+    asOfEt,
+    nextPrint
+  );
 }
 
 function catalystsFromCalendar(
@@ -414,7 +575,8 @@ export async function fetchFundamentals(
   const earningsTo = addCalendarDays(asOfEt, 120);
 
   // Metrics endpoint returns both a flat metric map and optional annual series.
-  const [profile, quote, metricsRaw, insiderRaw, peersRaw, earningsRaw, newsRaw, recRaw, dividendRaw] =
+  const earningsPastFrom = addCalendarDays(asOfEt, -400);
+  const [profile, quote, metricsRaw, insiderRaw, peersRaw, earningsRaw, earningsPastRaw, earningsSeriesRaw, newsRaw, recRaw, dividendRaw] =
     await Promise.all([
       // Optional so a throttled feed falls through to the backup instead of
       // throwing; a missing identity is caught below.
@@ -436,10 +598,20 @@ export async function fetchFundamentals(
         true
       ),
       finnhub<{
-        earningsCalendar?: Array<{ date?: string; hour?: string; symbol?: string }>;
+        earningsCalendar?: Array<Record<string, unknown>>;
       }>(
         apiKey,
         `/calendar/earnings?from=${earningsFrom}&to=${earningsTo}&symbol=${sym}`,
+        true
+      ),
+      finnhub<{ earningsCalendar?: Array<Record<string, unknown>> }>(
+        apiKey,
+        `/calendar/earnings?from=${earningsPastFrom}&to=${asOfEt}&symbol=${sym}`,
+        true
+      ),
+      finnhub<Array<Record<string, unknown>>>(
+        apiKey,
+        `/stock/earnings?symbol=${sym}`,
         true
       ),
       finnhub<Array<{ headline?: string; datetime?: number; source?: string; url?: string }>>(
@@ -502,7 +674,18 @@ export async function fetchFundamentals(
     shares: num(row.share),
   }));
 
-  const nextCatalysts = catalystsFromCalendar(earningsRaw, sym, asOfEt);
+  const nextCatalysts = catalystsFromCalendar(
+    earningsRaw as { earningsCalendar?: Array<{ date?: string; hour?: string; symbol?: string }> } | null,
+    sym,
+    asOfEt
+  );
+  const earningsHistory = buildEarningsHistory(
+    Array.isArray(earningsSeriesRaw) ? earningsSeriesRaw : null,
+    earningsPastRaw?.earningsCalendar ?? null,
+    sym,
+    asOfEt,
+    nextCatalysts
+  );
   const sources = buildReportSources(
     sym,
     (profile?.weburl as string | undefined) ?? null
@@ -582,6 +765,7 @@ export async function fetchFundamentals(
       sell: num(latestRec?.sell),
       strongSell: num(latestRec?.strongSell),
     },
+    earningsHistory,
     _citation: citationWithSources(
       "Finnhub",
       asOfEt,
@@ -642,6 +826,10 @@ export async function getFundamentalsCached(
           ...cached,
           asOfEt,
           nextCatalysts,
+          earningsHistory: {
+            ...(cached.earningsHistory ?? emptyEarningsHistory(nextCatalysts)),
+            nextPrint: nextCatalysts,
+          },
           dataAgeHours: Math.floor(ageMs / 3_600_000),
         };
         await cache
@@ -659,6 +847,7 @@ export async function getFundamentalsCached(
       nextCatalysts,
       sources: cached.sources ?? buildReportSources(symbol.toUpperCase()),
       capitalReturn: cached.capitalReturn ?? emptyCapitalReturn(),
+      earningsHistory: cached.earningsHistory ?? emptyEarningsHistory(nextCatalysts),
       dataAgeHours: Math.floor(ageMs / 3_600_000),
     };
   }

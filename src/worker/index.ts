@@ -1,5 +1,6 @@
 import { randomError } from "./errors";
 import {
+  appendReportArchive,
   cacheGet,
   cacheSet,
   fundCacheKey,
@@ -9,6 +10,11 @@ import {
   type CachedReport,
   type SharedReportSnapshot,
 } from "./cache";
+import {
+  enrichPayloadsForResearch,
+  extractArchiveEntry,
+  type ResearchPayload,
+} from "./enrich";
 import {
   DEFAULT_DIRECTIVE_ID,
   directivesForClient,
@@ -759,6 +765,12 @@ async function handleResearch(
           return;
         }
 
+        const enrichedPayloads: ResearchPayload[] = await enrichPayloadsForResearch(
+          env,
+          payloads,
+          directive
+        );
+
         // Comparative needs at least two names to compare.
         const effectiveMode = payloads.length > 1 ? mode : "separate";
 
@@ -778,6 +790,7 @@ async function handleResearch(
             name: p.name,
             price: p.quote.price,
           })),
+          macroLive: Boolean(enrichedPayloads[0]?.macro),
         });
 
         let stickySent = false;
@@ -823,9 +836,24 @@ async function handleResearch(
           report.stale = showAsOf;
           const symbolList = payloads.map((p) => p.symbol);
           const companies = companyProfilesFromMarkdown(markdown, symbolList);
-          // Key on what actually made the report, not what was requested.
           const doneKey = reportCacheKey(effectiveMode, symbolList, directive);
           await cacheSet(env.CACHE, doneKey, report, ttl);
+
+          const parsed = parseReport(markdown);
+          const archiveEntry = extractArchiveEntry(
+            markdown,
+            parsed.badges,
+            parsed.scorecard,
+            report.asOf
+          );
+          await Promise.all(
+            symbolList.map((sym) =>
+              appendReportArchive(env.CACHE, directive, sym, archiveEntry).catch(
+                console.error
+              )
+            )
+          );
+
           ctx.waitUntil(incrementRateLimit(env, ip).catch(console.error));
           send("companies", { companies, mode: effectiveMode });
           send("done", {
@@ -842,14 +870,14 @@ async function handleResearch(
 
         // Separate reports are independent, so generate them concurrently.
         if (effectiveMode === "separate" && payloads.length > 1) {
-          await streamResearchParallel(env, payloads, directive, {
+          await streamResearchParallel(env, enrichedPayloads, directive, {
             onProgress: (assembled) => renderProgress(assembled),
             onDone: finish,
             onError: fail,
           });
         } else {
           let full = "";
-          await streamResearch(env, effectiveMode, payloads, directive, {
+          await streamResearch(env, effectiveMode, enrichedPayloads, directive, {
             onDelta(text) {
               full += text;
               renderProgress(full);

@@ -2,6 +2,7 @@ interface Env {
   ASSETS: Fetcher;
   CACHE: KVNamespace;
   FINNHUB_API_KEY: string;
+  FRED_API_KEY?: string;
   ANTHROPIC_API_KEY: string;
   AI_GATEWAY_ACCOUNT_ID?: string;
   AI_GATEWAY_ID?: string;
