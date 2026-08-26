@@ -96,7 +96,8 @@ ${markdown.slice(0, 60_000)}`;
 export function buildUserPrompt(
   mode: "separate" | "comparative",
   payloads: unknown[],
-  directiveId: InvestmentDirectiveId = "growth"
+  directiveId: InvestmentDirectiveId = "growth",
+  profitHorizonYears?: number
 ): string {
   const directive = getInvestmentDirective(directiveId);
 
@@ -113,8 +114,13 @@ export function buildUserPrompt(
 
   const thesisNote = `\nInvestor mandate: ${directive.promptThesis}. ${directive.promptGoal} Typical horizon: ${directive.horizon}.`;
 
+  const profitNote =
+    profitHorizonYears != null && Number.isFinite(profitHorizonYears)
+      ? `\nProfit window overlay: frame RETURN SCENARIOS, price targets, and SUMMARY around ~${profitHorizonYears}-year outcomes the user cares about (this may refine but not contradict the mandate).`
+      : "";
+
   if (mode === "comparative") {
-    return `${dataPolicy}${thesisNote}
+    return `${dataPolicy}${thesisNote}${profitNote}
 
 Write ONE comparative decision report covering ALL companies above.
 Start with ## BOTTOM LINE ranking which name to own first for this ${directive.promptThesis.toLowerCase()} mandate over ~${directive.promptHorizonYears} years, with relative Buy/Hold/Sell for each ticker.
@@ -125,13 +131,13 @@ Hard cap 2200 words total.`;
 
   if (payloads.length === 1) {
     const p = payloads[0] as { symbol?: string };
-    return `${dataPolicy}${thesisNote}
+    return `${dataPolicy}${thesisNote}${profitNote}
 
 Replace [TICKER] with ${p.symbol ?? "the company"}.
 Hard cap 1500 words.`;
   }
 
-  return `${dataPolicy}${thesisNote}
+  return `${dataPolicy}${thesisNote}${profitNote}
 
 Produce separate full reports for EACH company in the injected array.
 Start each report with ## TICKER: SYMBOL then the full structure (## BOTTOM LINE through ## SUMMARY).

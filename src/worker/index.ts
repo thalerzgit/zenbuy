@@ -22,6 +22,7 @@ import {
   isInvestmentDirectiveId,
   type InvestmentDirectiveId,
 } from "../lib/investment-directives";
+import { PROFIT_HORIZON_OPTIONS } from "../lib/profit-horizons";
 import {
   getFundamentalsCached,
   isStalePayload,
@@ -37,7 +38,7 @@ import {
   renderMarkdown,
   scorecardHtml,
 } from "./parse";
-import { findSimilarSymbols } from "./similar";
+import { discoverPicksForGoal } from "./discover";
 import {
   checkRateLimit,
   incrementRateLimit,
@@ -268,7 +269,60 @@ async function handleConfig(env: Env): Promise<Response> {
     turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? "",
     investmentDirectives: directivesForClient(),
     defaultDirectiveId: DEFAULT_DIRECTIVE_ID,
+    profitHorizonOptions: PROFIT_HORIZON_OPTIONS,
   });
+}
+
+async function handleDiscover(request: Request, env: Env): Promise<Response> {
+  if (!env.FINNHUB_API_KEY) {
+    return json({ error: "Discovery unavailable" }, 503);
+  }
+
+  const url = new URL(request.url);
+  const directiveRaw = url.searchParams.get("directive") ?? DEFAULT_DIRECTIVE_ID;
+  const directive: InvestmentDirectiveId = isInvestmentDirectiveId(directiveRaw)
+    ? directiveRaw
+    : DEFAULT_DIRECTIVE_ID;
+
+  const profitHorizonYears = Math.min(
+    25,
+    Math.max(
+      3,
+      Number(url.searchParams.get("horizon") ?? "") ||
+        getInvestmentDirective(directive).promptHorizonYears
+    )
+  );
+  const limit = Math.min(
+    4,
+    Math.max(1, Number(url.searchParams.get("limit") ?? 4))
+  );
+
+  try {
+    const picks = await discoverPicksForGoal(
+      env,
+      directive,
+      profitHorizonYears,
+      limit
+    );
+    if (!picks.length) {
+      return json(
+        {
+          error: "No matches found right now. Try again in a moment.",
+          code: "empty",
+        },
+        503
+      );
+    }
+    return json({
+      picks,
+      directive,
+      profitHorizonYears,
+      directiveLabel: getInvestmentDirective(directive).label,
+    });
+  } catch (e) {
+    console.error("discover failed", e);
+    return json({ error: "Couldn't find matching stocks.", code: "discover_failed" }, 500);
+  }
 }
 
 const SSE_HEADERS = {
@@ -291,6 +345,7 @@ const SSE_HEADERS = {
 function parseReportIdParts(reportId: string): {
   mode: string;
   directive: InvestmentDirectiveId;
+  profitHorizonYears?: number;
   symbols: string[];
 } {
   return parseReportCacheKey(reportId);
@@ -636,6 +691,7 @@ async function handleResearch(
     symbols?: string[];
     mode?: "separate" | "comparative";
     directive?: string;
+    profitHorizonYears?: number;
     turnstileToken?: string;
   };
 
@@ -654,6 +710,14 @@ async function handleResearch(
   )
     ? (body.directive as InvestmentDirectiveId)
     : DEFAULT_DIRECTIVE_ID;
+  const profitHorizonYears = Math.min(
+    25,
+    Math.max(
+      3,
+      Number(body.profitHorizonYears) ||
+        getInvestmentDirective(directive).promptHorizonYears
+    )
+  );
 
   if (symbols.length < 1 || symbols.length > 4) {
     return json({ error: "Select 1 to 4 tickers.", retry: true }, 400);
@@ -690,7 +754,7 @@ async function handleResearch(
   }
 
   const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
-  const cacheKey = reportCacheKey(mode, symbols, directive);
+  const cacheKey = reportCacheKey(mode, symbols, directive, profitHorizonYears);
   const cached = await cacheGet<CachedReport>(env.CACHE, cacheKey);
 
   const stream = new ReadableStream({
@@ -702,14 +766,19 @@ async function handleResearch(
 
       try {
         if (cached) {
-          const { mode: cachedMode, symbols: cachedSymbols, directive: cachedDirective } =
-            parseReportIdParts(cacheKey);
+          const {
+            mode: cachedMode,
+            symbols: cachedSymbols,
+            directive: cachedDirective,
+            profitHorizonYears: cachedHorizon,
+          } = parseReportIdParts(cacheKey);
           send("meta", {
             cached: true,
             asOf: cached.asOf,
             showAsOf: cached.stale,
             directive: cachedDirective,
             directiveLabel: getInvestmentDirective(cachedDirective).label,
+            profitHorizonYears: cachedHorizon ?? profitHorizonYears,
           });
           send("sticky", {
             bottomLineHtml: cached.bottomLineHtml,
@@ -732,6 +801,7 @@ async function handleResearch(
               cached.markdown && cached.markdown.length >= 80 ? cacheKey : "",
             directive: cachedDirective,
             directiveLabel: getInvestmentDirective(cachedDirective).label,
+            profitHorizonYears: cachedHorizon ?? profitHorizonYears,
           });
           controller.close();
           return;
@@ -781,6 +851,7 @@ async function handleResearch(
           showAsOf,
           directive,
           directiveLabel: getInvestmentDirective(directive).label,
+          profitHorizonYears,
           skipped,
           degraded: payloads
             .filter((p) => p.dataQuality === "degraded")
@@ -836,7 +907,12 @@ async function handleResearch(
           report.stale = showAsOf;
           const symbolList = payloads.map((p) => p.symbol);
           const companies = companyProfilesFromMarkdown(markdown, symbolList);
-          const doneKey = reportCacheKey(effectiveMode, symbolList, directive);
+          const doneKey = reportCacheKey(
+            effectiveMode,
+            symbolList,
+            directive,
+            profitHorizonYears
+          );
           await cacheSet(env.CACHE, doneKey, report, ttl);
 
           const parsed = parseReport(markdown);
@@ -861,6 +937,7 @@ async function handleResearch(
             reportId: doneKey,
             directive,
             directiveLabel: getInvestmentDirective(directive).label,
+            profitHorizonYears,
           });
         };
 
@@ -874,7 +951,7 @@ async function handleResearch(
             onProgress: (assembled) => renderProgress(assembled),
             onDone: finish,
             onError: fail,
-          });
+          }, profitHorizonYears);
         } else {
           let full = "";
           await streamResearch(env, effectiveMode, enrichedPayloads, directive, {
@@ -884,7 +961,7 @@ async function handleResearch(
             },
             onDone: finish,
             onError: fail,
-          });
+          }, profitHorizonYears);
         }
       } catch (e) {
         console.error("research failed", e);
@@ -954,6 +1031,10 @@ export default {
 
     if (url.pathname === "/api/search") {
       return handleSearch(request, env);
+    }
+
+    if (url.pathname === "/api/discover") {
+      return handleDiscover(request, env);
     }
 
     if (url.pathname === "/api/research" && request.method === "POST") {

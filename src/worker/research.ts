@@ -167,12 +167,13 @@ export async function streamResearch(
   mode: "separate" | "comparative",
   payloads: FundamentalsPayload[],
   directive: InvestmentDirectiveId,
-  handlers: StreamHandlers
+  handlers: StreamHandlers,
+  profitHorizonYears?: number
 ): Promise<void> {
   const res = await requestAnalysis(
     env,
     getSystemPrompt(directive),
-    buildUserPrompt(mode, payloads, directive),
+    buildUserPrompt(mode, payloads, directive, profitHorizonYears),
     mode === "comparative" ? 12_000 : 8_000
   );
 
@@ -253,7 +254,8 @@ export async function streamResearchParallel(
   env: Env,
   payloads: FundamentalsPayload[],
   directive: InvestmentDirectiveId,
-  handlers: ParallelHandlers
+  handlers: ParallelHandlers,
+  profitHorizonYears?: number
 ): Promise<void> {
   const sections = payloads.map(() => "");
   const failures: string[] = [];
@@ -280,7 +282,7 @@ export async function streamResearchParallel(
         const res = await requestAnalysis(
           env,
           getSystemPrompt(directive),
-          buildUserPrompt("separate", [payload], directive),
+          buildUserPrompt("separate", [payload], directive, profitHorizonYears),
           8_000
         );
 

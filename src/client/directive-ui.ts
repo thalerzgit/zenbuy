@@ -5,6 +5,12 @@ import {
   type InvestmentDirective,
   type InvestmentDirectiveId,
 } from "../lib/investment-directives";
+import {
+  PROFIT_HORIZON_OPTIONS,
+  defaultProfitHorizonYears,
+  loadStoredProfitHorizon,
+  saveStoredProfitHorizon,
+} from "../lib/profit-horizons";
 
 const STORAGE_KEY = "zenbuy:directive:v1";
 
@@ -45,10 +51,20 @@ function detailHtml(d: InvestmentDirective): string {
   `;
 }
 
+function syncHorizonPills(container: HTMLElement, years: number): void {
+  container.querySelectorAll<HTMLLabelElement>(".horizon-pill").forEach((pill) => {
+    const input = pill.querySelector<HTMLInputElement>('input[type="radio"]');
+    const y = Number(input?.value);
+    pill.classList.toggle("is-selected", y === years);
+  });
+}
+
 export function mountDirectivePanel(
   container: HTMLElement,
   initial: InvestmentDirectiveId,
-  onChange: (id: InvestmentDirectiveId) => void
+  initialHorizonYears: number,
+  onChange: (id: InvestmentDirectiveId) => void,
+  onHorizonChange: (years: number) => void
 ): void {
   container.innerHTML = `
     <div class="directive-panel">
@@ -66,6 +82,20 @@ export function mountDirectivePanel(
           </label>`
         ).join("")}
       </div>
+      <div class="horizon-panel">
+        <h3 class="horizon-heading" id="horizon-heading">Profit window <span class="horizon-optional">(optional)</span></h3>
+        <div class="directive-pills horizon-pills" role="radiogroup" aria-labelledby="horizon-heading">
+          ${PROFIT_HORIZON_OPTIONS.map(
+            (h) => `
+            <label class="directive-pill horizon-pill${h.years === initialHorizonYears ? " is-selected" : ""}">
+              <input type="radio" name="profit-horizon" value="${h.years}" ${
+                h.years === initialHorizonYears ? "checked" : ""
+              } />
+              <span class="directive-pill-text">${h.label}</span>
+            </label>`
+          ).join("")}
+        </div>
+      </div>
     </div>
     <dialog class="directive-detail-dialog" aria-labelledby="directive-detail-title">
       <div class="directive-detail-inner">
@@ -81,7 +111,7 @@ export function mountDirectivePanel(
   const dialog = container.querySelector<HTMLDialogElement>(".directive-detail-dialog")!;
   const titleEl = dialog.querySelector<HTMLHeadingElement>("#directive-detail-title")!;
   const bodyEl = dialog.querySelector<HTMLDivElement>(".directive-detail-body")!;
-  const pills = container.querySelectorAll<HTMLLabelElement>(".directive-pill");
+  const pills = container.querySelectorAll<HTMLLabelElement>(".directive-pill:not(.horizon-pill)");
 
   const syncSelected = (id: InvestmentDirectiveId): void => {
     pills.forEach((pill) => {
@@ -108,6 +138,29 @@ export function mountDirectivePanel(
         saveStoredDirective(input.value);
         syncSelected(input.value);
         onChange(input.value);
+        const suggested = defaultProfitHorizonYears(input.value);
+        syncHorizonPills(container, suggested);
+        const horizonInput = container.querySelector<HTMLInputElement>(
+          `input[name="profit-horizon"][value="${suggested}"]`
+        );
+        if (horizonInput) {
+          horizonInput.checked = true;
+          saveStoredProfitHorizon(suggested);
+          onHorizonChange(suggested);
+        }
+      });
+    });
+
+  container
+    .querySelectorAll<HTMLInputElement>('input[name="profit-horizon"]')
+    .forEach((input) => {
+      input.addEventListener("change", () => {
+        if (!input.checked) return;
+        const years = Number(input.value);
+        if (!Number.isFinite(years)) return;
+        saveStoredProfitHorizon(years);
+        syncHorizonPills(container, years);
+        onHorizonChange(years);
       });
     });
 
@@ -133,3 +186,5 @@ export function mountDirectivePanel(
 export function directiveLabel(id: InvestmentDirectiveId): string {
   return INVESTMENT_DIRECTIVES.find((d) => d.id === id)?.label ?? id;
 }
+
+export { loadStoredProfitHorizon, saveStoredProfitHorizon, defaultProfitHorizonYears };

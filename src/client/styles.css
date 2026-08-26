@@ -428,6 +428,119 @@ body {
   line-height: 1.4;
 }
 
+.horizon-panel {
+  margin-top: 0.85rem;
+}
+
+.horizon-heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.horizon-optional {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.horizon-pills {
+  margin-top: 0;
+}
+
+.input-mode-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.input-mode-tab {
+  flex: 1;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.input-mode-tab.is-active {
+  border-color: var(--sage);
+  background: var(--sage-light);
+  color: var(--sage-dark);
+}
+
+.discover-block {
+  margin-bottom: 0.75rem;
+}
+
+.discover-lead {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.discover-btn {
+  width: 100%;
+  margin-bottom: 0.65rem;
+}
+
+.discover-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.discover-results-head {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.discover-pick {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.discover-pick input {
+  margin-top: 0.2rem;
+}
+
+.discover-pick-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+}
+
+.discover-pick-name {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.discover-pick-score {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sage-dark);
+}
+
+.discover-pick-reason {
+  grid-column: 2;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
 .directive-lead-hint {
   display: inline-flex;
   align-items: center;

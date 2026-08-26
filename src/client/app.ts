@@ -2,8 +2,10 @@ import { BRAND_MARK_SVG } from "./brand-mark";
 import {
   directiveLabel,
   loadStoredDirective,
+  loadStoredProfitHorizon,
   mountDirectivePanel,
 } from "./directive-ui";
+import { profitHorizonLabel } from "../lib/profit-horizons";
 import { startOracleRotation } from "./quotes";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
 import { isInvestmentDirectiveId } from "../lib/investment-directives";
@@ -21,6 +23,21 @@ export interface SymbolPick {
 }
 
 type ReportMode = "separate" | "comparative";
+type InputMode = "manual" | "discover";
+
+interface DiscoverPick {
+  symbol: string;
+  name: string;
+  fitScore: number;
+  reason: string;
+  profitHorizonYears: number;
+  snapshot: {
+    price: number | null;
+    pe: number | null;
+    revenueYoY: number | null;
+    dividendYieldPct: number | null;
+  };
+}
 
 interface Badges {
   recommendation?: string;
@@ -63,8 +80,13 @@ export function mountApp(root: HTMLElement): void {
   const state = {
     picks: [] as SymbolPick[],
     mode: "separate" as ReportMode,
+    inputMode: "manual" as InputMode,
     directive: loadStoredDirective() as InvestmentDirectiveId,
+    profitHorizonYears: loadStoredProfitHorizon(loadStoredDirective()),
+    discoverResults: [] as DiscoverPick[],
+    discoverSelected: new Set<string>(),
     loading: false,
+    discovering: false,
   };
 
   const header = el("header", "site-header");
@@ -82,12 +104,23 @@ export function mountApp(root: HTMLElement): void {
   const main = el("main", "site-main");
   const searchWrap = el("section", "search-panel");
   searchWrap.innerHTML = `
-    <label class="search-label" for="symbol-input">Ticker(s) or Corp. Name</label>
-    <div class="search-row">
-      <input id="symbol-input" type="text" autocomplete="off" placeholder="AAPL, NVDA, Apple…" maxlength="96" />
-      <div id="dropdown" class="dropdown hidden" role="listbox"></div>
+    <div class="input-mode-tabs" role="tablist" aria-label="How to pick stocks">
+      <button type="button" class="input-mode-tab is-active" data-mode="manual" role="tab" aria-selected="true">Enter tickers</button>
+      <button type="button" class="input-mode-tab" data-mode="discover" role="tab" aria-selected="false">Find for my goal</button>
     </div>
-    <div id="chips" class="chips"></div>
+    <div id="manual-input-block">
+      <label class="search-label" for="symbol-input">Ticker(s) or Corp. Name</label>
+      <div class="search-row">
+        <input id="symbol-input" type="text" autocomplete="off" placeholder="AAPL, NVDA, Apple…" maxlength="96" />
+        <div id="dropdown" class="dropdown hidden" role="listbox"></div>
+      </div>
+      <div id="chips" class="chips"></div>
+    </div>
+    <div id="discover-block" class="discover-block hidden">
+      <p class="discover-lead">We'll suggest up to 4 names that match your goal and profit window.</p>
+      <button type="button" id="discover-btn" class="btn ghost discover-btn">Find stocks for my goal</button>
+      <div id="discover-results" class="discover-results hidden"></div>
+    </div>
     <div id="directive-panel-mount"></div>
     <div class="actions">
       <button id="submit-btn" type="button" class="btn primary" disabled>Generate Report</button>
@@ -165,12 +198,31 @@ export function mountApp(root: HTMLElement): void {
   const input = searchWrap.querySelector("#symbol-input") as HTMLInputElement;
   const dropdown = searchWrap.querySelector("#dropdown") as HTMLDivElement;
   const chips = searchWrap.querySelector("#chips") as HTMLDivElement;
+  const manualInputBlock = searchWrap.querySelector("#manual-input-block") as HTMLDivElement;
+  const discoverBlock = searchWrap.querySelector("#discover-block") as HTMLDivElement;
+  const discoverBtn = searchWrap.querySelector("#discover-btn") as HTMLButtonElement;
+  const discoverResults = searchWrap.querySelector("#discover-results") as HTMLDivElement;
+  const inputModeTabs = searchWrap.querySelectorAll<HTMLButtonElement>(".input-mode-tab");
   const directiveMount = searchWrap.querySelector(
     "#directive-panel-mount"
   ) as HTMLDivElement;
-  mountDirectivePanel(directiveMount, state.directive, (id) => {
-    state.directive = id;
-  });
+  mountDirectivePanel(
+    directiveMount,
+    state.directive,
+    state.profitHorizonYears,
+    (id) => {
+      state.directive = id;
+      state.discoverResults = [];
+      state.discoverSelected.clear();
+      renderDiscoverResults();
+    },
+    (years) => {
+      state.profitHorizonYears = years;
+      state.discoverResults = [];
+      state.discoverSelected.clear();
+      renderDiscoverResults();
+    }
+  );
   const submitBtn = searchWrap.querySelector("#submit-btn") as HTMLButtonElement;
   const simplifyBtn = searchWrap.querySelector(
     "#simplify-btn"
@@ -265,11 +317,134 @@ export function mountApp(root: HTMLElement): void {
     if (hasReport) {
       submitBtn.textContent = "Start New Report";
       submitBtn.disabled = false;
+      return;
+    }
+    submitBtn.textContent = "Generate Report";
+    if (state.inputMode === "discover") {
+      submitBtn.disabled = state.discoverSelected.size === 0;
     } else {
-      submitBtn.textContent = "Generate Report";
       submitBtn.disabled = state.picks.length === 0;
     }
   }
+
+  function syncPicksFromDiscover(): void {
+    if (state.inputMode !== "discover") return;
+    state.picks = state.discoverResults
+      .filter((p) => state.discoverSelected.has(p.symbol))
+      .map((p) => ({ symbol: p.symbol, name: p.name }));
+    renderChips();
+  }
+
+  function renderDiscoverResults(): void {
+    discoverResults.innerHTML = "";
+    if (!state.discoverResults.length) {
+      discoverResults.classList.add("hidden");
+      syncPrimaryBtn();
+      return;
+    }
+
+    discoverResults.classList.remove("hidden");
+    const head = el("p", "discover-results-head");
+    head.textContent = "Select up to 4 — then Generate Report.";
+    discoverResults.append(head);
+
+    state.discoverResults.forEach((pick) => {
+      const row = el("label", "discover-pick");
+      const checked = state.discoverSelected.has(pick.symbol);
+      row.innerHTML = `
+        <input type="checkbox" ${checked ? "checked" : ""} />
+        <span class="discover-pick-main">
+          <strong>${pick.symbol}</strong>
+          <span class="discover-pick-name">${pick.name}</span>
+          <span class="discover-pick-score">${pick.fitScore}% fit</span>
+        </span>
+        <span class="discover-pick-reason">${pick.reason}</span>
+      `;
+      const box = row.querySelector("input") as HTMLInputElement;
+      box.onchange = () => {
+        if (box.checked) {
+          if (state.discoverSelected.size >= 4) {
+            box.checked = false;
+            showError("You can analyze up to 4 tickers at a time.", false);
+            return;
+          }
+          state.discoverSelected.add(pick.symbol);
+        } else {
+          state.discoverSelected.delete(pick.symbol);
+        }
+        syncPicksFromDiscover();
+      };
+      discoverResults.append(row);
+    });
+    syncPicksFromDiscover();
+  }
+
+  function setInputMode(mode: InputMode): void {
+    state.inputMode = mode;
+    inputModeTabs.forEach((tab) => {
+      const active = tab.dataset.mode === mode;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    manualInputBlock.classList.toggle("hidden", mode !== "manual");
+    discoverBlock.classList.toggle("hidden", mode !== "discover");
+    if (mode === "manual") {
+      state.discoverResults = [];
+      state.discoverSelected.clear();
+      renderDiscoverResults();
+    } else {
+      state.picks = [];
+      renderChips();
+    }
+    syncPrimaryBtn();
+  }
+
+  async function runDiscover(): Promise<void> {
+    hideError();
+    state.discovering = true;
+    discoverBtn.disabled = true;
+    discoverBtn.textContent = "Finding matches…";
+    try {
+      const params = new URLSearchParams({
+        directive: state.directive,
+        horizon: String(state.profitHorizonYears),
+        limit: "4",
+      });
+      const res = await fetch(`/api/discover?${params}`);
+      const data = (await res.json()) as {
+        picks?: DiscoverPick[];
+        error?: string;
+      };
+      if (!res.ok || !data.picks?.length) {
+        showError(data.error || "Couldn't find matching stocks.", true);
+        return;
+      }
+      state.discoverResults = data.picks;
+      state.discoverSelected = new Set(data.picks.map((p) => p.symbol));
+      renderDiscoverResults();
+      data.picks.forEach((p) => {
+        void fetch(`/api/prefetch?symbol=${encodeURIComponent(p.symbol)}`).catch(
+          () => {}
+        );
+      });
+      warmTurnstileToken();
+    } catch {
+      showError("Couldn't find matching stocks. Try again?", true);
+    } finally {
+      state.discovering = false;
+      discoverBtn.disabled = false;
+      discoverBtn.textContent = "Find stocks for my goal";
+    }
+  }
+
+  inputModeTabs.forEach((tab) => {
+    tab.onclick = () => {
+      const mode = tab.dataset.mode as InputMode;
+      if (mode) setInputMode(mode);
+    };
+  });
+
+  discoverBtn.onclick = () => void runDiscover();
 
   function showPostReportActions(): void {
     shareWrap.classList.remove("hidden");
@@ -755,6 +930,7 @@ export function mountApp(root: HTMLElement): void {
           symbols: state.picks.map((p) => p.symbol),
           mode,
           directive: state.directive,
+          profitHorizonYears: state.profitHorizonYears,
           turnstileToken,
         }),
       });
@@ -801,7 +977,12 @@ export function mountApp(root: HTMLElement): void {
               (directiveId ? directiveLabel(directiveId as InvestmentDirectiveId) : "");
             if (directiveName) {
               const tag = el("p", "directive-tag");
-              tag.textContent = `Goal: ${directiveName}`;
+              const horizon = payload.profitHorizonYears as number | undefined;
+              const horizonNote =
+                horizon != null
+                  ? ` · Profit window: ${profitHorizonLabel(horizon)}`
+                  : "";
+              tag.textContent = `Goal: ${directiveName}${horizonNote}`;
               titleWrap.append(tag);
             }
           }
@@ -867,7 +1048,12 @@ export function mountApp(root: HTMLElement): void {
   function startNewReport(): void {
     state.picks = [];
     state.mode = "separate";
+    state.inputMode = "manual";
     state.directive = loadStoredDirective();
+    state.profitHorizonYears = loadStoredProfitHorizon(state.directive);
+    state.discoverResults = [];
+    state.discoverSelected.clear();
+    setInputMode("manual");
     reportId = "";
     activeShareId = "";
     hasReport = false;
@@ -892,6 +1078,18 @@ export function mountApp(root: HTMLElement): void {
   submitBtn.onclick = () => {
     if (hasReport) {
       startNewReport();
+      return;
+    }
+    if (state.inputMode === "discover") {
+      syncPicksFromDiscover();
+    }
+    if (state.picks.length === 0) {
+      showError(
+        state.inputMode === "discover"
+          ? "Find stocks for your goal first, then select up to 4."
+          : "Add at least one ticker.",
+        false
+      );
       return;
     }
     if (state.picks.length > 1) {
