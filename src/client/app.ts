@@ -46,7 +46,7 @@ export function mountApp(root: HTMLElement): void {
       <span class="brand-mark" aria-hidden="true">${BRAND_MARK_SVG}</span>
       <span class="brand-lockup">
         <span class="brand-name">ZenBuy<span class="brand-tld">.info</span></span>
-        <span class="brand-oracle" id="brand-oracle" aria-live="polite">The insight you wished you had—earlier.</span>
+        <span class="brand-oracle" id="brand-oracle" aria-live="polite">Price is what you pay. Value is what you get. — Warren Buffett</span>
         <span class="brand-tag">Know before you trade</span>
       </span>
     </a>
