@@ -269,8 +269,7 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
     return json({ error: "Research service not configured" }, 503);
   }
 
-  const ip = clientIp(request);
-  let body: { reportId?: string; turnstileToken?: string };
+  let body: { reportId?: string };
   try {
     body = await request.json();
   } catch {
@@ -282,19 +281,6 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
     return json(
       { error: "Generate a report first, then try again.", retry: true },
       400
-    );
-  }
-
-  const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
-  if (!turnstileOk) {
-    return json(
-      {
-        error:
-          "Human check didn't clear. Tap retry — on iPhone, wait for the check to finish first.",
-        retry: true,
-        code: "turnstile_failed",
-      },
-      403
     );
   }
 
@@ -387,7 +373,11 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
   return new Response(stream, { headers: SSE_HEADERS });
 }
 
-async function handleResearch(request: Request, env: Env): Promise<Response> {
+async function handleResearch(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
   if (!env.FINNHUB_API_KEY || !env.ANTHROPIC_API_KEY) {
     return json({ error: "Research service not configured" }, 503);
   }
@@ -468,7 +458,11 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
             scorecardHtml: cached.scorecardHtml,
           });
           send("body", { html: cached.bodyHtml });
-          send("done", { badges: cached.badges, reportId: cacheKey });
+          send("done", {
+            badges: cached.badges,
+            reportId:
+              cached.markdown && cached.markdown.length >= 80 ? cacheKey : "",
+          });
           controller.close();
           return;
         }
@@ -557,7 +551,7 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
           }
         };
 
-        const finish = (markdown: string): void => {
+        const finish = async (markdown: string): Promise<void> => {
           const report = emitParsed(send, markdown);
           report.asOf = oldestAsOf(payloads);
           report.stale = showAsOf;
@@ -566,8 +560,8 @@ async function handleResearch(request: Request, env: Env): Promise<Response> {
             effectiveMode,
             payloads.map((p) => p.symbol)
           );
-          cacheSet(env.CACHE, doneKey, report, ttl).catch(console.error);
-          incrementRateLimit(env, ip).catch(console.error);
+          await cacheSet(env.CACHE, doneKey, report, ttl);
+          ctx.waitUntil(incrementRateLimit(env, ip).catch(console.error));
           send("done", { badges: report.badges, reportId: doneKey });
         };
 
@@ -643,7 +637,7 @@ export default {
     }
 
     if (url.pathname === "/api/research" && request.method === "POST") {
-      return handleResearch(request, env);
+      return handleResearch(request, env, ctx);
     }
 
     return env.ASSETS.fetch(request);

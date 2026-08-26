@@ -523,19 +523,14 @@ export function mountApp(root: HTMLElement): void {
 
     hideError();
     simplifyBtn.disabled = true;
-    simplifyBtn.textContent = "Verifying…";
+    simplifyBtn.textContent = "Rewriting…";
 
     try {
-      const turnstileToken = await obtainTurnstileToken();
-      simplifyBtn.textContent = "Rewriting…";
-
       const res = await fetch("/api/simplify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportId, turnstileToken }),
+        body: JSON.stringify({ reportId }),
       });
-
-      resetTurnstile();
 
       if (!res.ok) {
         const err = (await res.json()) as { error?: string; retry?: boolean };
@@ -563,7 +558,6 @@ export function mountApp(root: HTMLElement): void {
         }
       });
     } catch (e) {
-      resetTurnstile();
       const msg =
         e instanceof Error && e.message
           ? e.message

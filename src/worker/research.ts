@@ -8,7 +8,7 @@ import type { FundamentalsPayload } from "./finnhub";
 
 export interface StreamHandlers {
   onDelta: (text: string) => void;
-  onDone: (full: string) => void;
+  onDone: (full: string) => void | Promise<void>;
   onError: (message: string) => void;
 }
 
@@ -183,7 +183,7 @@ export async function streamResearch(
 
   try {
     const full = await readAnalysisStream(res, handlers.onDelta);
-    handlers.onDone(full);
+    await handlers.onDone(full);
   } catch (e) {
     console.error("stream read failed", e);
     handlers.onError("The analysis stream dropped. Try again?");
@@ -229,7 +229,7 @@ export async function streamLayman(
 
   try {
     const full = await readAnalysisStream(res, handlers.onDelta);
-    handlers.onDone(full);
+    await handlers.onDone(full);
   } catch (e) {
     console.error("layman stream read failed", e);
     handlers.onError("The rewrite stream dropped. Try again?");
@@ -238,7 +238,7 @@ export async function streamLayman(
 
 export interface ParallelHandlers {
   onProgress: (assembled: string) => void;
-  onDone: (assembled: string) => void;
+  onDone: (assembled: string) => void | Promise<void>;
   onError: (message: string) => void;
 }
 
@@ -308,7 +308,7 @@ export async function streamResearchParallel(
     return;
   }
 
-  handlers.onDone(assemble());
+  await handlers.onDone(assemble());
 }
 
 export async function verifyTurnstile(
