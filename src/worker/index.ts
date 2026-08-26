@@ -647,11 +647,20 @@ async function handleResearch(
   return new Response(stream, { headers: SSE_HEADERS });
 }
 
+function isLinkPreviewBot(request: Request): boolean {
+  const ua = request.headers.get("user-agent") ?? "";
+  return /facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Discordbot|SkypeUriPreview|Applebot|WhatsApp|TelegramBot|redditbot|Embedly|Quora Link Preview|Iframely/i.test(
+    ua
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.hostname === "www.zenbuy.info") {
+    // Humans on www → apex. Link-preview bots stay on www so they can read
+    // Open Graph tags without depending on redirect-following.
+    if (url.hostname === "www.zenbuy.info" && !isLinkPreviewBot(request)) {
       return Response.redirect(
         `https://zenbuy.info${url.pathname}${url.search}`,
         301
