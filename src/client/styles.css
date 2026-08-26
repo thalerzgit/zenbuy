@@ -179,8 +179,16 @@ body {
   color: var(--ink);
 }
 
+.search-panel {
+  position: relative;
+  z-index: 3;
+  overflow: visible;
+}
+
 .report-panel {
   margin-top: 1.5rem;
+  position: relative;
+  z-index: 1;
 }
 
 .report-hero {
