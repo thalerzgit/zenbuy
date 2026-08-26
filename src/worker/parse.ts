@@ -107,11 +107,40 @@ export function parseReport(markdown: string): ParsedReport {
 
 export function renderMarkdown(md: string): string {
   if (!md.trim()) return "";
+
+  const escapeText = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const linkify = (text: string) =>
+    text.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      (_m, label: string, href: string) => {
+        try {
+          const u = new URL(href);
+          if (u.protocol !== "http:" && u.protocol !== "https:") {
+            return escapeText(label);
+          }
+          return `<a class="src-link" href="${escapeText(u.toString())}" target="_blank" rel="noopener noreferrer">${escapeText(label)}</a>`;
+        } catch {
+          return escapeText(label);
+        }
+      }
+    );
+
   let html = md
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/^- (.+)$/gm, "<li>$1</li>");
+    .replace(/^### (.+)$/gm, (_m, t: string) => `<h3>${linkify(t)}</h3>`)
+    .replace(/^## (.+)$/gm, (_m, t: string) => `<h2>${linkify(t)}</h2>`)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  // Links after bold so **[Yahoo](url)** still works via strong wrapping separately;
+  // apply linkify to remaining text nodes-ish by running globally.
+  html = linkify(html);
+
+  html = html.replace(/^- (.+)$/gm, (_m, t: string) => `<li>${t}</li>`);
 
   html = html.replace(/(<li>[^\n]+<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
 

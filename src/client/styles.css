@@ -339,6 +339,20 @@ body {
   margin-bottom: 0.3rem;
 }
 
+.report-body a.src-link,
+.bottom-line a.src-link {
+  color: var(--sage-dark);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.report-body a.src-link:hover,
+.bottom-line a.src-link:hover {
+  color: var(--sage);
+}
+
 /* One heading per company instead of the ticker repeated on all nine. */
 .ticker-divider {
   display: flex;

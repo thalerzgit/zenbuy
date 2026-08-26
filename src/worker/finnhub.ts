@@ -8,6 +8,11 @@ import {
   type EarningsSession,
 } from "./market-time";
 import { resolvePeerSymbols } from "./peers";
+import {
+  buildReportSources,
+  citationWithSources,
+  type ReportSources,
+} from "./sources";
 
 export interface SymbolResult {
   symbol: string;
@@ -53,10 +58,19 @@ export interface FundamentalsPayload {
     earningsSessionEt: string | null;
     marketCalendar: "NYSE";
   };
+  /** Public short-label links for clickable citations in the report. */
+  sources: ReportSources;
   /** "degraded" means the backup feed supplied price only. */
   dataQuality: "full" | "degraded";
   source: "finnhub" | "yahoo";
-  news: Array<{ headline: string; date: string; source: string; url: string | null }>;
+  news: Array<{
+    headline: string;
+    date: string;
+    source: string;
+    url: string | null;
+    /** Pre-built markdown short-link when url is present. */
+    linkMd: string | null;
+  }>;
   analystTrend: {
     period: string | null;
     strongBuy: number | null;
@@ -196,6 +210,7 @@ function degradedPayload(
 ): FundamentalsPayload {
   const empty = { pe: null, forwardPe: null, evEbitda: null, ps: null, pb: null };
   const asOfEt = nyseDateString(asOf);
+  const sources = buildReportSources(sym);
   return {
     symbol: sym,
     name: backup.name ?? sym,
@@ -223,6 +238,7 @@ function degradedPayload(
       earningsSessionEt: null,
       marketCalendar: "NYSE",
     },
+    sources,
     news: [],
     analystTrend: {
       period: null,
@@ -232,7 +248,7 @@ function degradedPayload(
       sell: null,
       strongSell: null,
     },
-    _citation: `Fact · Yahoo Finance · ${asOfEt} ET`,
+    _citation: citationWithSources("Yahoo Finance", asOfEt, sources),
   };
 }
 
@@ -357,15 +373,27 @@ export async function fetchFundamentals(
   }));
 
   const nextCatalysts = catalystsFromCalendar(earningsRaw, sym, asOfEt);
+  const sources = buildReportSources(
+    sym,
+    (profile?.weburl as string | undefined) ?? null
+  );
 
-  const news = (newsRaw ?? []).slice(0, 15).map((n) => ({
-    headline: String(n.headline ?? ""),
-    date: n.datetime
-      ? nyseDateString(new Date(n.datetime * 1000))
-      : asOfEt,
-    source: String(n.source ?? "Finnhub"),
-    url: n.url ?? null,
-  }));
+  const news = (newsRaw ?? []).slice(0, 15).map((n) => {
+    const sourceName = String(n.source ?? "News").trim() || "News";
+    const shortLabel =
+      sourceName.length > 18 ? sourceName.slice(0, 16) + "…" : sourceName;
+    const url =
+      typeof n.url === "string" && /^https?:\/\//i.test(n.url) ? n.url : null;
+    return {
+      headline: String(n.headline ?? ""),
+      date: n.datetime
+        ? nyseDateString(new Date(n.datetime * 1000))
+        : asOfEt,
+      source: sourceName,
+      url,
+      linkMd: url ? `[${shortLabel}](${url})` : null,
+    };
+  });
 
   const latestRec = Array.isArray(recRaw) && recRaw.length ? recRaw[0] : null;
 
@@ -413,6 +441,7 @@ export async function fetchFundamentals(
     },
     peers,
     nextCatalysts,
+    sources,
     news,
     analystTrend: {
       period: latestRec?.period ? String(latestRec.period) : null,
@@ -422,7 +451,12 @@ export async function fetchFundamentals(
       sell: num(latestRec?.sell),
       strongSell: num(latestRec?.strongSell),
     },
-    _citation: `Fact · Finnhub · ${asOfEt} ET (${nyseTimestamp(asOf)})`,
+    _citation: citationWithSources(
+      "Finnhub",
+      asOfEt,
+      sources,
+      nyseTimestamp(asOf)
+    ),
   };
 }
 
@@ -492,6 +526,7 @@ export async function getFundamentalsCached(
       ...cached,
       asOfEt: cached.asOfEt ?? asOfEt,
       nextCatalysts,
+      sources: cached.sources ?? buildReportSources(symbol.toUpperCase()),
       dataAgeHours: Math.floor(ageMs / 3_600_000),
     };
   }
