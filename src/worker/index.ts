@@ -4,7 +4,9 @@ import {
   cacheSet,
   fundCacheKey,
   reportCacheKey,
+  SHARE_TTL_SECONDS,
   type CachedReport,
+  type SharedReportSnapshot,
 } from "./cache";
 import {
   getFundamentalsCached,
@@ -268,11 +270,163 @@ const SSE_HEADERS = {
  * Public read of a cached report for share links.
  * No Turnstile — the report id is the capability, and KV TTL bounds exposure.
  */
+function parseReportIdParts(reportId: string): { mode: string; symbols: string[] } {
+  const parts = reportId.split(":");
+  const mode = parts[1] ?? "separate";
+  const symbols = (parts[2] ?? "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  return { mode, symbols };
+}
+
+function stripLaymanBottomLine(md: string): string {
+  return md.replace(/^##\s*Bottom line\b[\s\S]*?(?=\n##\s+|$)/im, "").trim();
+}
+
+async function handleCreateShare(request: Request, env: Env): Promise<Response> {
+  let body: { reportId?: string; variant?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid request.", code: "bad_request" }, 400);
+  }
+
+  const reportId = (body.reportId ?? "").trim();
+  const variant = body.variant === "layman" ? "layman" : "full";
+  if (!reportId.startsWith("report:") || reportId.length > 200) {
+    return json({ error: "Generate a report first.", code: "not_found" }, 404);
+  }
+
+  let snapshot: SharedReportSnapshot | null = null;
+
+  if (variant === "layman") {
+    const layman = await cacheGet<{
+      bottomLineHtml: string;
+      bodyHtml: string;
+    }>(env.CACHE, `layman:${reportId}`);
+    if (!layman?.bodyHtml) {
+      return json(
+        {
+          error: "Plain-English version not ready. Tap Explain in Lay Terms first.",
+          code: "layman_missing",
+        },
+        404
+      );
+    }
+    const { mode, symbols } = parseReportIdParts(reportId);
+    snapshot = {
+      reportId,
+      variant: "layman",
+      mode,
+      symbols,
+      badges: {},
+      bottomLineHtml: layman.bottomLineHtml,
+      bodyHtml: layman.bodyHtml,
+      scorecardHtml: "",
+      asOf: "",
+      stale: false,
+    };
+  } else {
+    const report = await cacheGet<CachedReport>(env.CACHE, reportId);
+    if (!report?.bodyHtml) {
+      return json(
+        {
+          error: "That report has expired. Generate a fresh one to share.",
+          code: "report_expired",
+        },
+        404
+      );
+    }
+    const { mode, symbols } = parseReportIdParts(reportId);
+    snapshot = {
+      reportId,
+      variant: "full",
+      mode,
+      symbols,
+      badges: report.badges,
+      bottomLineHtml: report.bottomLineHtml,
+      bodyHtml: report.bodyHtml,
+      scorecardHtml: report.scorecardHtml,
+      asOf: report.asOf,
+      stale: report.stale,
+    };
+  }
+
+  const shareId = `share:${crypto.randomUUID()}`;
+  await cacheSet(env.CACHE, shareId, snapshot, SHARE_TTL_SECONDS);
+  return json({ shareId });
+}
+
 async function handleGetReport(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const reportId = (url.searchParams.get("id") ?? "").trim();
-  if (!reportId.startsWith("report:") || reportId.length > 200) {
+  if (
+    !reportId.startsWith("report:") &&
+    !reportId.startsWith("share:") &&
+    !reportId.startsWith("layman:")
+  ) {
     return json({ error: "Report not found.", code: "not_found" }, 404);
+  }
+  if (reportId.length > 220) {
+    return json({ error: "Report not found.", code: "not_found" }, 404);
+  }
+
+  if (reportId.startsWith("share:")) {
+    const snapshot = await cacheGet<SharedReportSnapshot>(env.CACHE, reportId);
+    if (!snapshot?.bodyHtml) {
+      return json(
+        {
+          error: "This share link has expired. Ask for a fresh link.",
+          code: "share_expired",
+        },
+        404
+      );
+    }
+    return json({
+      reportId: snapshot.reportId,
+      shareId: reportId,
+      variant: snapshot.variant,
+      mode: snapshot.mode,
+      symbols: snapshot.symbols,
+      badges: snapshot.badges,
+      bottomLineHtml: snapshot.bottomLineHtml,
+      bodyHtml: snapshot.bodyHtml,
+      scorecardHtml: snapshot.scorecardHtml,
+      asOf: snapshot.asOf,
+      stale: snapshot.stale,
+    });
+  }
+
+  const sourceKey = reportId.startsWith("layman:") ? reportId : reportId;
+  if (reportId.startsWith("layman:")) {
+    const layman = await cacheGet<{
+      bottomLineHtml: string;
+      bodyHtml: string;
+    }>(env.CACHE, sourceKey);
+    if (!layman?.bodyHtml) {
+      return json(
+        {
+          error: "That shared report has expired. Generate a fresh one.",
+          code: "report_expired",
+        },
+        404
+      );
+    }
+    const baseId = reportId.slice("layman:".length);
+    const { mode, symbols } = parseReportIdParts(baseId);
+    return json({
+      reportId: baseId,
+      variant: "layman",
+      mode,
+      symbols,
+      badges: {},
+      bottomLineHtml: layman.bottomLineHtml,
+      bodyHtml: layman.bodyHtml,
+      scorecardHtml: "",
+      asOf: "",
+      stale: false,
+    });
   }
 
   const report = await cacheGet<CachedReport>(env.CACHE, reportId);
@@ -286,16 +440,11 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  // Parse mode + tickers from report:mode:SYM1,SYM2
-  const parts = reportId.split(":");
-  const mode = parts[1] ?? "separate";
-  const symbols = (parts[2] ?? "")
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
+  const { mode, symbols } = parseReportIdParts(reportId);
 
   return json({
     reportId,
+    variant: "full",
     mode,
     symbols,
     badges: report.badges,
@@ -375,7 +524,10 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
             const now = Date.now();
             if (full.length > 40 && now - lastAt >= 250) {
               lastAt = now;
-              send("body", { html: renderMarkdown(full), streaming: true });
+              send("body", {
+                html: renderMarkdown(stripLaymanBottomLine(full)),
+                streaming: true,
+              });
             }
           },
           onDone(text) {
@@ -386,7 +538,7 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
             const bottomLineHtml = renderMarkdown(
               `## Bottom line\n\n${bottomMd}`
             );
-            const bodyHtml = renderMarkdown(text);
+            const bodyHtml = renderMarkdown(stripLaymanBottomLine(text));
 
             send("sticky", { bottomLineHtml, badges: {}, scorecardHtml: "" });
             send("body", { html: bodyHtml });
@@ -686,6 +838,10 @@ export default {
 
     if (url.pathname === "/api/report" && request.method === "GET") {
       return handleGetReport(request, env);
+    }
+
+    if (url.pathname === "/api/share" && request.method === "POST") {
+      return handleCreateShare(request, env);
     }
 
     if (url.pathname === "/api/search") {

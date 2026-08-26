@@ -158,19 +158,46 @@ export function mountApp(root: HTMLElement): void {
   /** Snapshot of the analyst report so the lay rewrite can be toggled off. */
   let fullView: { bodyHtml: string; bottomLineHtml: string } | null = null;
   let showingLayman = false;
+  /** Immutable share snapshot id (7-day TTL) created when the user shares. */
+  let activeShareId = "";
   const searchCache = new Map<string, Array<{ symbol: string; name: string }>>();
 
-  function shareUrl(): string {
-    if (!reportId) return window.location.origin + "/";
+  function shareUrlFromId(id: string): string {
     const url = new URL(window.location.origin + "/");
-    url.searchParams.set("r", reportId);
+    url.searchParams.set("r", id);
     return url.toString();
   }
 
+  async function createShareLink(): Promise<string> {
+    if (activeShareId) return shareUrlFromId(activeShareId);
+    if (!reportId) return window.location.origin + "/";
+
+    const res = await fetch("/api/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reportId,
+        variant: showingLayman ? "layman" : "full",
+      }),
+    });
+    const data = (await res.json()) as { shareId?: string; error?: string };
+    if (!res.ok || !data.shareId) {
+      throw new Error(data.error || "Couldn't create share link.");
+    }
+
+    activeShareId = data.shareId;
+    if (window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("r", activeShareId);
+      window.history.replaceState({}, "", url.toString());
+    }
+    return shareUrlFromId(activeShareId);
+  }
+
   function setShareUrlInAddressBar(): void {
-    if (!reportId || !window.history.replaceState) return;
+    if (!activeShareId || !window.history.replaceState) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("r", reportId);
+    url.searchParams.set("r", activeShareId);
     window.history.replaceState({}, "", url.toString());
   }
 
@@ -560,6 +587,7 @@ export function mountApp(root: HTMLElement): void {
     showingLayman = false;
     fullView = null;
     reportId = "";
+    activeShareId = "";
     resetReportUi();
 
     const mode =
@@ -640,7 +668,6 @@ export function mountApp(root: HTMLElement): void {
             simplifyBtn.textContent = "Explain in Lay Terms";
             hasReport = true;
             showPostReportActions();
-            setShareUrlInAddressBar();
           }
 
           if (event === "error") {
@@ -665,6 +692,7 @@ export function mountApp(root: HTMLElement): void {
     state.picks = [];
     state.mode = "separate";
     reportId = "";
+    activeShareId = "";
     hasReport = false;
     fullView = null;
     showingLayman = false;
@@ -717,7 +745,13 @@ export function mountApp(root: HTMLElement): void {
 
   async function shareLinkNative(): Promise<void> {
     closeShareMenu();
-    const url = shareUrl();
+    let url: string;
+    try {
+      url = await createShareLink();
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Couldn't create share link.", true);
+      return;
+    }
     const title = titleWrap.querySelector(".report-title")?.textContent?.trim();
     const shareData: ShareData = {
       title: title ? `ZenBuy: ${title}` : "ZenBuy report",
@@ -738,7 +772,13 @@ export function mountApp(root: HTMLElement): void {
 
   async function copyShareLink(): Promise<void> {
     closeShareMenu();
-    const url = shareUrl();
+    let url: string;
+    try {
+      url = await createShareLink();
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Couldn't create share link.", true);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(url);
       shareBtn.textContent = "Link copied";
@@ -777,6 +817,7 @@ export function mountApp(root: HTMLElement): void {
       badgeStrip.classList.remove("hidden");
       scorecardWrap.classList.remove("hidden");
       showingLayman = false;
+      activeShareId = "";
       simplifyBtn.textContent = "Explain in Lay Terms";
       return;
     }
@@ -811,6 +852,7 @@ export function mountApp(root: HTMLElement): void {
         }
         if (event === "done") {
           showingLayman = true;
+          activeShareId = "";
           simplifyBtn.textContent = "Show full report";
         }
         if (event === "error") {
@@ -831,6 +873,21 @@ export function mountApp(root: HTMLElement): void {
 
   simplifyBtn.onclick = () => void runSimplify();
 
+  function showSharedLoadError(message: string): void {
+    titleWrap.innerHTML = "";
+    badgeStrip.innerHTML = "";
+    scorecardWrap.innerHTML = "";
+    bottomLine.className = "bottom-line";
+    bottomLine.innerHTML = "";
+    const title = el("h1", "report-title");
+    title.textContent = "Link unavailable";
+    titleWrap.append(title);
+    reportBody.className = "report-body revealed shared-error-body";
+    reportBody.innerHTML = `<p>${message}</p><p class="shared-error-hint">Shared links stay live for 7 days. Generate a fresh report below.</p>`;
+    hasReport = false;
+    hidePostReportActions();
+  }
+
   async function loadSharedReport(id: string): Promise<void> {
     hideError();
     submitBtn.disabled = true;
@@ -844,6 +901,8 @@ export function mountApp(root: HTMLElement): void {
       const data = (await res.json()) as {
         error?: string;
         reportId?: string;
+        shareId?: string;
+        variant?: "full" | "layman";
         symbols?: string[];
         badges?: Badges;
         bottomLineHtml?: string;
@@ -854,12 +913,15 @@ export function mountApp(root: HTMLElement): void {
       };
 
       if (!res.ok) {
-        showError(data.error || "Couldn't open that shared report.", true);
-        reportPanel.classList.add("hidden");
+        showSharedLoadError(
+          data.error || "This shared report couldn't be loaded."
+        );
         return;
       }
 
       reportId = String(data.reportId ?? id);
+      activeShareId = data.shareId ?? (id.startsWith("share:") ? id : "");
+      const isLayman = data.variant === "layman";
       state.picks = (data.symbols ?? []).map((symbol) => ({
         symbol,
         name: symbol,
@@ -870,10 +932,18 @@ export function mountApp(root: HTMLElement): void {
       title.textContent = (data.symbols ?? []).join(" · ") || "Shared report";
       titleWrap.append(title);
 
+      if (isLayman) {
+        badgeStrip.classList.add("hidden");
+        scorecardWrap.classList.add("hidden");
+      } else {
+        badgeStrip.classList.remove("hidden");
+        scorecardWrap.classList.remove("hidden");
+      }
+
       applySticky({
         bottomLineHtml: data.bottomLineHtml,
-        badges: data.badges,
-        scorecardHtml: data.scorecardHtml,
+        badges: isLayman ? {} : data.badges,
+        scorecardHtml: isLayman ? "" : data.scorecardHtml,
       });
       if (data.bodyHtml) setReportBody(data.bodyHtml);
 
@@ -882,25 +952,32 @@ export function mountApp(root: HTMLElement): void {
         asOfEl.classList.remove("hidden");
       }
 
-      fullView = {
-        bodyHtml: reportBody.innerHTML,
-        bottomLineHtml: bottomLine.innerHTML,
-      };
-      showingLayman = false;
+      fullView = isLayman
+        ? null
+        : {
+            bodyHtml: reportBody.innerHTML,
+            bottomLineHtml: bottomLine.innerHTML,
+          };
+      showingLayman = isLayman;
+      simplifyBtn.textContent = isLayman
+        ? "Show full report"
+        : "Explain in Lay Terms";
       hasReport = true;
       showPostReportActions();
-      setShareUrlInAddressBar();
       reportPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
-      showError("Couldn't open that shared report.", true);
-      reportPanel.classList.add("hidden");
+      showSharedLoadError("This shared report couldn't be loaded.");
     } finally {
       syncPrimaryBtn();
     }
   }
 
   const sharedId = new URLSearchParams(window.location.search).get("r")?.trim();
-  if (sharedId?.startsWith("report:")) {
+  if (
+    sharedId?.startsWith("report:") ||
+    sharedId?.startsWith("share:") ||
+    sharedId?.startsWith("layman:")
+  ) {
     void loadSharedReport(sharedId);
   }
 

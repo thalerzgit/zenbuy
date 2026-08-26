@@ -362,6 +362,17 @@ body {
   color: var(--sage-dark);
 }
 
+.shared-error-body {
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+.shared-error-hint {
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .report-body :is(h2, h3) {
   color: var(--sage-dark);
 }

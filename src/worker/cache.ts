@@ -36,3 +36,19 @@ export interface CachedReport {
   asOf: string;
   stale: boolean;
 }
+
+/** Immutable snapshot for a single share link (7-day TTL). */
+export interface SharedReportSnapshot {
+  reportId: string;
+  variant: "full" | "layman";
+  mode: string;
+  symbols: string[];
+  badges: Badges;
+  bottomLineHtml: string;
+  bodyHtml: string;
+  scorecardHtml: string;
+  asOf: string;
+  stale: boolean;
+}
+
+export const SHARE_TTL_SECONDS = 7 * 86_400;
