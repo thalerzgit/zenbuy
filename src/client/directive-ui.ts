@@ -8,11 +8,10 @@ import {
 import {
   PROFIT_HORIZON_OPTIONS,
   defaultProfitHorizonYears,
-  loadStoredProfitHorizon,
-  saveStoredProfitHorizon,
 } from "../lib/profit-horizons";
 
 const STORAGE_KEY = "zenbuy:directive:v1";
+const HORIZON_STORAGE_KEY = "zenbuy:profit-horizon:v1";
 
 export function loadStoredDirective(): InvestmentDirectiveId {
   try {
@@ -27,6 +26,29 @@ export function loadStoredDirective(): InvestmentDirectiveId {
 export function saveStoredDirective(id: InvestmentDirectiveId): void {
   try {
     localStorage.setItem(STORAGE_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadStoredProfitHorizon(
+  directiveId: InvestmentDirectiveId
+): number {
+  try {
+    const raw = localStorage.getItem(HORIZON_STORAGE_KEY);
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 3 && n <= 25) return n;
+    }
+  } catch {
+    /* ignore */
+  }
+  return defaultProfitHorizonYears(directiveId);
+}
+
+export function saveStoredProfitHorizon(years: number): void {
+  try {
+    localStorage.setItem(HORIZON_STORAGE_KEY, String(years));
   } catch {
     /* ignore */
   }
@@ -186,5 +208,3 @@ export function mountDirectivePanel(
 export function directiveLabel(id: InvestmentDirectiveId): string {
   return INVESTMENT_DIRECTIVES.find((d) => d.id === id)?.label ?? id;
 }
-
-export { loadStoredProfitHorizon, saveStoredProfitHorizon, defaultProfitHorizonYears };

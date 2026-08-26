@@ -1380,9 +1380,18 @@ export function mountApp(root: HTMLElement): void {
     const directiveParam = params.get("directive");
     if (directiveParam && isInvestmentDirectiveId(directiveParam)) {
       state.directive = directiveParam;
-      mountDirectivePanel(directiveMount, state.directive, (id) => {
-        state.directive = id;
-      });
+      state.profitHorizonYears = loadStoredProfitHorizon(state.directive);
+      mountDirectivePanel(
+        directiveMount,
+        state.directive,
+        state.profitHorizonYears,
+        (id) => {
+          state.directive = id;
+        },
+        (years) => {
+          state.profitHorizonYears = years;
+        }
+      );
     }
 
     const symbols = (params.get("symbols") ?? "")

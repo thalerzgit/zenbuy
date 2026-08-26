@@ -39,6 +39,7 @@ import {
   scorecardHtml,
 } from "./parse";
 import { discoverPicksForGoal } from "./discover";
+import { findSimilarSymbols } from "./similar";
 import {
   checkRateLimit,
   incrementRateLimit,

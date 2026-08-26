@@ -15,8 +15,6 @@ export const PROFIT_HORIZON_OPTIONS: ProfitHorizonOption[] = [
   { id: "18", years: 18, label: "15–20+ yrs" },
 ];
 
-const STORAGE_KEY = "zenbuy:profit-horizon:v1";
-
 export function defaultProfitHorizonYears(directiveId: InvestmentDirectiveId): number {
   return getInvestmentDirective(directiveId).promptHorizonYears;
 }
@@ -25,29 +23,6 @@ export function closestHorizonOption(years: number): ProfitHorizonOption {
   return PROFIT_HORIZON_OPTIONS.reduce((best, opt) =>
     Math.abs(opt.years - years) < Math.abs(best.years - years) ? opt : best
   );
-}
-
-export function loadStoredProfitHorizon(
-  directiveId: InvestmentDirectiveId
-): number {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const n = Number(raw);
-      if (Number.isFinite(n) && n >= 3 && n <= 25) return n;
-    }
-  } catch {
-    /* ignore */
-  }
-  return defaultProfitHorizonYears(directiveId);
-}
-
-export function saveStoredProfitHorizon(years: number): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(years));
-  } catch {
-    /* ignore */
-  }
 }
 
 export function profitHorizonLabel(years: number): string {
