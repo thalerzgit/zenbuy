@@ -581,6 +581,43 @@ input[type="text"]:focus {
   color: var(--ink);
 }
 
+.share-wrap {
+  position: relative;
+}
+
+.share-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 40;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface, #fff);
+  box-shadow: 0 10px 28px rgba(20, 40, 20, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.share-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--ink);
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.share-menu-item:hover {
+  background: rgba(61, 134, 45, 0.1);
+}
+
 .turnstile {
   margin-top: 0.75rem;
   min-height: 0;

@@ -61,10 +61,16 @@ export function mountApp(root: HTMLElement): void {
     </div>
     <div id="chips" class="chips"></div>
     <div class="actions">
-      <button id="submit-btn" type="button" class="btn primary" disabled>Generate report</button>
+      <button id="submit-btn" type="button" class="btn primary" disabled>Generate Report</button>
       <button id="simplify-btn" type="button" class="btn ghost hidden">Explain in Lay Terms</button>
-      <button id="print-btn" type="button" class="btn ghost hidden">Export PDF</button>
-      <button id="reset-btn" type="button" class="btn ghost hidden">Start New Report</button>
+      <div id="share-wrap" class="share-wrap hidden">
+        <button id="share-btn" type="button" class="btn ghost" aria-haspopup="menu" aria-expanded="false">Share</button>
+        <div id="share-menu" class="share-menu hidden" role="menu">
+          <button type="button" class="share-menu-item" role="menuitem" data-share="link">Share link</button>
+          <button type="button" class="share-menu-item" role="menuitem" data-share="copy">Copy link</button>
+          <button type="button" class="share-menu-item" role="menuitem" data-share="pdf">Save as PDF</button>
+        </div>
+      </div>
     </div>
     <div id="turnstile" class="turnstile"></div>
     <p id="form-error" class="form-error hidden"></p>
@@ -125,11 +131,12 @@ export function mountApp(root: HTMLElement): void {
   const dropdown = searchWrap.querySelector("#dropdown") as HTMLDivElement;
   const chips = searchWrap.querySelector("#chips") as HTMLDivElement;
   const submitBtn = searchWrap.querySelector("#submit-btn") as HTMLButtonElement;
-  const printBtn = searchWrap.querySelector("#print-btn") as HTMLButtonElement;
   const simplifyBtn = searchWrap.querySelector(
     "#simplify-btn"
   ) as HTMLButtonElement;
-  const resetBtn = searchWrap.querySelector("#reset-btn") as HTMLButtonElement;
+  const shareWrap = searchWrap.querySelector("#share-wrap") as HTMLDivElement;
+  const shareBtn = searchWrap.querySelector("#share-btn") as HTMLButtonElement;
+  const shareMenu = searchWrap.querySelector("#share-menu") as HTMLDivElement;
   const formError = searchWrap.querySelector("#form-error") as HTMLParagraphElement;
   const reportPanel = report;
   const titleWrap = report.querySelector("#report-title-wrap") as HTMLDivElement;
@@ -142,10 +149,62 @@ export function mountApp(root: HTMLElement): void {
   let debounce: ReturnType<typeof setTimeout>;
   let searchAbort: AbortController | null = null;
   let reportId = "";
+  /** True once a report is on screen — primary button becomes Start New Report. */
+  let hasReport = false;
   /** Snapshot of the analyst report so the lay rewrite can be toggled off. */
   let fullView: { bodyHtml: string; bottomLineHtml: string } | null = null;
   let showingLayman = false;
   const searchCache = new Map<string, Array<{ symbol: string; name: string }>>();
+
+  function shareUrl(): string {
+    if (!reportId) return window.location.origin + "/";
+    const url = new URL(window.location.origin + "/");
+    url.searchParams.set("r", reportId);
+    return url.toString();
+  }
+
+  function setShareUrlInAddressBar(): void {
+    if (!reportId || !window.history.replaceState) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("r", reportId);
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  function clearShareUrlInAddressBar(): void {
+    if (!window.history.replaceState) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("r")) return;
+    url.searchParams.delete("r");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }
+
+  function closeShareMenu(): void {
+    shareMenu.classList.add("hidden");
+    shareBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function syncPrimaryBtn(): void {
+    if (state.loading) return;
+    if (hasReport) {
+      submitBtn.textContent = "Start New Report";
+      submitBtn.disabled = false;
+    } else {
+      submitBtn.textContent = "Generate Report";
+      submitBtn.disabled = state.picks.length === 0;
+    }
+  }
+
+  function showPostReportActions(): void {
+    shareWrap.classList.remove("hidden");
+    if (reportId) simplifyBtn.classList.remove("hidden");
+  }
+
+  function hidePostReportActions(): void {
+    closeShareMenu();
+    shareWrap.classList.add("hidden");
+    simplifyBtn.classList.add("hidden");
+    simplifyBtn.textContent = "Explain in Lay Terms";
+  }
 
   function renderChips(): void {
     chips.innerHTML = "";
@@ -156,11 +215,10 @@ export function mountApp(root: HTMLElement): void {
       chip.querySelector("button")!.onclick = () => {
         state.picks = state.picks.filter((p) => p.symbol !== pick.symbol);
         renderChips();
-        submitBtn.disabled = state.picks.length === 0 || state.loading;
       };
       chips.append(chip);
     });
-    submitBtn.disabled = state.picks.length === 0 || state.loading;
+    syncPrimaryBtn();
   }
 
   function showError(msg: string, retry = true): void {
@@ -368,12 +426,11 @@ export function mountApp(root: HTMLElement): void {
   async function runResearch(): Promise<void> {
     hideError();
     state.loading = true;
+    hasReport = false;
     submitBtn.disabled = true;
     submitBtn.textContent = "Verifying…";
     reportPanel.classList.remove("hidden");
-    printBtn.classList.add("hidden");
-    simplifyBtn.classList.add("hidden");
-    resetBtn.classList.add("hidden");
+    hidePostReportActions();
     badgeStrip.classList.remove("hidden");
     scorecardWrap.classList.remove("hidden");
     showingLayman = false;
@@ -457,10 +514,9 @@ export function mountApp(root: HTMLElement): void {
             };
             showingLayman = false;
             simplifyBtn.textContent = "Explain in Lay Terms";
-            printBtn.classList.remove("hidden");
-            resetBtn.classList.remove("hidden");
-            // Needs the cached report on the server to rewrite from.
-            if (reportId) simplifyBtn.classList.remove("hidden");
+            hasReport = true;
+            showPostReportActions();
+            setShareUrlInAddressBar();
           }
 
           if (event === "error") {
@@ -477,12 +533,37 @@ export function mountApp(root: HTMLElement): void {
       showError(msg, true);
     } finally {
       state.loading = false;
-      submitBtn.textContent = "Generate report";
-      submitBtn.disabled = state.picks.length === 0;
+      syncPrimaryBtn();
     }
   }
 
+  function startNewReport(): void {
+    state.picks = [];
+    state.mode = "separate";
+    reportId = "";
+    hasReport = false;
+    fullView = null;
+    showingLayman = false;
+    renderChips();
+    hideError();
+    reportPanel.classList.add("hidden");
+    resetReportUi();
+    badgeStrip.classList.remove("hidden");
+    scorecardWrap.classList.remove("hidden");
+    hidePostReportActions();
+    clearShareUrlInAddressBar();
+    input.value = "";
+    dropdown.classList.add("hidden");
+    syncPrimaryBtn();
+    input.focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   submitBtn.onclick = () => {
+    if (hasReport) {
+      startNewReport();
+      return;
+    }
     if (state.picks.length > 1) {
       modal.classList.remove("hidden");
       return;
@@ -504,10 +585,65 @@ export function mountApp(root: HTMLElement): void {
     runResearch();
   });
 
-  printBtn.onclick = () => {
+  function saveAsPdf(): void {
+    closeShareMenu();
     reportPanel.dataset.printDate = new Date().toLocaleString();
     window.print();
+  }
+
+  async function shareLinkNative(): Promise<void> {
+    closeShareMenu();
+    const url = shareUrl();
+    const title = titleWrap.querySelector(".report-title")?.textContent?.trim();
+    const shareData: ShareData = {
+      title: title ? `ZenBuy: ${title}` : "ZenBuy report",
+      text: "Investment research from ZenBuy.info — not financial advice.",
+      url,
+    };
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch (e) {
+      // User cancelled the sheet — not an error.
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    }
+    await copyShareLink();
+  }
+
+  async function copyShareLink(): Promise<void> {
+    closeShareMenu();
+    const url = shareUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      shareBtn.textContent = "Link copied";
+      window.setTimeout(() => {
+        shareBtn.textContent = "Share";
+      }, 1600);
+    } catch {
+      window.prompt("Copy this share link:", url);
+    }
+  }
+
+  shareBtn.onclick = (e) => {
+    e.stopPropagation();
+    const open = shareMenu.classList.toggle("hidden") === false;
+    shareBtn.setAttribute("aria-expanded", open ? "true" : "false");
   };
+
+  shareMenu.querySelectorAll<HTMLButtonElement>("[data-share]").forEach((btn) => {
+    btn.onclick = () => {
+      const action = btn.dataset.share;
+      if (action === "link") void shareLinkNative();
+      else if (action === "copy") void copyShareLink();
+      else if (action === "pdf") saveAsPdf();
+    };
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!shareWrap.contains(e.target as Node)) closeShareMenu();
+  });
 
   async function runSimplify(): Promise<void> {
     // Second press returns to the analyst report — no need to refetch.
@@ -571,29 +707,78 @@ export function mountApp(root: HTMLElement): void {
 
   simplifyBtn.onclick = () => void runSimplify();
 
-  resetBtn.onclick = () => {
-    state.picks = [];
-    state.mode = "separate";
-    reportId = "";
-    fullView = null;
-    showingLayman = false;
-    renderChips();
+  async function loadSharedReport(id: string): Promise<void> {
     hideError();
-    reportPanel.classList.add("hidden");
-    resetReportUi();
-    badgeStrip.classList.remove("hidden");
-    scorecardWrap.classList.remove("hidden");
-    printBtn.classList.add("hidden");
-    resetBtn.classList.add("hidden");
-    simplifyBtn.classList.add("hidden");
-    simplifyBtn.textContent = "Explain in Lay Terms";
-    input.value = "";
-    dropdown.classList.add("hidden");
     submitBtn.disabled = true;
-    submitBtn.textContent = "Generate report";
-    input.focus();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+    submitBtn.textContent = "Loading…";
+    reportPanel.classList.remove("hidden");
+    hidePostReportActions();
+    resetReportUi();
+
+    try {
+      const res = await fetch(`/api/report?id=${encodeURIComponent(id)}`);
+      const data = (await res.json()) as {
+        error?: string;
+        reportId?: string;
+        symbols?: string[];
+        badges?: Badges;
+        bottomLineHtml?: string;
+        bodyHtml?: string;
+        scorecardHtml?: string;
+        asOf?: string;
+        stale?: boolean;
+      };
+
+      if (!res.ok) {
+        showError(data.error || "Couldn't open that shared report.", true);
+        reportPanel.classList.add("hidden");
+        return;
+      }
+
+      reportId = String(data.reportId ?? id);
+      state.picks = (data.symbols ?? []).map((symbol) => ({
+        symbol,
+        name: symbol,
+      }));
+      renderChips();
+
+      const title = el("h1", "report-title");
+      title.textContent = (data.symbols ?? []).join(" · ") || "Shared report";
+      titleWrap.append(title);
+
+      applySticky({
+        bottomLineHtml: data.bottomLineHtml,
+        badges: data.badges,
+        scorecardHtml: data.scorecardHtml,
+      });
+      if (data.bodyHtml) setReportBody(data.bodyHtml);
+
+      if (data.stale && data.asOf) {
+        asOfEl.textContent = `Data as of ${data.asOf}`;
+        asOfEl.classList.remove("hidden");
+      }
+
+      fullView = {
+        bodyHtml: reportBody.innerHTML,
+        bottomLineHtml: bottomLine.innerHTML,
+      };
+      showingLayman = false;
+      hasReport = true;
+      showPostReportActions();
+      setShareUrlInAddressBar();
+      reportPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch {
+      showError("Couldn't open that shared report.", true);
+      reportPanel.classList.add("hidden");
+    } finally {
+      syncPrimaryBtn();
+    }
+  }
+
+  const sharedId = new URLSearchParams(window.location.search).get("r")?.trim();
+  if (sharedId?.startsWith("report:")) {
+    void loadSharedReport(sharedId);
+  }
 
   renderChips();
 }

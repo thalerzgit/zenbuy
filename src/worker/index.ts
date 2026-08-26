@@ -264,6 +264,49 @@ const SSE_HEADERS = {
  * Takes the report's cache id rather than its markdown so a ~30KB document
  * doesn't round-trip through the browser.
  */
+/**
+ * Public read of a cached report for share links.
+ * No Turnstile — the report id is the capability, and KV TTL bounds exposure.
+ */
+async function handleGetReport(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const reportId = (url.searchParams.get("id") ?? "").trim();
+  if (!reportId.startsWith("report:") || reportId.length > 200) {
+    return json({ error: "Report not found.", code: "not_found" }, 404);
+  }
+
+  const report = await cacheGet<CachedReport>(env.CACHE, reportId);
+  if (!report?.bodyHtml) {
+    return json(
+      {
+        error: "That shared report has expired. Generate a fresh one.",
+        code: "report_expired",
+      },
+      404
+    );
+  }
+
+  // Parse mode + tickers from report:mode:SYM1,SYM2
+  const parts = reportId.split(":");
+  const mode = parts[1] ?? "separate";
+  const symbols = (parts[2] ?? "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+
+  return json({
+    reportId,
+    mode,
+    symbols,
+    badges: report.badges,
+    bottomLineHtml: report.bottomLineHtml,
+    bodyHtml: report.bodyHtml,
+    scorecardHtml: report.scorecardHtml,
+    asOf: report.asOf,
+    stale: report.stale,
+  });
+}
+
 async function handleSimplify(request: Request, env: Env): Promise<Response> {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: "Research service not configured" }, 503);
@@ -630,6 +673,10 @@ export default {
     }
     if (url.pathname === "/api/simplify" && request.method === "POST") {
       return handleSimplify(request, env);
+    }
+
+    if (url.pathname === "/api/report" && request.method === "GET") {
+      return handleGetReport(request, env);
     }
 
     if (url.pathname === "/api/search") {
