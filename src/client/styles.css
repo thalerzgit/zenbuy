@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light dark;
   /* Content surfaces stay light for readability */
   --green: #3d862d;
   --green-dark: #2f6b22;
@@ -18,14 +19,58 @@
   --bg: #f7faf6;
   --card: #ffffff;
   --border: #e0e0e0;
+  --row-alt: #fcfcfb;
+  --skeleton-a: #eee;
+  --skeleton-b: #f5f5f5;
+  --error-bg: #fff5f5;
+  --error-border: #fecaca;
+  --error-ink: #9b2226;
+  --badge-buy-bg: #d8f3dc;
+  --badge-sell-bg: #fde8e8;
+  --badge-hold-bg: #eef0f2;
   --bull: var(--green-positive);
   --bear: #9b2226;
   --neutral: #6c757d;
   --radius: 14px;
   --shadow: 0 8px 32px rgba(26, 26, 26, 0.06);
+  --modal-scrim: rgba(26, 26, 26, 0.35);
   font-family: "Outfit", "DM Sans", system-ui, sans-serif;
   color: var(--ink);
   background: var(--bg);
+}
+
+/* Windows / macOS / browser dark mode — OS preference only */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --green: #4ca03a;
+    --green-dark: #6fbf5c;
+    --green-light: rgba(76, 160, 58, 0.16);
+    --green-positive: #3ecf6a;
+    --sage: var(--green);
+    --sage-light: var(--green-light);
+    --sage-dark: #8fd67a;
+    --ink: #f3f4f1;
+    --ink-soft: #d8dbd4;
+    --muted: #9aa39a;
+    --bg: #121512;
+    --card: #1b1f1b;
+    --border: #2c332c;
+    --row-alt: #222722;
+    --skeleton-a: #2a2f2a;
+    --skeleton-b: #343a34;
+    --error-bg: rgba(155, 34, 38, 0.18);
+    --error-border: rgba(240, 113, 120, 0.45);
+    --error-ink: #ffb4b8;
+    --badge-buy-bg: rgba(62, 207, 106, 0.16);
+    --badge-sell-bg: rgba(240, 113, 120, 0.16);
+    --badge-hold-bg: rgba(154, 163, 154, 0.16);
+    --bull: #3ecf6a;
+    --bear: #f07178;
+    --neutral: #9aa39a;
+    --shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+    --modal-scrim: rgba(0, 0, 0, 0.55);
+  }
 }
 
 *,
@@ -244,32 +289,32 @@ body {
 }
 
 .badge.rec.buy {
-  background: #d8f3dc;
+  background: var(--badge-buy-bg);
   color: var(--bull);
 }
 
 .badge.rec.sell {
-  background: #fde8e8;
+  background: var(--badge-sell-bg);
   color: var(--bear);
 }
 
 .badge.rec.hold {
-  background: #eef0f2;
+  background: var(--badge-hold-bg);
   color: var(--neutral);
 }
 
 .badge.verdict.bullish {
-  background: #d8f3dc;
+  background: var(--badge-buy-bg);
   color: var(--bull);
 }
 
 .badge.verdict.bearish {
-  background: #fde8e8;
+  background: var(--badge-sell-bg);
   color: var(--bear);
 }
 
 .badge.verdict.neutral {
-  background: #eef0f2;
+  background: var(--badge-hold-bg);
   color: var(--neutral);
 }
 
@@ -434,7 +479,7 @@ body {
 }
 
 .table-scroll tbody tr:nth-child(even) {
-  background: #fcfcfb;
+  background: var(--row-alt);
 }
 
 .table-scroll td:first-child {
@@ -488,7 +533,8 @@ input[type="text"] {
 }
 
 input[type="text"]::placeholder {
-  color: #8a8a8a;
+  color: var(--muted);
+  opacity: 0.75;
 }
 
 input[type="text"]:focus {
@@ -672,10 +718,10 @@ input[type="text"]:focus {
 .form-error {
   margin-top: 1rem;
   padding: 0.85rem 1rem;
-  background: #fff5f5;
-  border: 1px solid #fecaca;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
   border-radius: 10px;
-  color: #9b2226;
+  color: var(--error-ink);
 }
 
 .hidden {
@@ -685,7 +731,7 @@ input[type="text"]:focus {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(26, 26, 26, 0.35);
+  background: var(--modal-scrim);
   display: grid;
   place-items: center;
   z-index: 50;
@@ -764,7 +810,12 @@ input[type="text"]:focus {
   display: block;
   height: 0.75rem;
   border-radius: 6px;
-  background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-a) 25%,
+    var(--skeleton-b) 50%,
+    var(--skeleton-a) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.2s infinite;
 }
@@ -812,8 +863,22 @@ input[type="text"]:focus {
 }
 
 @media print {
+  :root {
+    color-scheme: light;
+    --ink: #1a1a1a;
+    --ink-soft: #2a2a2a;
+    --muted: #5c5c5c;
+    --bg: #ffffff;
+    --card: #ffffff;
+    --border: #e0e0e0;
+    --row-alt: #fcfcfb;
+    --sage-light: #e8f4e5;
+    --sage-dark: #2f6b22;
+  }
+
   body {
     background: white;
+    color: #1a1a1a;
   }
 
   .site-header,
