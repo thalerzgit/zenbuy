@@ -480,7 +480,7 @@ export function mountApp(root: HTMLElement): void {
 
             const skipped = (payload.skipped as string[] | undefined) ?? [];
             const notes: string[] = [];
-            if (payload.showAsOf) notes.push(`Data as of ${payload.asOf}`);
+            if (payload.showAsOf) notes.push(`Data as of ${payload.asOf} ET`);
             if (skipped.length) {
               notes.push(`No data for ${skipped.join(", ")} — left out of this report.`);
             }

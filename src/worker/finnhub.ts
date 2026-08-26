@@ -1,4 +1,12 @@
 import { fetchBackupQuote, type BackupQuote } from "./backup";
+import {
+  addCalendarDays,
+  formatEarningsSession,
+  nyseDateString,
+  nyseTimestamp,
+  pickNextEarningsDate,
+  type EarningsSession,
+} from "./market-time";
 import { resolvePeerSymbols } from "./peers";
 
 export interface SymbolResult {
@@ -14,6 +22,8 @@ export interface FundamentalsPayload {
   exchange: string | null;
   industry: string | null;
   asOf: string;
+  /** NYSE session date (America/New_York) for the asOf instant. */
+  asOfEt: string;
   dataAgeHours: number;
   quote: {
     price: number | null;
@@ -34,7 +44,15 @@ export interface FundamentalsPayload {
     }>;
   };
   peers: Array<{ symbol: string; pe: number | null; ps: number | null }>;
-  nextCatalysts: { earningsDate: string | null };
+  nextCatalysts: {
+    /** Next earnings calendar date (YYYY-MM-DD), NYSE session day. */
+    earningsDate: string | null;
+    /** Finnhub hour code: bmo / amc / dmh */
+    earningsSession: EarningsSession;
+    /** Plain-English session in Eastern Time */
+    earningsSessionEt: string | null;
+    marketCalendar: "NYSE";
+  };
   /** "degraded" means the backup feed supplied price only. */
   dataQuality: "full" | "degraded";
   source: "finnhub" | "yahoo";
@@ -177,12 +195,14 @@ function degradedPayload(
   asOf: Date
 ): FundamentalsPayload {
   const empty = { pe: null, forwardPe: null, evEbitda: null, ps: null, pb: null };
+  const asOfEt = nyseDateString(asOf);
   return {
     symbol: sym,
     name: backup.name ?? sym,
     exchange: backup.exchange,
     industry: null,
     asOf: asOf.toISOString(),
+    asOfEt,
     dataAgeHours: 0,
     dataQuality: "degraded",
     source: "yahoo",
@@ -197,7 +217,12 @@ function degradedPayload(
     cashFlow: { fcfPerShare: null, fcfMargin: null },
     insiders: { ownershipPct: null, recentTrades: [] },
     peers: [],
-    nextCatalysts: { earningsDate: null },
+    nextCatalysts: {
+      earningsDate: null,
+      earningsSession: null,
+      earningsSessionEt: null,
+      marketCalendar: "NYSE",
+    },
     news: [],
     analystTrend: {
       period: null,
@@ -207,7 +232,37 @@ function degradedPayload(
       sell: null,
       strongSell: null,
     },
-    _citation: `Fact · Yahoo Finance · ${asOf.toISOString().slice(0, 10)}`,
+    _citation: `Fact · Yahoo Finance · ${asOfEt} ET`,
+  };
+}
+
+function emptyCatalysts(): FundamentalsPayload["nextCatalysts"] {
+  return {
+    earningsDate: null,
+    earningsSession: null,
+    earningsSessionEt: null,
+    marketCalendar: "NYSE",
+  };
+}
+
+function catalystsFromCalendar(
+  earningsRaw: {
+    earningsCalendar?: Array<{ date?: string; hour?: string; symbol?: string }>;
+  } | null,
+  sym: string,
+  asOfEt: string
+): FundamentalsPayload["nextCatalysts"] {
+  const next = pickNextEarningsDate(
+    earningsRaw?.earningsCalendar ?? [],
+    sym,
+    asOfEt
+  );
+  if (!next) return emptyCatalysts();
+  return {
+    earningsDate: next.date,
+    earningsSession: next.hour,
+    earningsSessionEt: formatEarningsSession(next.hour),
+    marketCalendar: "NYSE",
   };
 }
 
@@ -217,8 +272,11 @@ export async function fetchFundamentals(
 ): Promise<FundamentalsPayload> {
   const sym = symbol.toUpperCase();
   const asOf = new Date();
-  const fromDate = new Date(asOf.getTime() - 30 * 864e5).toISOString().slice(0, 10);
-  const toDate = asOf.toISOString().slice(0, 10);
+  // All calendar windows are NYSE session dates — never UTC midnight.
+  const asOfEt = nyseDateString(asOf);
+  const fromDate = addCalendarDays(asOfEt, -30);
+  const earningsFrom = addCalendarDays(asOfEt, -1);
+  const earningsTo = addCalendarDays(asOfEt, 120);
 
   const [profile, quote, metricsRaw, insiderRaw, peersRaw, earningsRaw, newsRaw, recRaw] =
     await Promise.all([
@@ -242,14 +300,16 @@ export async function fetchFundamentals(
         `/stock/peers?symbol=${sym}`,
         true
       ),
-      finnhub<{ earningsCalendar?: Array<{ date?: string; symbol?: string }> }>(
+      finnhub<{
+        earningsCalendar?: Array<{ date?: string; hour?: string; symbol?: string }>;
+      }>(
         apiKey,
-        `/calendar/earnings?from=${toDate}&to=${new Date(asOf.getTime() + 120 * 864e5).toISOString().slice(0, 10)}&symbol=${sym}`,
+        `/calendar/earnings?from=${earningsFrom}&to=${earningsTo}&symbol=${sym}`,
         true
       ),
       finnhub<Array<{ headline?: string; datetime?: number; source?: string; url?: string }>>(
         apiKey,
-        `/company-news?symbol=${sym}&from=${fromDate}&to=${toDate}`,
+        `/company-news?symbol=${sym}&from=${fromDate}&to=${asOfEt}`,
         true
       ),
       finnhub<Array<Record<string, number | string>>>(
@@ -296,14 +356,13 @@ export async function fetchFundamentals(
     shares: num(row.share),
   }));
 
-  const earningsDate =
-    earningsRaw?.earningsCalendar?.find((e) => e.symbol === sym)?.date ?? null;
+  const nextCatalysts = catalystsFromCalendar(earningsRaw, sym, asOfEt);
 
   const news = (newsRaw ?? []).slice(0, 15).map((n) => ({
     headline: String(n.headline ?? ""),
     date: n.datetime
-      ? new Date(n.datetime * 1000).toISOString().slice(0, 10)
-      : toDate,
+      ? nyseDateString(new Date(n.datetime * 1000))
+      : asOfEt,
     source: String(n.source ?? "Finnhub"),
     url: n.url ?? null,
   }));
@@ -319,6 +378,7 @@ export async function fetchFundamentals(
     exchange: (profile?.exchange as string) ?? null,
     industry: (profile?.finnhubIndustry as string) ?? null,
     asOf: asOf.toISOString(),
+    asOfEt,
     dataAgeHours: 0,
     dataQuality: "full",
     source: "finnhub",
@@ -352,7 +412,7 @@ export async function fetchFundamentals(
       recentTrades: insiderRows,
     },
     peers,
-    nextCatalysts: { earningsDate },
+    nextCatalysts,
     news,
     analystTrend: {
       period: latestRec?.period ? String(latestRec.period) : null,
@@ -362,8 +422,24 @@ export async function fetchFundamentals(
       sell: num(latestRec?.sell),
       strongSell: num(latestRec?.strongSell),
     },
-    _citation: `Fact · Finnhub · ${asOf.toISOString().slice(0, 10)}`,
+    _citation: `Fact · Finnhub · ${asOfEt} ET (${nyseTimestamp(asOf)})`,
   };
+}
+
+function earningsNeedsRefresh(
+  cached: FundamentalsPayload,
+  asOfEt: string
+): boolean {
+  const date = cached.nextCatalysts?.earningsDate;
+  // Legacy cache rows predate NYSE-localized catalysts — always re-check.
+  if (!cached.nextCatalysts?.marketCalendar) return true;
+  if (!date) return true;
+  // Stale once the NYSE session day has moved past the print.
+  if (date < asOfEt) return true;
+  // A print more than ~5 weeks out often means we missed a nearer confirmed
+  // date (e.g. NVDA tomorrow vs a November estimate still in the window).
+  if (date > addCalendarDays(asOfEt, 35)) return true;
+  return false;
 }
 
 export async function getFundamentalsCached(
@@ -376,8 +452,46 @@ export async function getFundamentalsCached(
   const cached = await cache.get<FundamentalsPayload>(key, "json");
   if (cached) {
     const ageMs = Date.now() - new Date(cached.asOf).getTime();
+    const asOfEt = nyseDateString();
+    let nextCatalysts = cached.nextCatalysts ?? emptyCatalysts();
+
+    // Earnings dates go stale overnight; refresh just the calendar when needed
+    // so a warm fundamentals cache does not keep last quarter's November print.
+    if (earningsNeedsRefresh(cached, asOfEt)) {
+      const earningsFrom = addCalendarDays(asOfEt, -1);
+      const earningsTo = addCalendarDays(asOfEt, 120);
+      const earningsRaw = await finnhub<{
+        earningsCalendar?: Array<{ date?: string; hour?: string; symbol?: string }>;
+      }>(
+        apiKey,
+        `/calendar/earnings?from=${earningsFrom}&to=${earningsTo}&symbol=${symbol.toUpperCase()}`,
+        true
+      );
+      if (earningsRaw) {
+        nextCatalysts = catalystsFromCalendar(
+          earningsRaw,
+          symbol.toUpperCase(),
+          asOfEt
+        );
+        const patched: FundamentalsPayload = {
+          ...cached,
+          asOfEt,
+          nextCatalysts,
+          dataAgeHours: Math.floor(ageMs / 3_600_000),
+        };
+        await cache
+          .put(key, JSON.stringify({ ...patched, dataAgeHours: 0 }), {
+            expirationTtl: ttlSeconds,
+          })
+          .catch(() => {});
+        return patched;
+      }
+    }
+
     return {
       ...cached,
+      asOfEt: cached.asOfEt ?? asOfEt,
+      nextCatalysts,
       dataAgeHours: Math.floor(ageMs / 3_600_000),
     };
   }
@@ -391,5 +505,8 @@ export function isStalePayload(payloads: FundamentalsPayload[]): boolean {
 }
 
 export function oldestAsOf(payloads: FundamentalsPayload[]): string {
+  // Prefer NYSE session date for the UI “as of” line.
+  const withEt = payloads.map((p) => p.asOfEt).filter(Boolean);
+  if (withEt.length) return withEt.reduce((a, b) => (a < b ? a : b));
   return payloads.reduce((a, b) => (a.asOf < b.asOf ? a : b)).asOf;
 }
