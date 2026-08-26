@@ -347,7 +347,18 @@ export async function verifyTurnstile(
   }
 }
 
+export function isRateLimitExempt(env: Env, ip: string): boolean {
+  const raw = env.RATE_LIMIT_WHITELIST?.trim();
+  if (!raw) return false;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(ip);
+}
+
 export async function checkRateLimit(env: Env, ip: string): Promise<boolean> {
+  if (isRateLimitExempt(env, ip)) return true;
   const limit = Number(env.RATE_LIMIT_DAILY || 5);
   const key = `rl:${ip}:${new Date().toISOString().slice(0, 10)}`;
   const current = Number((await env.CACHE.get(key)) || 0);
@@ -355,6 +366,7 @@ export async function checkRateLimit(env: Env, ip: string): Promise<boolean> {
 }
 
 export async function incrementRateLimit(env: Env, ip: string): Promise<void> {
+  if (isRateLimitExempt(env, ip)) return;
   const key = `rl:${ip}:${new Date().toISOString().slice(0, 10)}`;
   const current = Number((await env.CACHE.get(key)) || 0);
   await env.CACHE.put(key, String(current + 1), { expirationTtl: 86_400 });

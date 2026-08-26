@@ -156,4 +156,4 @@ ANTHROPIC_API_KEY=... node tools/smoke-test.mjs --llm comparative AAPL CSCO PANW
 - Soft cap report length, section streaming, sage green UI
 - KV 24h cache + AI Gateway cache on Claude
 - Print-to-PDF with logo watermark
-- 5 reports / IP / day (configurable)
+- 5 reports / IP / day (configurable via `RATE_LIMIT_DAILY`; exempt IPs via `RATE_LIMIT_WHITELIST`)

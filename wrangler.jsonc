@@ -20,6 +20,7 @@
   "vars": {
     "ZENBUY_MODEL": "claude-sonnet-5",
     "RATE_LIMIT_DAILY": "5",
+    "RATE_LIMIT_WHITELIST": "99.0.81.158",
     "CACHE_TTL_SECONDS": "86400"
   },
   "routes": [

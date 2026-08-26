@@ -10,5 +10,7 @@ interface Env {
   TURNSTILE_SITE_KEY?: string;
   ZENBUY_MODEL?: string;
   RATE_LIMIT_DAILY?: string;
+  /** Comma-separated IPs exempt from daily report limits. */
+  RATE_LIMIT_WHITELIST?: string;
   CACHE_TTL_SECONDS?: string;
 }
