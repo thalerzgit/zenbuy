@@ -1,3 +1,4 @@
+import { BRAND_MARK_SVG } from "./brand-mark";
 import {
   initTurnstile,
   obtainTurnstileToken,
@@ -41,25 +42,7 @@ export function mountApp(root: HTMLElement): void {
   const header = el("header", "site-header");
   header.innerHTML = `
     <a class="brand" href="/" aria-label="ZenBuy.info home">
-      <span class="brand-mark" aria-hidden="true">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="44" height="44">
-          <defs>
-            <linearGradient id="zb-header-arch" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stop-color="#ffffff"/>
-              <stop offset="100%" stop-color="#e8f4e5"/>
-            </linearGradient>
-          </defs>
-          <path d="M8 38V18Q24 6 40 18V38" fill="none" stroke="url(#zb-header-arch)" stroke-width="2.4" stroke-linecap="round"/>
-          <path d="M10 36H38" stroke="rgba(255,255,255,0.35)" stroke-width="1.2" stroke-linecap="round"/>
-          <path d="M13 31L19 26L25 22L33 14" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <rect x="16.5" y="24" width="3" height="6" rx="0.8" fill="#ffffff" opacity="0.55"/>
-          <rect x="22.5" y="20" width="3" height="6" rx="0.8" fill="#ffffff" opacity="0.75"/>
-          <rect x="28.5" y="14" width="3" height="5" rx="0.8" fill="#ffffff"/>
-          <circle cx="33" cy="14" r="6" fill="#c9a227" opacity="0.25"/>
-          <circle cx="33" cy="14" r="2.6" fill="#c9a227"/>
-          <circle cx="33" cy="14" r="1.1" fill="#fff8e7"/>
-        </svg>
-      </span>
+      <span class="brand-mark" aria-hidden="true">${BRAND_MARK_SVG}</span>
       <span class="brand-lockup">
         <span class="brand-name">ZenBuy<span class="brand-tld">.info</span></span>
         <span class="brand-oracle">The insight you wished you had—earlier.</span>

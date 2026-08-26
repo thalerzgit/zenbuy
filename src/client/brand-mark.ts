@@ -1,0 +1,24 @@
+/** Inline brand mark SVG — dark header variant (white on green). */
+export const BRAND_MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="44" height="44" aria-hidden="true">
+  <defs>
+    <radialGradient id="zb-h-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8c547" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#c9a227" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="3" y="3" width="42" height="42" rx="11" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.92)" stroke-width="2"/>
+  <path d="M11 34H37" stroke="rgba(255,255,255,0.28)" stroke-width="1.2" stroke-linecap="round"/>
+  <g stroke="#ffffff" stroke-linecap="round">
+    <line x1="14" y1="34" x2="14" y2="23" stroke-width="1.3"/>
+    <rect x="11.5" y="25" width="5" height="9" rx="1.2" fill="#ffffff" stroke="none" opacity="0.62"/>
+    <line x1="23" y1="34" x2="23" y2="19" stroke-width="1.3"/>
+    <rect x="20.5" y="21" width="5" height="10" rx="1.2" fill="#ffffff" stroke="none" opacity="0.82"/>
+    <line x1="32" y1="34" x2="32" y2="14" stroke-width="1.3"/>
+    <rect x="29.5" y="16" width="5" height="12" rx="1.2" fill="#ffffff" stroke="none"/>
+  </g>
+  <path d="M14 29.5 Q23.5 24 32 18.5" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.4"/>
+  <circle cx="35.5" cy="15.5" r="8" fill="url(#zb-h-glow)"/>
+  <circle cx="35.5" cy="15.5" r="3.4" fill="#e8c547"/>
+  <circle cx="35.5" cy="15.5" r="1.3" fill="#fff8e7"/>
+  <path d="M35.5 15.5 L39.5 11.5 M35.5 15.5 L41 15.5 M35.5 15.5 L39.5 19.5" stroke="#e8c547" stroke-width="1.15" stroke-linecap="round" opacity="0.75"/>
+</svg>`;
