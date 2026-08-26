@@ -1,3 +1,4 @@
+import type { InvestmentDirectiveId } from "../lib/investment-directives";
 import {
   buildLaymanPrompt,
   buildUserPrompt,
@@ -165,12 +166,13 @@ export async function streamResearch(
   env: Env,
   mode: "separate" | "comparative",
   payloads: FundamentalsPayload[],
+  directive: InvestmentDirectiveId,
   handlers: StreamHandlers
 ): Promise<void> {
   const res = await requestAnalysis(
     env,
-    getSystemPrompt(),
-    buildUserPrompt(mode, payloads),
+    getSystemPrompt(directive),
+    buildUserPrompt(mode, payloads, directive),
     mode === "comparative" ? 12_000 : 8_000
   );
 
@@ -250,6 +252,7 @@ export interface ParallelHandlers {
 export async function streamResearchParallel(
   env: Env,
   payloads: FundamentalsPayload[],
+  directive: InvestmentDirectiveId,
   handlers: ParallelHandlers
 ): Promise<void> {
   const sections = payloads.map(() => "");
@@ -276,8 +279,8 @@ export async function streamResearchParallel(
       try {
         const res = await requestAnalysis(
           env,
-          getSystemPrompt(),
-          buildUserPrompt("separate", [payload]),
+          getSystemPrompt(directive),
+          buildUserPrompt("separate", [payload], directive),
           8_000
         );
 

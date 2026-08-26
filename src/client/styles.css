@@ -409,6 +409,149 @@ body {
   font-size: 0.92rem;
 }
 
+.directive-panel {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.directive-heading {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.directive-lead {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+
+.directive-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.directive-option {
+  display: block;
+  cursor: pointer;
+}
+
+.directive-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.directive-card {
+  display: block;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.directive-option:has(input:checked) .directive-card {
+  border-color: var(--sage);
+  box-shadow: 0 0 0 3px var(--sage-light);
+  background: linear-gradient(135deg, var(--sage-light) 0%, var(--card) 55%);
+}
+
+.directive-option:has(input:focus-visible) .directive-card {
+  outline: 2px solid var(--sage);
+  outline-offset: 2px;
+}
+
+.directive-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+.directive-label {
+  font-size: 1rem;
+  color: var(--sage-dark);
+}
+
+.directive-headline {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.directive-best-if {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin-bottom: 0.45rem;
+}
+
+.directive-plain {
+  margin: 0 0 0.65rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.directive-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.directive-stats div {
+  min-width: 0;
+}
+
+.directive-stats dt {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.directive-stats dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.directive-example {
+  margin: 0.65rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.directive-tag {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: var(--sage-dark);
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .directive-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
 .report-body :is(h2, h3) {
   color: var(--sage-dark);
 }

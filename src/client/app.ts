@@ -1,5 +1,12 @@
 import { BRAND_MARK_SVG } from "./brand-mark";
+import {
+  directiveLabel,
+  loadStoredDirective,
+  mountDirectivePanel,
+} from "./directive-ui";
 import { startOracleRotation } from "./quotes";
+import type { InvestmentDirectiveId } from "../lib/investment-directives";
+import { isInvestmentDirectiveId } from "../lib/investment-directives";
 import {
   initTurnstile,
   obtainTurnstileToken,
@@ -56,6 +63,7 @@ export function mountApp(root: HTMLElement): void {
   const state = {
     picks: [] as SymbolPick[],
     mode: "separate" as ReportMode,
+    directive: loadStoredDirective() as InvestmentDirectiveId,
     loading: false,
   };
 
@@ -80,6 +88,7 @@ export function mountApp(root: HTMLElement): void {
       <div id="dropdown" class="dropdown hidden" role="listbox"></div>
     </div>
     <div id="chips" class="chips"></div>
+    <div id="directive-panel-mount"></div>
     <div class="actions">
       <button id="submit-btn" type="button" class="btn primary" disabled>Generate Report</button>
       <button id="simplify-btn" type="button" class="btn ghost hidden">Explain in Lay Terms</button>
@@ -156,6 +165,12 @@ export function mountApp(root: HTMLElement): void {
   const input = searchWrap.querySelector("#symbol-input") as HTMLInputElement;
   const dropdown = searchWrap.querySelector("#dropdown") as HTMLDivElement;
   const chips = searchWrap.querySelector("#chips") as HTMLDivElement;
+  const directiveMount = searchWrap.querySelector(
+    "#directive-panel-mount"
+  ) as HTMLDivElement;
+  mountDirectivePanel(directiveMount, state.directive, (id) => {
+    state.directive = id;
+  });
   const submitBtn = searchWrap.querySelector("#submit-btn") as HTMLButtonElement;
   const simplifyBtn = searchWrap.querySelector(
     "#simplify-btn"
@@ -739,6 +754,7 @@ export function mountApp(root: HTMLElement): void {
         body: JSON.stringify({
           symbols: state.picks.map((p) => p.symbol),
           mode,
+          directive: state.directive,
           turnstileToken,
         }),
       });
@@ -777,6 +793,16 @@ export function mountApp(root: HTMLElement): void {
             if (notes.length) {
               asOfEl.textContent = notes.join(" · ");
               asOfEl.classList.remove("hidden");
+            }
+
+            const directiveId = payload.directive as string | undefined;
+            const directiveName =
+              (payload.directiveLabel as string | undefined) ??
+              (directiveId ? directiveLabel(directiveId as InvestmentDirectiveId) : "");
+            if (directiveName) {
+              const tag = el("p", "directive-tag");
+              tag.textContent = `Goal: ${directiveName}`;
+              titleWrap.append(tag);
             }
           }
 
@@ -841,6 +867,7 @@ export function mountApp(root: HTMLElement): void {
   function startNewReport(): void {
     state.picks = [];
     state.mode = "separate";
+    state.directive = loadStoredDirective();
     reportId = "";
     activeShareId = "";
     hasReport = false;
@@ -1151,6 +1178,14 @@ export function mountApp(root: HTMLElement): void {
   async function maybeAutostartFromUrl(): Promise<void> {
     const params = new URLSearchParams(window.location.search);
     if (params.get("noSimilar") === "1") allowSimilar = false;
+
+    const directiveParam = params.get("directive");
+    if (directiveParam && isInvestmentDirectiveId(directiveParam)) {
+      state.directive = directiveParam;
+      mountDirectivePanel(directiveMount, state.directive, (id) => {
+        state.directive = id;
+      });
+    }
 
     const symbols = (params.get("symbols") ?? "")
       .split(",")

@@ -4,6 +4,7 @@ import WebKit
 struct ReportStreamView: View {
     let symbols: [String]
     let mode: ReportMode
+    let directive: String
 
     @Environment(ZenBuyAPIClient.self) private var api
     @State private var viewModel: ReportViewModel?
@@ -23,7 +24,7 @@ struct ReportStreamView: View {
             if viewModel == nil {
                 let vm = ReportViewModel(api: api)
                 viewModel = vm
-                vm.start(symbols: symbols, mode: mode)
+                vm.start(symbols: symbols, mode: mode, directive: directive)
             }
         }
         .onDisappear {

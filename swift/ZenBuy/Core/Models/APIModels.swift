@@ -25,6 +25,7 @@ struct APIErrorResponse: Codable, Sendable {
 struct ResearchRequest: Codable, Sendable {
     let symbols: [String]
     let mode: ReportMode
+    let directive: String?
 }
 
 struct ReportBadges: Codable, Hashable, Sendable {

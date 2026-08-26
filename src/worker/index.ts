@@ -3,11 +3,19 @@ import {
   cacheGet,
   cacheSet,
   fundCacheKey,
+  parseReportCacheKey,
   reportCacheKey,
   SHARE_TTL_SECONDS,
   type CachedReport,
   type SharedReportSnapshot,
 } from "./cache";
+import {
+  DEFAULT_DIRECTIVE_ID,
+  directivesForClient,
+  getInvestmentDirective,
+  isInvestmentDirectiveId,
+  type InvestmentDirectiveId,
+} from "../lib/investment-directives";
 import {
   getFundamentalsCached,
   isStalePayload,
@@ -252,6 +260,8 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
 async function handleConfig(env: Env): Promise<Response> {
   return json({
     turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? "",
+    investmentDirectives: directivesForClient(),
+    defaultDirectiveId: DEFAULT_DIRECTIVE_ID,
   });
 }
 
@@ -272,14 +282,12 @@ const SSE_HEADERS = {
  * Public read of a cached report for share links.
  * No Turnstile — the report id is the capability, and KV TTL bounds exposure.
  */
-function parseReportIdParts(reportId: string): { mode: string; symbols: string[] } {
-  const parts = reportId.split(":");
-  const mode = parts[1] ?? "separate";
-  const symbols = (parts[2] ?? "")
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-  return { mode, symbols };
+function parseReportIdParts(reportId: string): {
+  mode: string;
+  directive: InvestmentDirectiveId;
+  symbols: string[];
+} {
+  return parseReportCacheKey(reportId);
 }
 
 function stripLaymanBottomLine(md: string): string {
@@ -621,6 +629,7 @@ async function handleResearch(
   let body: {
     symbols?: string[];
     mode?: "separate" | "comparative";
+    directive?: string;
     turnstileToken?: string;
   };
 
@@ -634,6 +643,11 @@ async function handleResearch(
     .map((s) => s.toUpperCase().trim())
     .filter(Boolean);
   const mode = body.mode ?? "separate";
+  const directive: InvestmentDirectiveId = isInvestmentDirectiveId(
+    body.directive ?? ""
+  )
+    ? (body.directive as InvestmentDirectiveId)
+    : DEFAULT_DIRECTIVE_ID;
 
   if (symbols.length < 1 || symbols.length > 4) {
     return json({ error: "Select 1 to 4 tickers.", retry: true }, 400);
@@ -670,7 +684,7 @@ async function handleResearch(
   }
 
   const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
-  const cacheKey = reportCacheKey(mode, symbols);
+  const cacheKey = reportCacheKey(mode, symbols, directive);
   const cached = await cacheGet<CachedReport>(env.CACHE, cacheKey);
 
   const stream = new ReadableStream({
@@ -682,12 +696,14 @@ async function handleResearch(
 
       try {
         if (cached) {
-          const { mode: cachedMode, symbols: cachedSymbols } =
+          const { mode: cachedMode, symbols: cachedSymbols, directive: cachedDirective } =
             parseReportIdParts(cacheKey);
           send("meta", {
             cached: true,
             asOf: cached.asOf,
             showAsOf: cached.stale,
+            directive: cachedDirective,
+            directiveLabel: getInvestmentDirective(cachedDirective).label,
           });
           send("sticky", {
             bottomLineHtml: cached.bottomLineHtml,
@@ -708,6 +724,8 @@ async function handleResearch(
             badges: cached.badges,
             reportId:
               cached.markdown && cached.markdown.length >= 80 ? cacheKey : "",
+            directive: cachedDirective,
+            directiveLabel: getInvestmentDirective(cachedDirective).label,
           });
           controller.close();
           return;
@@ -749,6 +767,8 @@ async function handleResearch(
           cached: false,
           asOf: oldestAsOf(payloads),
           showAsOf,
+          directive,
+          directiveLabel: getInvestmentDirective(directive).label,
           skipped,
           degraded: payloads
             .filter((p) => p.dataQuality === "degraded")
@@ -804,11 +824,16 @@ async function handleResearch(
           const symbolList = payloads.map((p) => p.symbol);
           const companies = companyProfilesFromMarkdown(markdown, symbolList);
           // Key on what actually made the report, not what was requested.
-          const doneKey = reportCacheKey(effectiveMode, symbolList);
+          const doneKey = reportCacheKey(effectiveMode, symbolList, directive);
           await cacheSet(env.CACHE, doneKey, report, ttl);
           ctx.waitUntil(incrementRateLimit(env, ip).catch(console.error));
           send("companies", { companies, mode: effectiveMode });
-          send("done", { badges: report.badges, reportId: doneKey });
+          send("done", {
+            badges: report.badges,
+            reportId: doneKey,
+            directive,
+            directiveLabel: getInvestmentDirective(directive).label,
+          });
         };
 
         const fail = (message: string): void => {
@@ -817,14 +842,14 @@ async function handleResearch(
 
         // Separate reports are independent, so generate them concurrently.
         if (effectiveMode === "separate" && payloads.length > 1) {
-          await streamResearchParallel(env, payloads, {
+          await streamResearchParallel(env, payloads, directive, {
             onProgress: (assembled) => renderProgress(assembled),
             onDone: finish,
             onError: fail,
           });
         } else {
           let full = "";
-          await streamResearch(env, effectiveMode, payloads, {
+          await streamResearch(env, effectiveMode, payloads, directive, {
             onDelta(text) {
               full += text;
               renderProgress(full);

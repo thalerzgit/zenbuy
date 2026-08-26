@@ -107,6 +107,11 @@ struct SearchView: View {
                     }
                 }
 
+                InvestmentGoalPicker(
+                    selectedId: $viewModel.selectedDirectiveId,
+                    directives: viewModel.directives
+                )
+
                 Button("Generate report") {
                     viewModel.beginGenerate()
                 }
@@ -136,7 +141,8 @@ struct SearchView: View {
         .navigationDestination(isPresented: $viewModel.showReport) {
             ReportStreamView(
                 symbols: viewModel.picks.map(\.symbol),
-                mode: viewModel.selectedMode
+                mode: viewModel.selectedMode,
+                directive: viewModel.selectedDirectiveId
             )
         }
     }

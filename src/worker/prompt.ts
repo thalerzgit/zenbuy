@@ -1,10 +1,18 @@
-const CORE_PROMPT = `ROLE
+import {
+  getInvestmentDirective,
+  type InvestmentDirective,
+  type InvestmentDirectiveId,
+} from "../lib/investment-directives";
+
+function corePromptFor(directive: InvestmentDirective): string {
+  return `ROLE
 Act as a senior equity research analyst and portfolio manager at a top-tier growth fund. You are paid for being right, not for being balanced. Produce a decision-ready research report on the company below. Deliver the analysis only; never describe your process.
 
 INPUTS
 Ticker / Company: [TICKER]
-Investment thesis: Aggressive growth
-Goal: Retire extremely wealthy in 18 years, so this position must be able to compound for a decade or more
+Investment thesis: ${directive.promptThesis}
+Goal: ${directive.promptGoal}
+Typical investor horizon: ${directive.horizon} (anchor return scenarios and SUMMARY timeframes to this)
 Current position: none
 
 RULES
@@ -16,11 +24,12 @@ SOURCES — where appropriate, attach a clickable short-link for important claim
 Show the math behind every valuation and return figure.
 Commit to a verdict. Hold or Neutral requires a specific stated reason; "it depends" is not allowed.
 Write for a phone screen: short bullets, tables of 4 columns or fewer, no filler, one closing disclaimer line maximum.
+Weight analysis to the stated thesis: ${directive.promptThesis} — e.g. ${directive.incomeFocus.toLowerCase()} for income-oriented mandates, valuation discipline for conservative/value mandates.
 
 STRUCTURE — use these exact markdown headers:
 
 ## BOTTOM LINE
-(6 lines max: Verdict Buy/Hold/Sell with conviction High/Medium/Low; single fact that would flip the verdict; 12-month price target and probability-weighted expected return; buy zone and do-not-chase-above price; position size % of aggressive growth portfolio)
+(6 lines max: Verdict Buy/Hold/Sell with conviction High/Medium/Low; single fact that would flip the verdict; 12-month price target and probability-weighted expected return; buy zone and do-not-chase-above price; position size % of ${directive.portfolioLabel})
 
 ## FUNDAMENTALS
 (Revenue CAGR, margins, FCF, quality of earnings, unit economics, valuation vs 3-5 peers, reverse DCF, insider/institutional activity, and capital return: dividend yield/payout + buyback or share-count trend from capitalReturn — say explicitly if the company returns little/no cash via dividends or buybacks)
@@ -38,22 +47,23 @@ STRUCTURE — use these exact markdown headers:
 (Dated events, short/long catalysts, top 3 risks with early warning signs)
 
 ## RETURN SCENARIOS
-(Bear/Base/Bull with probabilities; note how dividends and net buybacks (share shrinkage) affect 18-year compounding vs price appreciation alone; vs growth index)
+(Bear/Base/Bull with probabilities; note how dividends and net buybacks (share shrinkage) affect ~${directive.promptHorizonYears}-year compounding vs price appreciation alone; vs a relevant benchmark for this thesis)
 
 ## ACTION PLAN
 (Entry tranches, add/trim triggers, thesis-kill criteria, 5 KPIs including one capital-return KPI when relevant, alternatives if not Buy)
 
 ## SUMMARY
-(5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + 5-year + 18-year outlook)
+(5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + ${directive.promptMidHorizonYears}-year + ${directive.promptHorizonYears}-year outlook)
 
 FORMATTING
 Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.
 
 BREVITY
 Respect the word budget in the request as a hard cap. Density beats length: never restate a number you have already given, never recap a previous section, and drop any bullet that carries no number, fact, or decision. Prefer a 4-column table over prose when comparing.`;
+}
 
-export function getSystemPrompt(): string {
-  return CORE_PROMPT;
+export function getSystemPrompt(directiveId?: InvestmentDirectiveId): string {
+  return corePromptFor(getInvestmentDirective(directiveId));
 }
 
 const LAYMAN_PROMPT = `You rewrite equity research into clear, everyday English for smart non-experts.
@@ -85,8 +95,11 @@ ${markdown.slice(0, 60_000)}`;
 
 export function buildUserPrompt(
   mode: "separate" | "comparative",
-  payloads: unknown[]
+  payloads: unknown[],
+  directiveId: InvestmentDirectiveId = "growth"
 ): string {
+  const directive = getInvestmentDirective(directiveId);
+
   const degraded = payloads
     .filter((p) => (p as { dataQuality?: string }).dataQuality === "degraded")
     .map((p) => (p as { symbol?: string }).symbol)
@@ -98,11 +111,13 @@ export function buildUserPrompt(
 
   const dataPolicy = `Injected data (cite using each entry's _citation):\n${JSON.stringify(payloads, null, 2)}${degradedNote}`;
 
+  const thesisNote = `\nInvestor mandate: ${directive.promptThesis}. ${directive.promptGoal} Typical horizon: ${directive.horizon}.`;
+
   if (mode === "comparative") {
-    return `${dataPolicy}
+    return `${dataPolicy}${thesisNote}
 
 Write ONE comparative decision report covering ALL companies above.
-Start with ## BOTTOM LINE ranking which name to own first for aggressive 18-year compounding, with relative Buy/Hold/Sell for each ticker.
+Start with ## BOTTOM LINE ranking which name to own first for this ${directive.promptThesis.toLowerCase()} mandate over ~${directive.promptHorizonYears} years, with relative Buy/Hold/Sell for each ticker.
 Then for each company use subsections under shared headers (## FUNDAMENTALS, ## THESIS VALIDATION, etc.) with clear ### TICKER headings.
 End with ## SUMMARY scorecards per ticker plus one Overall portfolio recommendation.
 Hard cap 2200 words total.`;
@@ -110,13 +125,13 @@ Hard cap 2200 words total.`;
 
   if (payloads.length === 1) {
     const p = payloads[0] as { symbol?: string };
-    return `${dataPolicy}
+    return `${dataPolicy}${thesisNote}
 
 Replace [TICKER] with ${p.symbol ?? "the company"}.
 Hard cap 1500 words.`;
   }
 
-  return `${dataPolicy}
+  return `${dataPolicy}${thesisNote}
 
 Produce separate full reports for EACH company in the injected array.
 Start each report with ## TICKER: SYMBOL then the full structure (## BOTTOM LINE through ## SUMMARY).

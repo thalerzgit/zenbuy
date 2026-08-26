@@ -18,7 +18,7 @@ final class ReportViewModel {
         self.api = api
     }
 
-    func start(symbols: [String], mode: ReportMode) {
+    func start(symbols: [String], mode: ReportMode, directive: String) {
         streamTask?.cancel()
         bottomLineHTML = ""
         bodyHTML = ""
@@ -30,7 +30,11 @@ final class ReportViewModel {
 
         streamTask = Task {
             do {
-                let stream = api.streamResearch(symbols: symbols, mode: mode)
+                let stream = api.streamResearch(
+                    symbols: symbols,
+                    mode: mode,
+                    directive: directive
+                )
 
                 for try await event in stream {
                     guard !Task.isCancelled else { return }

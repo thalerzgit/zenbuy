@@ -64,9 +64,15 @@ final class ZenBuyAPIClient {
         _ = try? await session.data(for: request)
     }
 
+    func fetchConfig() async throws -> ClientConfigResponse {
+        let url = ZenBuyEnvironment.apiBaseURL.appending(path: "api/config")
+        return try await get(url)
+    }
+
     func streamResearch(
         symbols: [String],
-        mode: ReportMode
+        mode: ReportMode,
+        directive: String = "growth"
     ) -> AsyncThrowingStream<ReportStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -78,7 +84,7 @@ final class ZenBuyAPIClient {
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     applyClientHeaders(to: &request)
 
-                    let body = ResearchRequest(symbols: symbols, mode: mode)
+                    let body = ResearchRequest(symbols: symbols, mode: mode, directive: directive)
                     request.httpBody = try encoder.encode(body)
 
                     let (bytes, response) = try await session.bytes(for: request)

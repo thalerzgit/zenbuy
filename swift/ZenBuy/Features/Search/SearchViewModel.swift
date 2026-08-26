@@ -11,12 +11,26 @@ final class SearchViewModel {
     var showModeSheet = false
     var showReport = false
     var selectedMode: ReportMode = .separate
+    var selectedDirectiveId: String = "growth"
+    var directives: [InvestmentDirectiveInfo] = InvestmentDirectiveInfo.bundled
 
     private let api: ZenBuyAPIClient
     private var searchTask: Task<Void, Never>?
 
     init(api: ZenBuyAPIClient) {
         self.api = api
+        Task { await loadConfig() }
+    }
+
+    private func loadConfig() async {
+        if let config = try? await api.fetchConfig(),
+           let list = config.investmentDirectives,
+           !list.isEmpty {
+            directives = list
+            if let defaultId = config.defaultDirectiveId {
+                selectedDirectiveId = defaultId
+            }
+        }
     }
 
     var canGenerate: Bool {
