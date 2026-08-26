@@ -10,6 +10,7 @@ export interface ReportSources {
   quote: SourceLink;
   earnings: SourceLink;
   filings: SourceLink;
+  stats: SourceLink;
   company?: SourceLink;
 }
 
@@ -46,6 +47,10 @@ export function buildReportSources(
     filings: {
       label: "SEC",
       url: `https://www.sec.gov/edgar/search/#/category=custom&entityName=${encodeURIComponent(sym)}`,
+    },
+    stats: {
+      label: "Stats",
+      url: `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}/key-statistics`,
     },
   };
 

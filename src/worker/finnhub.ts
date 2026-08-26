@@ -39,6 +39,25 @@ export interface FundamentalsPayload {
   margins: Record<string, number | null>;
   growth: Record<string, number | null>;
   cashFlow: Record<string, number | null>;
+  /**
+   * Shareholder capital return — dividends + buyback / share-count trend.
+   * Critical for 18-year compounding even when the primary thesis is growth.
+   */
+  capitalReturn: {
+    dividendYieldPct: number | null;
+    dividendPerShare: number | null;
+    payoutRatioPct: number | null;
+    /** Diluted shares outstanding (millions), from profile when available. */
+    sharesOutstandingM: number | null;
+    /**
+     * YoY % change in shares outstanding from annual series when present.
+     * Negative ≈ net buybacks / share shrinkage; positive ≈ dilution.
+     */
+    shareCountYoYPct: number | null;
+    shareCountTrend: "shrinking" | "growing" | "flat" | "unknown";
+    /** Recent cash dividends from /stock/dividend (most recent first). */
+    recentDividends: Array<{ date: string; amount: number | null }>;
+  };
   insiders: {
     ownershipPct: number | null;
     recentTrades: Array<{
@@ -94,6 +113,105 @@ function fmtCap(n: number | null): string | null {
   if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
   return `$${n.toFixed(0)}`;
+}
+
+function emptyCapitalReturn(): FundamentalsPayload["capitalReturn"] {
+  return {
+    dividendYieldPct: null,
+    dividendPerShare: null,
+    payoutRatioPct: null,
+    sharesOutstandingM: null,
+    shareCountYoYPct: null,
+    shareCountTrend: "unknown",
+    recentDividends: [],
+  };
+}
+
+type MetricSeries = Record<
+  string,
+  Array<{ period?: string; v?: number }> | undefined
+>;
+
+/** Prefer the soonest two annual points to estimate share-count YoY. */
+function shareCountYoYFromSeries(
+  series: { annual?: MetricSeries } | null | undefined
+): number | null {
+  const annual = series?.annual;
+  if (!annual) return null;
+
+  const key =
+    Object.keys(annual).find((k) =>
+      /share.*(outstand|dilut)|outstanding.*share/i.test(k)
+    ) ?? null;
+  if (!key) return null;
+
+  const rows = [...(annual[key] ?? [])]
+    .filter((r) => r.period && num(r.v) != null)
+    .sort((a, b) => String(b.period).localeCompare(String(a.period)));
+  if (rows.length < 2) return null;
+
+  const newer = num(rows[0].v)!;
+  const older = num(rows[1].v)!;
+  if (older === 0) return null;
+  return +(((newer - older) / Math.abs(older)) * 100).toFixed(2);
+}
+
+function trendFromYoY(
+  yoy: number | null
+): FundamentalsPayload["capitalReturn"]["shareCountTrend"] {
+  if (yoy == null) return "unknown";
+  if (yoy <= -1) return "shrinking";
+  if (yoy >= 1) return "growing";
+  return "flat";
+}
+
+function pickMetric(
+  m: Record<string, number | undefined>,
+  keys: string[]
+): number | null {
+  for (const k of keys) {
+    const v = num(m[k]);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+function buildCapitalReturn(
+  m: Record<string, number | undefined>,
+  series: { annual?: MetricSeries } | null | undefined,
+  shareOutstanding: number | null,
+  dividendRows: Array<{ date?: string; amount?: number }> | null
+): FundamentalsPayload["capitalReturn"] {
+  const shareCountYoYPct = shareCountYoYFromSeries(series);
+  const recentDividends = (dividendRows ?? [])
+    .filter((d) => d.date)
+    .slice(0, 8)
+    .map((d) => ({
+      date: String(d.date),
+      amount: num(d.amount),
+    }));
+
+  return {
+    dividendYieldPct: pickMetric(m, [
+      "dividendYieldIndicatedAnnual",
+      "currentDividendYieldTTM",
+      "dividendYieldTTM",
+    ]),
+    dividendPerShare: pickMetric(m, [
+      "dividendPerShareAnnual",
+      "dividendPerShareTTM",
+      "dividendsPerShareTTM",
+    ]),
+    payoutRatioPct: pickMetric(m, [
+      "payoutRatioTTM",
+      "payoutRatioAnnual",
+      "dividendPayoutRatioTTM",
+    ]),
+    sharesOutstandingM: shareOutstanding,
+    shareCountYoYPct,
+    shareCountTrend: trendFromYoY(shareCountYoYPct),
+    recentDividends,
+  };
 }
 
 /** Finnhub free tier allows ~60 req/min; a multi-ticker report bursts well past that. */
@@ -230,6 +348,7 @@ function degradedPayload(
     margins: { gross: null, operating: null, net: null },
     growth: { revenueYoY: null, epsYoY: null },
     cashFlow: { fcfPerShare: null, fcfMargin: null },
+    capitalReturn: emptyCapitalReturn(),
     insiders: { ownershipPct: null, recentTrades: [] },
     peers: [],
     nextCatalysts: {
@@ -294,18 +413,18 @@ export async function fetchFundamentals(
   const earningsFrom = addCalendarDays(asOfEt, -1);
   const earningsTo = addCalendarDays(asOfEt, 120);
 
-  const [profile, quote, metricsRaw, insiderRaw, peersRaw, earningsRaw, newsRaw, recRaw] =
+  // Metrics endpoint returns both a flat metric map and optional annual series.
+  const [profile, quote, metricsRaw, insiderRaw, peersRaw, earningsRaw, newsRaw, recRaw, dividendRaw] =
     await Promise.all([
       // Optional so a throttled feed falls through to the backup instead of
       // throwing; a missing identity is caught below.
       finnhub<Record<string, unknown>>(apiKey, `/stock/profile2?symbol=${sym}`, true),
       finnhub<Record<string, number>>(apiKey, `/quote?symbol=${sym}`, true),
       // Metrics enrich the report but must not sink it when the tier throttles.
-      finnhub<{ metric?: Record<string, number> }>(
-        apiKey,
-        `/stock/metric?symbol=${sym}&metric=all`,
-        true
-      ),
+      finnhub<{
+        metric?: Record<string, number>;
+        series?: { annual?: MetricSeries };
+      }>(apiKey, `/stock/metric?symbol=${sym}&metric=all`, true),
       finnhub<{ data?: Array<Record<string, unknown>> }>(
         apiKey,
         `/stock/insider-transactions?symbol=${sym}`,
@@ -333,6 +452,11 @@ export async function fetchFundamentals(
         `/stock/recommendation?symbol=${sym}`,
         true
       ),
+      finnhub<Array<{ date?: string; amount?: number }>>(
+        apiKey,
+        `/stock/dividend?symbol=${sym}&from=${addCalendarDays(asOfEt, -730)}&to=${asOfEt}`,
+        true
+      ),
     ]);
 
   const hasProfile = Boolean(profile?.name || profile?.ticker);
@@ -344,6 +468,12 @@ export async function fetchFundamentals(
   }
 
   const m = metricsRaw?.metric ?? {};
+  const capitalReturn = buildCapitalReturn(
+    m,
+    metricsRaw?.series ?? null,
+    num(profile?.shareOutstanding as number),
+    dividendRaw
+  );
   const autoPeerSymbols = Array.isArray(peersRaw)
     ? peersRaw.map((p) => p.symbol).filter(Boolean) as string[]
     : [];
@@ -435,6 +565,7 @@ export async function fetchFundamentals(
       fcfPerShare: num(m.fcfPerShareTTM),
       fcfMargin: num(m.fcfMarginTTM),
     },
+    capitalReturn,
     insiders: {
       ownershipPct: null,
       recentTrades: insiderRows,
@@ -527,6 +658,7 @@ export async function getFundamentalsCached(
       asOfEt: cached.asOfEt ?? asOfEt,
       nextCatalysts,
       sources: cached.sources ?? buildReportSources(symbol.toUpperCase()),
+      capitalReturn: cached.capitalReturn ?? emptyCapitalReturn(),
       dataAgeHours: Math.floor(ageMs / 3_600_000),
     };
   }
