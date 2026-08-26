@@ -105,6 +105,84 @@ export function parseReport(markdown: string): ParsedReport {
   };
 }
 
+export interface CompanySection {
+  symbol: string;
+  bottomLine: string;
+  body: string;
+  badges: Badges;
+  scorecard: Scorecard;
+}
+
+const BOTTOM_TICKER_RE =
+  /^##\s*BOTTOM LINE(?:\s*[—–-]\s*([A-Z][A-Z0-9.\-]{0,11}))?\s*$/gim;
+
+/** Split a multi-ticker markdown blob into per-company sections. */
+export function parseCompanySections(
+  markdown: string,
+  symbols: string[] = []
+): CompanySection[] {
+  const matches: Array<{ index: number; symbol?: string }> = [];
+  let m: RegExpExecArray | null;
+  BOTTOM_TICKER_RE.lastIndex = 0;
+  while ((m = BOTTOM_TICKER_RE.exec(markdown)) !== null) {
+    matches.push({ index: m.index, symbol: m[1]?.toUpperCase() });
+  }
+
+  if (matches.length === 0) {
+    const parsed = parseReport(markdown);
+    if (!parsed.bottomLine && !parsed.body.trim()) return [];
+    return [
+      {
+        symbol: symbols[0] ?? "Report",
+        bottomLine: parsed.bottomLine,
+        body: parsed.body,
+        badges: parsed.badges,
+        scorecard: parsed.scorecard,
+      },
+    ];
+  }
+
+  const sections: CompanySection[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end =
+      i + 1 < matches.length ? matches[i + 1].index : markdown.length;
+    const chunk = markdown.slice(start, end);
+    const { bottomLine, body } = splitReport(chunk);
+    sections.push({
+      symbol: matches[i].symbol ?? symbols[i] ?? symbols[0] ?? "Report",
+      bottomLine,
+      body,
+      badges: parseBadges(chunk),
+      scorecard: parseScorecard(chunk),
+    });
+  }
+  return sections;
+}
+
+export function companyProfilesFromMarkdown(
+  markdown: string,
+  symbols: string[]
+): Array<{
+  symbol: string;
+  bottomLineHtml: string;
+  scorecardHtml: string;
+  badges: Badges;
+  scores: Scorecard;
+  bodyHtml: string;
+}> {
+  return parseCompanySections(markdown, symbols)
+    .filter((s) => s.bottomLine || s.body)
+    .map((s) => ({
+      symbol: s.symbol,
+      bottomLineHtml: renderMarkdown(s.bottomLine),
+      scorecardHtml: scorecardHtml(s.scorecard),
+      badges: s.badges,
+      scores: s.scorecard,
+      bodyHtml: renderMarkdown(s.body),
+    }));
+}
+
 export function renderMarkdown(md: string): string {
   if (!md.trim()) return "";
 

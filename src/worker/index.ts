@@ -18,10 +18,12 @@ import {
   type SymbolResult,
 } from "./finnhub";
 import {
+  companyProfilesFromMarkdown,
   parseReport,
   renderMarkdown,
   scorecardHtml,
 } from "./parse";
+import { findSimilarSymbols } from "./similar";
 import {
   checkRateLimit,
   incrementRateLimit,
@@ -451,9 +453,47 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
     bottomLineHtml: report.bottomLineHtml,
     bodyHtml: report.bodyHtml,
     scorecardHtml: report.scorecardHtml,
+    companies: report.markdown
+      ? companyProfilesFromMarkdown(report.markdown, symbols)
+      : [],
     asOf: report.asOf,
     stale: report.stale,
   });
+}
+
+async function handleSimilar(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const symbol = (url.searchParams.get("symbol") ?? "").trim().toUpperCase();
+  if (!symbol || !/^[A-Z0-9.\-]{1,12}$/.test(symbol)) {
+    return json({ error: "Ticker required.", code: "bad_request" }, 400);
+  }
+
+  let scores: import("./parse").Scorecard = {};
+  try {
+    const raw = url.searchParams.get("scores");
+    if (raw) scores = JSON.parse(raw) as import("./parse").Scorecard;
+  } catch {
+    return json({ error: "Invalid score profile.", code: "bad_request" }, 400);
+  }
+
+  const exclude = (url.searchParams.get("exclude") ?? "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+
+  try {
+    const symbols = await findSimilarSymbols(env, symbol, scores, exclude, 3);
+    if (!symbols.length) {
+      return json(
+        { error: "No similar names found right now. Try again later.", code: "empty" },
+        404
+      );
+    }
+    return json({ symbols, source: symbol });
+  } catch (e) {
+    console.error("similar lookup failed", e);
+    return json({ error: "Couldn't find similar companies.", code: "similar_failed" }, 500);
+  }
 }
 
 async function handleSimplify(request: Request, env: Env): Promise<Response> {
@@ -642,6 +682,8 @@ async function handleResearch(
 
       try {
         if (cached) {
+          const { mode: cachedMode, symbols: cachedSymbols } =
+            parseReportIdParts(cacheKey);
           send("meta", {
             cached: true,
             asOf: cached.asOf,
@@ -653,6 +695,15 @@ async function handleResearch(
             scorecardHtml: cached.scorecardHtml,
           });
           send("body", { html: cached.bodyHtml });
+          if (cached.markdown) {
+            send("companies", {
+              companies: companyProfilesFromMarkdown(
+                cached.markdown,
+                cachedSymbols
+              ),
+              mode: cachedMode,
+            });
+          }
           send("done", {
             badges: cached.badges,
             reportId:
@@ -750,13 +801,13 @@ async function handleResearch(
           const report = emitParsed(send, markdown);
           report.asOf = oldestAsOf(payloads);
           report.stale = showAsOf;
+          const symbolList = payloads.map((p) => p.symbol);
+          const companies = companyProfilesFromMarkdown(markdown, symbolList);
           // Key on what actually made the report, not what was requested.
-          const doneKey = reportCacheKey(
-            effectiveMode,
-            payloads.map((p) => p.symbol)
-          );
+          const doneKey = reportCacheKey(effectiveMode, symbolList);
           await cacheSet(env.CACHE, doneKey, report, ttl);
           ctx.waitUntil(incrementRateLimit(env, ip).catch(console.error));
+          send("companies", { companies, mode: effectiveMode });
           send("done", { badges: report.badges, reportId: doneKey });
         };
 
@@ -838,6 +889,10 @@ export default {
 
     if (url.pathname === "/api/report" && request.method === "GET") {
       return handleGetReport(request, env);
+    }
+
+    if (url.pathname === "/api/similar" && request.method === "GET") {
+      return handleSimilar(request, env);
     }
 
     if (url.pathname === "/api/share" && request.method === "POST") {

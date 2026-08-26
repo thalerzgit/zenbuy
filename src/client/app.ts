@@ -21,6 +21,25 @@ interface Badges {
   conviction?: string;
 }
 
+interface Scorecard {
+  growth?: number;
+  moat?: number;
+  management?: number;
+  valuation?: number;
+  balanceSheet?: number;
+  catalysts?: number;
+  overall?: number;
+}
+
+interface CompanyProfile {
+  symbol: string;
+  bottomLineHtml: string;
+  scorecardHtml: string;
+  badges: Badges;
+  scores: Scorecard;
+  bodyHtml: string;
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -102,15 +121,18 @@ export function mountApp(root: HTMLElement): void {
   const report = el("section", "report-panel hidden");
   report.innerHTML = `
     <header class="report-hero">
-      <div class="hero-head">
-        <div id="report-title-wrap"></div>
-        <div id="badge-strip" class="badge-strip"></div>
-      </div>
-      <div class="hero-grid">
-        <div id="bottom-line" class="bottom-line loading">
-          <div class="skeleton-lines"><span></span><span></span><span></span></div>
+      <div id="report-title-wrap"></div>
+      <div id="company-profiles" class="company-profiles hidden"></div>
+      <div id="stream-hero" class="stream-hero">
+        <div class="hero-head">
+          <div id="badge-strip" class="badge-strip"></div>
         </div>
-        <div id="scorecard-wrap" class="scorecard-wrap"></div>
+        <div class="hero-grid">
+          <div id="bottom-line" class="bottom-line loading">
+            <div class="skeleton-lines"><span></span><span></span><span></span></div>
+          </div>
+          <div id="scorecard-wrap" class="scorecard-wrap"></div>
+        </div>
       </div>
     </header>
     <div id="report-body" class="report-body loading">
@@ -144,6 +166,10 @@ export function mountApp(root: HTMLElement): void {
   const formError = searchWrap.querySelector("#form-error") as HTMLParagraphElement;
   const reportPanel = report;
   const titleWrap = report.querySelector("#report-title-wrap") as HTMLDivElement;
+  const companyProfiles = report.querySelector(
+    "#company-profiles"
+  ) as HTMLDivElement;
+  const streamHero = report.querySelector("#stream-hero") as HTMLDivElement;
   const badgeStrip = report.querySelector("#badge-strip") as HTMLDivElement;
   const bottomLine = report.querySelector("#bottom-line") as HTMLDivElement;
   const scorecardWrap = report.querySelector("#scorecard-wrap") as HTMLDivElement;
@@ -160,6 +186,11 @@ export function mountApp(root: HTMLElement): void {
   let showingLayman = false;
   /** Immutable share snapshot id (7-day TTL) created when the user shares. */
   let activeShareId = "";
+  /** Successor / autostart reports hide "Show more like this" to avoid rabbit holes. */
+  let allowSimilar = true;
+  let reportSymbols: string[] = [];
+  let reportMode: ReportMode = "separate";
+  let lastCompanies: CompanyProfile[] = [];
   const searchCache = new Map<string, Array<{ symbol: string; name: string }>>();
 
   function shareUrlFromId(id: string): string {
@@ -464,6 +495,9 @@ export function mountApp(root: HTMLElement): void {
   function resetReportUi(): void {
     titleWrap.innerHTML = "";
     badgeStrip.innerHTML = "";
+    companyProfiles.innerHTML = "";
+    companyProfiles.classList.add("hidden");
+    streamHero.classList.remove("hidden");
     bottomLine.className = "bottom-line loading";
     bottomLine.innerHTML =
       '<div class="skeleton-lines"><span></span><span></span><span></span></div>';
@@ -508,25 +542,122 @@ export function mountApp(root: HTMLElement): void {
     groupByTicker(reportBody, true);
   }
 
-  function renderBadges(badges: Badges): void {
-    badgeStrip.innerHTML = "";
+  function renderBadgesInto(container: HTMLElement, badges: Badges): void {
+    container.innerHTML = "";
     if (badges.recommendation) {
       const r = badges.recommendation.toLowerCase();
-      badgeStrip.append(
+      container.append(
         el("span", `badge rec ${r}`, badges.recommendation)
       );
     }
     if (badges.sentiment) {
       const s = badges.sentiment.toLowerCase();
-      badgeStrip.append(
+      container.append(
         el("span", `badge verdict ${s}`, badges.sentiment)
       );
     }
     if (badges.conviction) {
-      badgeStrip.append(
+      container.append(
         el("span", "badge conf", `${badges.conviction} conviction`)
       );
     }
+  }
+
+  function renderBadges(badges: Badges): void {
+    renderBadgesInto(badgeStrip, badges);
+  }
+
+  function hasScoreProfile(scores: Scorecard): boolean {
+    return scores.overall != null || scores.growth != null;
+  }
+
+  async function openSimilarReport(
+    symbol: string,
+    scores: Scorecard,
+    btn: HTMLButtonElement
+  ): Promise<void> {
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = "Finding peers…";
+    try {
+      const params = new URLSearchParams({
+        symbol,
+        scores: JSON.stringify(scores),
+        exclude: reportSymbols.join(","),
+      });
+      const res = await fetch(`/api/similar?${params}`);
+      const data = (await res.json()) as { symbols?: string[]; error?: string };
+      if (!res.ok || !data.symbols?.length) {
+        throw new Error(data.error || "Couldn't find similar companies.");
+      }
+      const url = new URL(window.location.origin + "/");
+      url.searchParams.set("symbols", data.symbols.slice(0, 3).join(","));
+      url.searchParams.set("autostart", "1");
+      url.searchParams.set("noSimilar", "1");
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
+    } catch (e) {
+      showError(
+        e instanceof Error ? e.message : "Couldn't find similar companies.",
+        true
+      );
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev || "Show more like this";
+    }
+  }
+
+  function renderCompanyProfiles(
+    profiles: CompanyProfile[],
+    mode: ReportMode
+  ): void {
+    if (!profiles.length) return;
+
+    companyProfiles.innerHTML = "";
+    const showSimilar =
+      allowSimilar && mode === "separate" && !showingLayman;
+
+    profiles.forEach((profile, index) => {
+      const block = el("article", "company-profile");
+      block.dataset.symbol = profile.symbol;
+
+      const head = el("div", "company-profile-head");
+      const badges = el("div", "badge-strip");
+      renderBadgesInto(badges, profile.badges);
+
+      if (showSimilar && hasScoreProfile(profile.scores)) {
+        const btn = el("button", "btn ghost similar-btn");
+        btn.type = "button";
+        btn.textContent = "Show more like this";
+        btn.onclick = () => void openSimilarReport(profile.symbol, profile.scores, btn);
+        head.append(badges, btn);
+      } else {
+        head.append(badges);
+      }
+
+      const grid = el("div", "hero-grid");
+      const bl = el("div", "bottom-line revealed");
+      bl.innerHTML = profile.bottomLineHtml;
+      groupByTicker(bl, false);
+
+      const sc = el("div", "scorecard-wrap");
+      if (profile.scorecardHtml) sc.innerHTML = profile.scorecardHtml;
+
+      grid.append(bl, sc);
+      block.append(head, grid);
+      if (index > 0) block.classList.add("company-profile--follow");
+      companyProfiles.append(block);
+    });
+
+    streamHero.classList.add("hidden");
+    companyProfiles.classList.remove("hidden");
+
+    const combinedBody = profiles.map((p) => p.bodyHtml).join("");
+    setReportBody(combinedBody);
+
+    fullView = {
+      bodyHtml: reportBody.innerHTML,
+      bottomLineHtml: profiles[0]?.bottomLineHtml ?? bottomLine.innerHTML,
+    };
   }
 
   function applySticky(payload: {
@@ -588,10 +719,13 @@ export function mountApp(root: HTMLElement): void {
     fullView = null;
     reportId = "";
     activeShareId = "";
+    lastCompanies = [];
     resetReportUi();
 
     const mode =
       state.picks.length > 1 ? state.mode : ("separate" as ReportMode);
+    reportMode = mode;
+    reportSymbols = state.picks.map((p) => p.symbol);
 
     let turnstileToken = "";
     try {
@@ -658,12 +792,28 @@ export function mountApp(root: HTMLElement): void {
             renderBadges(payload as Badges);
           }
 
+          if (event === "companies") {
+            const companies = payload.companies as CompanyProfile[] | undefined;
+            const mode = (payload.mode as ReportMode | undefined) ?? reportMode;
+            if (companies?.length) {
+              lastCompanies = companies;
+              renderCompanyProfiles(companies, mode);
+            }
+          }
+
           if (event === "done") {
             reportId = String(payload.reportId ?? "");
-            fullView = {
-              bodyHtml: reportBody.innerHTML,
-              bottomLineHtml: bottomLine.innerHTML,
-            };
+            if (!companyProfiles.classList.contains("hidden")) {
+              fullView = {
+                bodyHtml: reportBody.innerHTML,
+                bottomLineHtml: companyProfiles.querySelector(".bottom-line")?.innerHTML ?? "",
+              };
+            } else {
+              fullView = {
+                bodyHtml: reportBody.innerHTML,
+                bottomLineHtml: bottomLine.innerHTML,
+              };
+            }
             showingLayman = false;
             simplifyBtn.textContent = "Explain in Lay Terms";
             hasReport = true;
@@ -696,6 +846,7 @@ export function mountApp(root: HTMLElement): void {
     hasReport = false;
     fullView = null;
     showingLayman = false;
+    lastCompanies = [];
     renderChips();
     hideError();
     reportPanel.classList.add("hidden");
@@ -812,10 +963,7 @@ export function mountApp(root: HTMLElement): void {
   async function runSimplify(): Promise<void> {
     // Second press returns to the analyst report — no need to refetch.
     if (showingLayman && fullView) {
-      reportBody.innerHTML = fullView.bodyHtml;
-      bottomLine.innerHTML = fullView.bottomLineHtml;
-      badgeStrip.classList.remove("hidden");
-      scorecardWrap.classList.remove("hidden");
+      renderCompanyProfiles(lastCompanies, reportMode);
       showingLayman = false;
       activeShareId = "";
       simplifyBtn.textContent = "Explain in Lay Terms";
@@ -825,6 +973,8 @@ export function mountApp(root: HTMLElement): void {
     hideError();
     simplifyBtn.disabled = true;
     simplifyBtn.textContent = "Rewriting…";
+    companyProfiles.classList.add("hidden");
+    streamHero.classList.remove("hidden");
 
     try {
       const res = await fetch("/api/simplify", {
@@ -908,6 +1058,8 @@ export function mountApp(root: HTMLElement): void {
         bottomLineHtml?: string;
         bodyHtml?: string;
         scorecardHtml?: string;
+        companies?: CompanyProfile[];
+        mode?: ReportMode;
         asOf?: string;
         stale?: boolean;
       };
@@ -921,6 +1073,8 @@ export function mountApp(root: HTMLElement): void {
 
       reportId = String(data.reportId ?? id);
       activeShareId = data.shareId ?? (id.startsWith("share:") ? id : "");
+      reportSymbols = data.symbols ?? [];
+      reportMode = data.mode ?? "separate";
       const isLayman = data.variant === "layman";
       state.picks = (data.symbols ?? []).map((symbol) => ({
         symbol,
@@ -932,32 +1086,43 @@ export function mountApp(root: HTMLElement): void {
       title.textContent = (data.symbols ?? []).join(" · ") || "Shared report";
       titleWrap.append(title);
 
-      if (isLayman) {
-        badgeStrip.classList.add("hidden");
-        scorecardWrap.classList.add("hidden");
+      if (
+        !isLayman &&
+        data.companies?.length &&
+        data.mode === "separate"
+      ) {
+        lastCompanies = data.companies;
+        renderCompanyProfiles(data.companies, data.mode);
       } else {
-        badgeStrip.classList.remove("hidden");
-        scorecardWrap.classList.remove("hidden");
+        if (isLayman) {
+          badgeStrip.classList.add("hidden");
+          scorecardWrap.classList.add("hidden");
+          companyProfiles.classList.add("hidden");
+          streamHero.classList.remove("hidden");
+        } else {
+          badgeStrip.classList.remove("hidden");
+          scorecardWrap.classList.remove("hidden");
+        }
+
+        applySticky({
+          bottomLineHtml: data.bottomLineHtml,
+          badges: isLayman ? {} : data.badges,
+          scorecardHtml: isLayman ? "" : data.scorecardHtml,
+        });
+        if (data.bodyHtml) setReportBody(data.bodyHtml);
+
+        fullView = isLayman
+          ? null
+          : {
+              bodyHtml: reportBody.innerHTML,
+              bottomLineHtml: bottomLine.innerHTML,
+            };
       }
-
-      applySticky({
-        bottomLineHtml: data.bottomLineHtml,
-        badges: isLayman ? {} : data.badges,
-        scorecardHtml: isLayman ? "" : data.scorecardHtml,
-      });
-      if (data.bodyHtml) setReportBody(data.bodyHtml);
-
       if (data.stale && data.asOf) {
         asOfEl.textContent = `Data as of ${data.asOf}`;
         asOfEl.classList.remove("hidden");
       }
 
-      fullView = isLayman
-        ? null
-        : {
-            bodyHtml: reportBody.innerHTML,
-            bottomLineHtml: bottomLine.innerHTML,
-          };
       showingLayman = isLayman;
       simplifyBtn.textContent = isLayman
         ? "Show full report"
@@ -979,6 +1144,38 @@ export function mountApp(root: HTMLElement): void {
     sharedId?.startsWith("layman:")
   ) {
     void loadSharedReport(sharedId);
+  } else {
+    void maybeAutostartFromUrl();
+  }
+
+  async function maybeAutostartFromUrl(): Promise<void> {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("noSimilar") === "1") allowSimilar = false;
+
+    const symbols = (params.get("symbols") ?? "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => /^[A-Z0-9.\-]{1,12}$/.test(s));
+
+    if (params.get("autostart") !== "1" || !symbols.length) return;
+
+    state.picks = symbols.slice(0, 4).map((symbol) => ({ symbol, name: symbol }));
+    state.mode = "separate";
+    renderChips();
+
+    if (window.history.replaceState) {
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("symbols");
+      clean.searchParams.delete("autostart");
+      window.history.replaceState({}, "", clean.toString());
+    }
+
+    try {
+      await obtainTurnstileToken();
+      void runResearch();
+    } catch {
+      showError("Complete the security check below, then tap Generate Report.", true);
+    }
   }
 
   renderChips();
