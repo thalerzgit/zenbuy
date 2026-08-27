@@ -125,7 +125,42 @@ export const PROCESSING_QUOTES: readonly ProcessingQuote[] = [
     text: "I know how to make money, and I know how to have fun. Whenever I try to combine the two, I don't make money, and I don't have fun.",
     author: "David Morgenthaler",
   },
+  {
+    text: "The wise investor can afford to buy only when the company is going through a temporary difficulty.",
+    author: "Philip Fisher",
+  },
+  {
+    text: "I don't want a lot of good investments; I want a few outstanding ones.",
+    author: "Philip Fisher",
+  },
+  {
+    text: "If the job has been correctly done when a common stock is purchased, the time to sell it is almost never.",
+    author: "Philip Fisher",
+  },
+  {
+    text: "The greatest investment reward comes to those who find the occasional company that can grow in sales and profits far more rapidly than industry as a whole.",
+    author: "Philip Fisher",
+  },
+  {
+    text: "Bull markets are born on pessimism, grow on skepticism, mature on optimism and die on euphoria.",
+    author: "John Templeton",
+  },
+  {
+    text: "The time of maximum pessimism is the best time to buy, and the time of maximum optimism is the best time to sell.",
+    author: "John Templeton",
+  },
+  {
+    text: "The four most dangerous words in investing are: 'This time it's different.'",
+    author: "John Templeton",
+  },
+  {
+    text: "If you want to have a better performance than the crowd, you must do things differently from the crowd.",
+    author: "John Templeton",
+  },
 ];
+
+/** How long each quote stays on screen during report / simplify wait. */
+export const QUOTE_ROTATION_MS = 5_000;
 
 const PHASES = {
   preparing: "Preparing your research request…",
@@ -271,8 +306,7 @@ export function createProcessingController(
       panel.classList.remove("hidden", "is-complete");
       render();
       tickTimer = setInterval(tick, 400);
-      // Production used 9s; CyberMan remembered ~5s — use 5s.
-      quoteTimer = setInterval(rotateQuote, 5_000);
+      quoteTimer = setInterval(rotateQuote, QUOTE_ROTATION_MS);
     },
 
     onMeta() {
