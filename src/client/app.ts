@@ -253,6 +253,8 @@ export function mountApp(root: HTMLElement): void {
   let showingLayman = false;
   /** Immutable share snapshot id (7-day TTL) created when the user shares. */
   let activeShareId = "";
+  /** One-time pass for autostart tabs opened from Show more like this. */
+  let pendingLaunchId = "";
   /** Successor / autostart reports hide "Show more like this" to avoid rabbit holes. */
   let allowSimilar = true;
   let reportSymbols: string[] = [];
@@ -780,12 +782,40 @@ export function mountApp(root: HTMLElement): void {
       if (!res.ok || !data.symbols?.length) {
         throw new Error(data.error || "Couldn't find similar companies.");
       }
+
+      // Turnstile must run in this click gesture; the new tab cannot solve it
+      // on its own during autostart.
+      btn.textContent = "Verifying…";
+      const turnstileToken = await obtainTurnstileToken();
+
+      const launchRes = await fetch("/api/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbols: data.symbols.slice(0, 3),
+          mode: "separate",
+          directive: state.directive,
+          profitHorizonYears: state.profitHorizonYears,
+          turnstileToken,
+        }),
+      });
+      resetTurnstile();
+
+      const launch = (await launchRes.json()) as {
+        launchId?: string;
+        error?: string;
+      };
+      if (!launchRes.ok || !launch.launchId) {
+        throw new Error(launch.error || "Couldn't open the similar report.");
+      }
+
       const url = new URL(window.location.origin + "/");
-      url.searchParams.set("symbols", data.symbols.slice(0, 3).join(","));
+      url.searchParams.set("launch", launch.launchId);
       url.searchParams.set("autostart", "1");
       url.searchParams.set("noSimilar", "1");
       window.open(url.toString(), "_blank", "noopener,noreferrer");
     } catch (e) {
+      resetTurnstile();
       showError(
         e instanceof Error ? e.message : "Couldn't find similar companies.",
         true
@@ -918,9 +948,12 @@ export function mountApp(root: HTMLElement): void {
     reportSymbols = state.picks.map((p) => p.symbol);
 
     let turnstileToken = "";
+    const launchId = pendingLaunchId;
     try {
-      // Must run inside the click gesture on iOS Safari.
-      turnstileToken = await obtainTurnstileToken();
+      if (!launchId) {
+        // Must run inside the click gesture on iOS Safari.
+        turnstileToken = await obtainTurnstileToken();
+      }
       submitBtn.textContent = "Generating…";
 
       const res = await fetch("/api/research", {
@@ -932,17 +965,26 @@ export function mountApp(root: HTMLElement): void {
           directive: state.directive,
           profitHorizonYears: state.profitHorizonYears,
           turnstileToken,
+          launchId: launchId || undefined,
         }),
       });
 
       // Tokens are single-use — always refresh for the next attempt.
-      resetTurnstile();
+      if (!launchId) resetTurnstile();
 
       if (!res.ok) {
-        const err = (await res.json()) as { error?: string; retry?: boolean };
+        const err = (await res.json()) as {
+          error?: string;
+          retry?: boolean;
+          code?: string;
+        };
+        if (launchId) pendingLaunchId = launchId;
+        if (err.code === "launch_expired") pendingLaunchId = "";
         showError(err.error || "Something went wrong.", err.retry !== false);
         return;
       }
+
+      pendingLaunchId = "";
 
       await consumeStream(res, (event, payload) => {
         {
@@ -1056,6 +1098,7 @@ export function mountApp(root: HTMLElement): void {
     setInputMode("manual");
     reportId = "";
     activeShareId = "";
+    pendingLaunchId = "";
     hasReport = false;
     fullView = null;
     showingLayman = false;
@@ -1394,6 +1437,59 @@ export function mountApp(root: HTMLElement): void {
       );
     }
 
+    const launchId = params.get("launch")?.trim();
+    if (params.get("autostart") === "1" && launchId) {
+      try {
+        const res = await fetch(
+          `/api/launch?id=${encodeURIComponent(launchId)}`
+        );
+        const data = (await res.json()) as {
+          symbols?: string[];
+          mode?: ReportMode;
+          directive?: string;
+          profitHorizonYears?: number;
+          error?: string;
+        };
+        if (!res.ok || !data.symbols?.length) {
+          throw new Error(data.error || "Launch link expired.");
+        }
+
+        if (data.directive && isInvestmentDirectiveId(data.directive)) {
+          state.directive = data.directive;
+        }
+        if (data.profitHorizonYears != null) {
+          state.profitHorizonYears = data.profitHorizonYears;
+        }
+
+        state.picks = data.symbols.slice(0, 4).map((symbol) => ({
+          symbol,
+          name: symbol,
+        }));
+        state.mode = data.mode ?? "separate";
+        pendingLaunchId = launchId;
+        renderChips();
+
+        if (window.history.replaceState) {
+          const clean = new URL(window.location.href);
+          clean.searchParams.delete("launch");
+          clean.searchParams.delete("autostart");
+          clean.searchParams.delete("noSimilar");
+          window.history.replaceState({}, "", clean.toString());
+        }
+
+        void runResearch();
+      } catch (e) {
+        showError(
+          e instanceof Error
+            ? e.message
+            : "This link expired. Use Show more like this again.",
+          true
+        );
+      }
+      return;
+    }
+
+    // Legacy ?symbols=&autostart= links: prefill only — Turnstile needs a tap.
     const symbols = (params.get("symbols") ?? "")
       .split(",")
       .map((s) => s.trim().toUpperCase())
@@ -1410,13 +1506,6 @@ export function mountApp(root: HTMLElement): void {
       clean.searchParams.delete("symbols");
       clean.searchParams.delete("autostart");
       window.history.replaceState({}, "", clean.toString());
-    }
-
-    try {
-      await obtainTurnstileToken();
-      void runResearch();
-    } catch {
-      showError("Complete the security check below, then tap Generate Report.", true);
     }
   }
 
