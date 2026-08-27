@@ -16,6 +16,10 @@ import {
   setTurnstileInteractiveHandler,
   warmTurnstileToken,
 } from "./turnstile";
+import {
+  PROCESSING_PANEL_HTML,
+  createProcessingController,
+} from "./processing-progress";
 
 export interface SymbolPick {
   symbol: string;
@@ -162,6 +166,7 @@ export function mountApp(root: HTMLElement): void {
 
   const report = el("section", "report-panel hidden");
   report.innerHTML = `
+    ${PROCESSING_PANEL_HTML}
     <header class="report-hero">
       <div id="report-title-wrap"></div>
       <div id="company-profiles" class="company-profiles hidden"></div>
@@ -232,6 +237,7 @@ export function mountApp(root: HTMLElement): void {
   const shareMenu = searchWrap.querySelector("#share-menu") as HTMLDivElement;
   const formError = searchWrap.querySelector("#form-error") as HTMLParagraphElement;
   const reportPanel = report;
+  const processing = createProcessingController(report);
   const titleWrap = report.querySelector("#report-title-wrap") as HTMLDivElement;
   const companyProfiles = report.querySelector(
     "#company-profiles"
@@ -685,6 +691,7 @@ export function mountApp(root: HTMLElement): void {
   });
 
   function resetReportUi(): void {
+    processing.hide();
     titleWrap.innerHTML = "";
     badgeStrip.innerHTML = "";
     companyProfiles.innerHTML = "";
@@ -947,6 +954,8 @@ export function mountApp(root: HTMLElement): void {
     reportMode = mode;
     reportSymbols = state.picks.map((p) => p.symbol);
 
+    processing.start(state.picks.length, mode);
+
     let turnstileToken = "";
     const launchId = pendingLaunchId;
     try {
@@ -980,6 +989,7 @@ export function mountApp(root: HTMLElement): void {
         };
         if (launchId) pendingLaunchId = launchId;
         if (err.code === "launch_expired") pendingLaunchId = "";
+        processing.fail();
         showError(err.error || "Something went wrong.", err.retry !== false);
         return;
       }
@@ -989,6 +999,7 @@ export function mountApp(root: HTMLElement): void {
       await consumeStream(res, (event, payload) => {
         {
           if (event === "meta") {
+            processing.onMeta();
             const symbols = payload.symbols as
               | Array<{ symbol: string; name: string }>
               | undefined;
@@ -1030,10 +1041,12 @@ export function mountApp(root: HTMLElement): void {
           }
 
           if (event === "sticky") {
+            processing.onSticky();
             applySticky(payload as Parameters<typeof applySticky>[0]);
           }
 
           if (event === "body") {
+            processing.onBody();
             setReportBody(String(payload.html ?? ""));
           }
 
@@ -1051,6 +1064,7 @@ export function mountApp(root: HTMLElement): void {
           }
 
           if (event === "done") {
+            processing.onDone();
             reportId = String(payload.reportId ?? "");
             if (!companyProfiles.classList.contains("hidden")) {
               fullView = {
@@ -1070,24 +1084,28 @@ export function mountApp(root: HTMLElement): void {
           }
 
           if (event === "error") {
+            processing.fail();
             showError(String(payload.error), payload.retry !== false);
           }
         }
       });
     } catch (e) {
       resetTurnstile();
+      processing.fail();
       const msg =
         e instanceof Error && e.message
           ? e.message
           : "The market is meditating a bit too hard. Try again?";
       showError(msg, true);
     } finally {
+      if (processing.isVisible()) processing.onDone();
       state.loading = false;
       syncPrimaryBtn();
     }
   }
 
   function startNewReport(): void {
+    processing.hide();
     state.picks = [];
     state.mode = "separate";
     state.inputMode = "manual";
@@ -1243,6 +1261,7 @@ export function mountApp(root: HTMLElement): void {
     simplifyBtn.textContent = "Rewriting…";
     companyProfiles.classList.add("hidden");
     streamHero.classList.remove("hidden");
+    processing.start(1, "separate", "simplifying");
 
     try {
       const res = await fetch("/api/simplify", {
@@ -1253,6 +1272,7 @@ export function mountApp(root: HTMLElement): void {
 
       if (!res.ok) {
         const err = (await res.json()) as { error?: string; retry?: boolean };
+        processing.fail();
         showError(err.error || "Couldn't simplify that report.", err.retry !== false);
         return;
       }
@@ -1263,27 +1283,33 @@ export function mountApp(root: HTMLElement): void {
 
       await consumeStream(res, (event, payload) => {
         if (event === "sticky") {
+          processing.onSticky();
           applySticky(payload as Parameters<typeof applySticky>[0]);
         }
         if (event === "body") {
+          processing.onBody();
           setReportBody(String(payload.html ?? ""));
         }
         if (event === "done") {
+          processing.onDone();
           showingLayman = true;
           activeShareId = "";
           simplifyBtn.textContent = "Show full report";
         }
         if (event === "error") {
+          processing.fail();
           showError(String(payload.error), payload.retry !== false);
         }
       });
     } catch (e) {
+      processing.fail();
       const msg =
         e instanceof Error && e.message
           ? e.message
           : "The rewrite wandered off. Try again?";
       showError(msg, true);
     } finally {
+      if (processing.isVisible()) processing.onDone();
       simplifyBtn.disabled = false;
       if (!showingLayman) simplifyBtn.textContent = "Explain in Lay Terms";
     }

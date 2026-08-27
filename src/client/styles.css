@@ -232,6 +232,131 @@ body {
   display: none;
 }
 
+/* ── Processing progress (restored from production index-DHJ8ukXP.js) ── */
+.processing-panel {
+  margin: 0 0 1.35rem;
+  padding: 1.25rem 1.2rem 1.15rem;
+  background:
+    linear-gradient(165deg, rgba(232, 244, 229, 0.7) 0%, #fff 42%),
+    var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.processing-panel.hidden {
+  display: none;
+}
+
+.processing-panel.is-complete .progress-fill {
+  background: linear-gradient(90deg, var(--green-dark), var(--green-positive));
+}
+
+.processing-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 0.95rem;
+}
+
+.processing-spinner {
+  flex: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.15rem;
+  border: 2.5px solid var(--sage-light);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: processing-spin 0.75s linear infinite;
+}
+
+.processing-panel.is-complete .processing-spinner {
+  animation: none;
+  border-color: var(--green-positive);
+  background: var(--green-positive);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+@keyframes processing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.processing-status {
+  min-width: 0;
+  flex: 1;
+}
+
+.processing-phase {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.processing-eta {
+  margin: 0.25rem 0 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--sage-light);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green-dark), var(--green) 60%, #5aa645);
+  transition: width 0.35s linear;
+}
+
+.processing-quote {
+  margin: 1.05rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.quote-text {
+  margin: 0;
+  min-height: 2.6em;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  font-style: italic;
+  transition: opacity 0.22s ease;
+}
+
+.quote-text.is-changing {
+  opacity: 0;
+}
+
+.quote-author {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--sage-dark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .processing-spinner {
+    animation: none;
+  }
+  .progress-fill,
+  .quote-text {
+    transition: none;
+  }
+}
+
 .hero-head {
   display: flex;
   align-items: baseline;
