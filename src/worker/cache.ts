@@ -156,3 +156,17 @@ export interface SharedReportSnapshot {
 }
 
 export const SHARE_TTL_SECONDS = 7 * 86_400;
+
+/** One-time research pass issued after Turnstile on "Show more like this". */
+export interface LaunchSession {
+  symbols: string[];
+  mode: "separate" | "comparative";
+  directive: InvestmentDirectiveId;
+  profitHorizonYears: number;
+}
+
+export const LAUNCH_TTL_SECONDS = 180;
+
+export function launchCacheKey(id: string): string {
+  return `launch:${id}`;
+}
