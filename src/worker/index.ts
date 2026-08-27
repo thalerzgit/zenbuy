@@ -38,6 +38,7 @@ import {
 import {
   companyProfilesFromMarkdown,
   parseReport,
+  assessReportCompleteness,
   renderMarkdown,
   scorecardHtml,
 } from "./parse";
@@ -751,6 +752,22 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
             }
           },
           onDone(text) {
+            const hasBottom = /^##\s*Bottom line\b/im.test(text);
+            const hasWatch = /^##\s*What I'd watch next\b/im.test(text);
+            if (!hasBottom || !hasWatch || text.trim().length < 400) {
+              console.error("incomplete layman refused cache", {
+                chars: text.length,
+                hasBottom,
+                hasWatch,
+              });
+              send("error", {
+                error:
+                  "The rewrite cut off before finishing — nothing was cached. Try Explain in Lay Terms again.",
+                retry: true,
+              });
+              return;
+            }
+
             const bottomMatch = text.match(
               /^##\s*Bottom line\b[^\n]*\n([\s\S]*?)(?=\n##\s+|$)/i
             );
@@ -1036,6 +1053,20 @@ async function handleResearch(
         };
 
         const finish = async (markdown: string): Promise<void> => {
+          const completeness = assessReportCompleteness(markdown);
+          if (!completeness.ok) {
+            console.error("incomplete report refused cache", {
+              reason: completeness.reason,
+              missing: completeness.missing,
+              chars: markdown.length,
+              symbols: payloads.map((p) => p.symbol),
+            });
+            fail(
+              "The analysis cut off before finishing — nothing was cached. Tap Generate Report to try again."
+            );
+            return;
+          }
+
           const report = emitParsed(send, markdown);
           report.asOf = oldestAsOf(payloads);
           report.stale = showAsOf;
