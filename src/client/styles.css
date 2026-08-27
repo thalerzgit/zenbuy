@@ -120,28 +120,6 @@ body {
   color: var(--insight-gold);
 }
 
-.brand-oracle {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.88rem;
-  line-height: 1.35;
-  font-weight: 400;
-  width: 100%;
-  /* Reserve two lines so long ↔ short quotes don't shift the lockup */
-  min-height: 2.7em;
-  transition: opacity 0.32s ease;
-}
-
-.brand-oracle.brand-oracle-fade {
-  opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brand-oracle {
-    transition: none;
-  }
-}
-
 .brand-tag {
   margin: 0.15rem 0 0;
   color: var(--insight-gold-bright);

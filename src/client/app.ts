@@ -6,7 +6,6 @@ import {
   mountDirectivePanel,
 } from "./directive-ui";
 import { profitHorizonLabel } from "../lib/profit-horizons";
-import { startOracleRotation } from "./quotes";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
 import { isInvestmentDirectiveId } from "../lib/investment-directives";
 import {
@@ -99,7 +98,6 @@ export function mountApp(root: HTMLElement): void {
       <span class="brand-mark" aria-hidden="true">${BRAND_MARK_SVG}</span>
       <span class="brand-lockup">
         <span class="brand-name">ZenBuy<span class="brand-tld">.info</span></span>
-        <span class="brand-oracle" id="brand-oracle" aria-live="polite">Price is what you pay. Value is what you get. — Warren Buffett</span>
         <span class="brand-tag">Know before you trade</span>
       </span>
     </a>
@@ -196,9 +194,6 @@ export function mountApp(root: HTMLElement): void {
 
   main.append(searchWrap, report);
   root.append(header, main, modal, footer);
-
-  const oracleEl = header.querySelector("#brand-oracle") as HTMLElement;
-  startOracleRotation(oracleEl);
 
   const input = searchWrap.querySelector("#symbol-input") as HTMLInputElement;
   const dropdown = searchWrap.querySelector("#dropdown") as HTMLDivElement;
