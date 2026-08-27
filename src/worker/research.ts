@@ -125,10 +125,11 @@ async function requestAnalysis(
 async function readAnalysisStream(
   res: Response,
   onText: (text: string) => void
-): Promise<string> {
+): Promise<{ text: string; stopReason: string | null }> {
   if (!res.body) throw new Error("Empty response stream");
 
   let full = "";
+  let stopReason: string | null = null;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -147,19 +148,28 @@ async function readAnalysisStream(
       try {
         const evt = JSON.parse(payload) as {
           type?: string;
-          delta?: { type?: string; text?: string };
+          delta?: {
+            type?: string;
+            text?: string;
+            stop_reason?: string | null;
+          };
+          message?: { stop_reason?: string | null };
         };
         if (evt.type === "content_block_delta" && evt.delta?.text) {
           full += evt.delta.text;
           onText(evt.delta.text);
         }
+        // Anthropic streams stop_reason on message_delta / message_stop.
+        const reason =
+          evt.delta?.stop_reason ?? evt.message?.stop_reason ?? null;
+        if (reason) stopReason = reason;
       } catch {
         /* ignore partial json */
       }
     }
   }
 
-  return full;
+  return { text: full, stopReason };
 }
 
 export async function streamResearch(
@@ -185,7 +195,20 @@ export async function streamResearch(
   }
 
   try {
-    const full = await readAnalysisStream(res, handlers.onDelta);
+    const { text: full, stopReason } = await readAnalysisStream(
+      res,
+      handlers.onDelta
+    );
+    if (stopReason === "max_tokens") {
+      console.error("analysis truncated by max_tokens", {
+        chars: full.length,
+        stopReason,
+      });
+      handlers.onError(
+        "The analysis hit the length limit before finishing. Try again?"
+      );
+      return;
+    }
     await handlers.onDone(full);
   } catch (e) {
     console.error("stream read failed", e);
@@ -231,7 +254,17 @@ export async function streamLayman(
   }
 
   try {
-    const full = await readAnalysisStream(res, handlers.onDelta);
+    const { text: full, stopReason } = await readAnalysisStream(
+      res,
+      handlers.onDelta
+    );
+    if (stopReason === "max_tokens") {
+      console.error("layman truncated by max_tokens", { chars: full.length });
+      handlers.onError(
+        "The rewrite hit the length limit before finishing. Try again?"
+      );
+      return;
+    }
     await handlers.onDone(full);
   } catch (e) {
     console.error("layman stream read failed", e);
@@ -298,6 +331,14 @@ export async function streamResearchParallel(
         await readAnalysisStream(res, (text) => {
           sections[i] += text;
           emit();
+        }).then(({ stopReason }) => {
+          if (stopReason === "max_tokens") {
+            console.error("parallel analysis truncated", payload.symbol);
+            failures.push(payload.symbol);
+            sections[i] =
+              "## BOTTOM LINE\n\n_Analysis cut off before finishing for this ticker._";
+            emit(true);
+          }
         });
       } catch (e) {
         console.error("parallel analysis failed", payload.symbol, e);

@@ -105,6 +105,69 @@ export function parseReport(markdown: string): ParsedReport {
   };
 }
 
+/** Required section headers for a finished analyst report (order flexible). */
+const REQUIRED_SECTIONS = [
+  "BOTTOM LINE",
+  "FUNDAMENTALS",
+  "MOAT AND MANAGEMENT",
+  "THESIS VALIDATION",
+  "SECTOR AND MACRO",
+  "CATALYSTS AND RISKS",
+  "RETURN SCENARIOS",
+  "ACTION PLAN",
+  "SUMMARY",
+] as const;
+
+export interface CompletenessResult {
+  ok: boolean;
+  reason?: string;
+  missing?: string[];
+}
+
+/**
+ * Guard against caching truncated LLM output (stream drop / max_tokens).
+ * Incomplete reports must never be written to KV as successful cache hits.
+ */
+export function assessReportCompleteness(
+  markdown: string,
+  opts: { minChars?: number } = {}
+): CompletenessResult {
+  const text = markdown.trim();
+  const minChars = opts.minChars ?? 1_200;
+  if (text.length < minChars) {
+    return {
+      ok: false,
+      reason: "too_short",
+      missing: [...REQUIRED_SECTIONS],
+    };
+  }
+
+  const missing = REQUIRED_SECTIONS.filter(
+    (name) => !new RegExp(`^##\\s*${name}\\b`, "im").test(text)
+  );
+  if (missing.length) {
+    return { ok: false, reason: "missing_sections", missing: [...missing] };
+  }
+
+  // SUMMARY must include a usable Overall score — mid-stream cuts often leave
+  // the header without finishing the scorecard.
+  if (!/overall:\s*\d{1,2}\s*\/\s*10/i.test(text)) {
+    return { ok: false, reason: "incomplete_summary" };
+  }
+
+  // Mid-word cutoffs look like "...oligopoly benef" with no terminal mark.
+  const lastLine = text.split("\n").filter(Boolean).pop()?.trim() ?? "";
+  const looksFinished =
+    /[.!?…]["')\]]?\s*$/u.test(lastLine) ||
+    /\d{1,2}\s*\/\s*10\s*$/u.test(lastLine) ||
+    /\|\s*$/u.test(lastLine);
+  if (!looksFinished && /[A-Za-z]{4,}$/u.test(lastLine)) {
+    return { ok: false, reason: "truncated_tail" };
+  }
+
+  return { ok: true };
+}
+
 export interface CompanySection {
   symbol: string;
   bottomLine: string;
