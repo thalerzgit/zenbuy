@@ -108,7 +108,7 @@ export function mountApp(root: HTMLElement): void {
   searchWrap.innerHTML = `
     <div class="input-mode-tabs" role="tablist" aria-label="How to pick stocks">
       <button type="button" class="input-mode-tab is-active" data-mode="manual" role="tab" aria-selected="true">Enter tickers</button>
-      <button type="button" class="input-mode-tab" data-mode="discover" role="tab" aria-selected="false">Find for my goal</button>
+      <button type="button" class="input-mode-tab" data-mode="discover" role="tab" aria-selected="false">Find Tickers</button>
     </div>
     <div id="manual-input-block">
       <label class="search-label" for="symbol-input">Ticker(s) or Corp. Name</label>
