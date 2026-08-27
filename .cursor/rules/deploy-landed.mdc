@@ -1,0 +1,20 @@
+---
+description: Auto-push, verify deploy, and confirm LANDED when coding work is done
+alwaysApply: true
+---
+
+# Deploy & LANDED workflow
+
+When software development or coding work is **complete** for this project:
+
+1. **Commit & push** — If there are uncommitted changes, commit with a conventional message and `git push origin main` (or the active feature branch, then merge to `main` if that is the delivery path).
+2. **Wait ~2 minutes** — Allow GitHub Actions (Deploy workflow) to finish.
+3. **Verify** — Confirm:
+   - The push landed on `main` (`git status`, branch up to date with `origin/main`)
+   - Deploy workflow **completed successfully** (`gh run list` for the commit SHA)
+   - Production health check passes if applicable (e.g. `https://zenbuy.info/api/health` → 200)
+4. **Report** — End the task response with **`LANDED!`** once deploy is confirmed.
+
+If deploy or CI fails, report the failure immediately — do **not** post LANDED until it is fixed and green.
+
+Do not skip this verification because the change was docs-only, CSS-only, or small.
