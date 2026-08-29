@@ -15,7 +15,7 @@ Follow `docs/STANDING_DEV_PROCESS.md` for every RCA, coding, optimization, or de
 4. **Surgical plan** — only the issue/feature; protect adjacent wiring; no orphans/regressions.
 5. **Minimal code** — no bloat; optimize inefficient in-scope code.
 6. **Questions** — one at a time, brief, technical-but-layman, with your recommendation each time.
-7. **Multi-client** — iOS / laptop / desktop / cloud; GitHub always wins as latest truth.
+7. **Multi-client** — iOS / laptop / desktop / cloud; GitHub always wins as latest truth. **If this session is cloud:** remind the admin it is cloud; never ask them to run local Mac Terminal commands — route Mac-only work to a **local session** that runs commands in its local sandbox.
 8. **Push → wait 2–3 min → verify Actions + Wrangler Cloudflare deploy** in the correct environment.
 9. **Smoke-test production**; on failure loop to Step 1 with learnings.
 10. End with **`LANDED!`** plus brief A–E: asked / steps / problems / deploy elements / what’s working now.
