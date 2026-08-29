@@ -1,0 +1,17 @@
+---
+description: Cloud sessions must not ask the admin to run local Terminal commands
+alwaysApply: true
+---
+
+# Cloud session vs local Terminal (permanent)
+
+**Detect session type first.** If this agent is a **Cloud Agent / background cloud session** (remote VM, no Mac filesystem):
+
+1. **Remind the admin clearly:** “This session is running in the **cloud**, not on your Mac.”
+2. **Do not ask the admin to paste/run Terminal commands on their machine** as if this session were local.
+3. For anything that **must** run on the Mac (ASC keys under `/Users/…`, local sandbox, Neo Private Keys, desktop-only tools):
+   - Tell them to **open or continue a local Cursor session** on the machine that has the files/sandbox.
+   - Ask that **local session** to issue the command in **its local sandbox** (with the right permissions).
+4. Prefer doing cloud-capable work **in this cloud session** (git, gh, wrangler with cloud tokens, production curls) instead of bouncing shell snippets to the admin.
+
+If the session **is** local (desktop/laptop with the repo), run Terminal commands yourself in the local sandbox — do not offload them to the admin unless approval or a secret only they can supply is required.

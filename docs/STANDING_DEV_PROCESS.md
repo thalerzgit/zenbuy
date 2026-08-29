@@ -15,6 +15,7 @@ That checklist is now **Steps 8–10** of this 10-step process.
 - **Surgical scope.** Change only what the issue/feature requires; do not orphan, regress, or break adjacent wiring.
 - **Minimal code.** Prefer the smallest correct change; optimize inefficient code already in scope.
 - **Mobile-aware.** Prompter may be on iOS Cursor (no local repo), laptop, or desktop. Detect and adapt; never assume a writable local clone on mobile.
+- **Cloud vs local Terminal (critical).** If the agent session is **cloud** (remote VM), always remind the admin that **this session is in the cloud**. Do **not** ask them to run Mac Terminal commands as if the session were local. For Mac-only work (local keys, local sandbox, Neo paths), tell them to use a **local Cursor session** and have **that** session run the command in its local sandbox. Prefer executing cloud-capable work in the cloud session itself.
 - **No LANDED until production is verified.**
 
 ---
@@ -74,6 +75,13 @@ The admin may work from:
 - Various cloud agent repositories/sessions
 
 **Always** honor **GitHub repositories as the latest source of truth** across all of them. Push/pull and merge so no stale local fork becomes the de facto source.
+
+**Cloud session Terminal rule (permanent):**
+
+- If the agent is running in the **cloud**, remind the admin: **“This session is in the cloud, not on your Mac.”**
+- Do **not** ask the admin to copy/paste Terminal commands onto their local machine for work that belongs in a local sandbox.
+- For Mac-only operations (local Private Keys, ASC, Neo paths, desktop-only tools), instruct them to **open a local Cursor session** and ask **that** session to run the command in its **local sandbox**.
+- Prefer running cloud-capable commands **inside the cloud session** (git, `gh`, wrangler with cloud credentials, production HTTP checks).
 
 ### Step 8 — Push, Actions, Cloudflare deploy
 
