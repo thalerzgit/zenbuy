@@ -1,20 +1,19 @@
 ---
-description: Auto-push, verify deploy, and confirm LANDED when coding work is done
+description: Auto-push, verify deploy, and confirm LANDED (Steps 8–10 of standing process)
 alwaysApply: true
 ---
 
-# Deploy & LANDED workflow
+# Deploy & LANDED (Steps 8–10)
 
-When software development or coding work is **complete** for this project:
+Part of the permanent standing process in `docs/STANDING_DEV_PROCESS.md`.
 
-1. **Commit & push** — If there are uncommitted changes, commit with a conventional message and `git push origin main` (or the active feature branch, then merge to `main` if that is the delivery path).
-2. **Wait ~2 minutes** — Allow GitHub Actions (Deploy workflow) to finish.
-3. **Verify** — Confirm:
-   - The push landed on `main` (`git status`, branch up to date with `origin/main`)
-   - Deploy workflow **completed successfully** (`gh run list` for the commit SHA)
-   - Production health check passes if applicable (e.g. `https://zenbuy.info/api/health` → 200)
-4. **Report** — End the task response with **`LANDED!`** once deploy is confirmed.
+When coding work for this project is ready to ship:
 
-If deploy or CI fails, report the failure immediately — do **not** post LANDED until it is fixed and green.
+1. **Commit & push** — conventional commits; feature branch → PR → merge to `main` as appropriate.
+2. **Wait 2–3 minutes** — GitHub Actions Deploy (Wrangler → Cloudflare) must finish.
+3. **Verify** — commit on `main`; Actions green; Cloudflare environment correct (Workers/Pages, KV, D1, R2, DNS as applicable); production smoke-test matches intent.
+4. **Report** — End with **`LANDED!`** and the Step 10 A–E executive brief.
 
-Do not skip this verification because the change was docs-only, CSS-only, or small.
+If CI/deploy/smoke fails: do **not** LANDED — loop from Step 1 of the standing process.
+
+Applies to docs-only and small changes too.
