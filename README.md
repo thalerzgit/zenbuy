@@ -95,7 +95,9 @@ npm run deploy
 
 ## Native iOS
 
-SwiftUI app in `swift/` (not a WebView). Pushes to `main` that touch `swift/**` run **TestFlight** (`.github/workflows/ios-testflight.yml`) on `macos-26` / Xcode 26.6 — archive + upload only, no App Store review. Secrets: `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY`. See `swift/README.md`.
+SwiftUI app in `swift/` (not a WebView). Pushes to `main` that touch `swift/**` run **TestFlight** (`.github/workflows/ios-testflight.yml`) on `macos-26` / Xcode 26.6 — archive + upload only, no App Store review.
+
+**Blockers before first upload:** (1) stamp `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` on this repo from Mini; (2) Justin creates Bundle ID + ASC app for `info.zenbuy.app` in Apple Developer / App Store Connect UI (API key cannot CREATE apps — CI never tries). Then `workflow_dispatch` TestFlight to invite `thalerz@me.com`. See `swift/README.md`.
 
 ## Rate limits and resilience
 

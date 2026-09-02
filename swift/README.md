@@ -46,18 +46,22 @@ To point at a local Worker during API work, uncomment `ZENBUY_API_BASE_URL` in `
 
 | Item | Value / action |
 |------|----------------|
-| Bundle ID | `info.zenbuy.app` — register in [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list) |
-| SKU | e.g. `zenbuy-ios-001` |
+| Bundle ID | `info.zenbuy.app` — **Justin creates in Apple Developer UI** (Identifiers → App IDs). Do **not** create via ASC API. |
+| ASC app | **Justin creates in App Store Connect UI** — name ZenBuy, bundle `info.zenbuy.app`, SKU `zenbuy-ios-001` |
 | Category | Finance |
-| App icon | Add 1024×1024 PNG to `Assets.xcassets/AppIcon` |
+| App icon | 1024×1024 PNG in `Assets.xcassets/AppIcon` |
 | Privacy | `PrivacyInfo.xcprivacy` included; update if you add analytics |
-| Export compliance | Standard HTTPS only — no custom encryption beyond Apple OS |
+| Export compliance | Standard HTTPS only — `ITSAppUsesNonExemptEncryption = NO` |
+
+Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, then archives/uploads and invites `thalerz@me.com`.
 
 ### Archive & upload
 
 Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6): archive, upload to App Store Connect, invite the internal tester. It does **not** submit for App Store review.
 
-Repo Actions secrets required: `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY` (same key as sibling apps). Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
+Repo Actions secrets required (stamp from Mini — never invent/commit keys): `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY`. Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
+
+After secrets + ASC app exist: **Actions → TestFlight → Run workflow** (`workflow_dispatch`).
 
 Manual local archive:
 

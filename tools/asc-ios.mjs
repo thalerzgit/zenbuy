@@ -4,8 +4,11 @@
  * Uses ASC_ISSUER_ID / ASC_KEY_ID / ASC_PRIVATE_KEY — never prints key material.
  *
  * Commands:
- *   ensure-app      Create bundle ID + ASC app if missing
- *   invite-tester   Internal TestFlight group + email invite
+ *   ensure-app      READ-ONLY check that ASC app exists (never creates Bundle ID or app)
+ *   invite-tester   Internal TestFlight group + email invite (requires app already in ASC)
+ *
+ * Justin creates Bundle ID + ASC app in Apple Developer / App Store Connect UI.
+ * Admin ASC API key cannot CREATE apps — do not attempt API create.
  */
 import { createSign } from "node:crypto";
 
@@ -100,70 +103,41 @@ async function findBundleId(identifier) {
   return data.data?.[0] ?? null;
 }
 
+/** READ-ONLY: never POST Bundle ID or apps. Justin creates those in the ASC UI. */
 async function ensureApp() {
   const bundleId = process.env.ASC_BUNDLE_ID || "info.zenbuy.app";
-  const name = process.env.ASC_APP_NAME || "ZenBuy";
-  const sku = process.env.ASC_SKU || "zenbuy-ios-001";
 
-  let app = await findApp(bundleId);
+  const app = await findApp(bundleId);
   if (app) {
     console.log(`ASC app exists: ${app.id} (${bundleId})`);
     return app;
   }
 
-  let bundle = await findBundleId(bundleId);
-  if (!bundle) {
-    console.log(`Registering bundle ID ${bundleId}…`);
-    const created = await asc("/v1/bundleIds", {
-      method: "POST",
-      body: {
-        data: {
-          type: "bundleIds",
-          attributes: {
-            identifier: bundleId,
-            name,
-            platform: "IOS",
-          },
-        },
-      },
-    });
-    bundle = created.data;
-    console.log(`Created bundle ID ${bundle.id}`);
-  } else {
-    console.log(`Bundle ID already registered: ${bundle.id}`);
+  let bundleNote = "not found via API";
+  try {
+    const bundle = await findBundleId(bundleId);
+    if (bundle) {
+      bundleNote = `registered as ${bundle.id} (app record still missing)`;
+    }
+  } catch (err) {
+    bundleNote = `lookup failed (${err.message || err})`;
   }
 
-  console.log(`Creating ASC app ${name} / ${bundleId}…`);
-  try {
-    const createdApp = await asc("/v1/apps", {
-      method: "POST",
-      body: {
-        data: {
-          type: "apps",
-          attributes: {
-            bundleId,
-            name,
-            primaryLocale: "en-US",
-            sku,
-          },
-        },
-      },
-    });
-    app = createdApp.data;
-    console.log(`Created ASC app ${app.id}`);
-    return app;
-  } catch (err) {
-    if (err.status === 403 || /does not allow 'CREATE'/i.test(String(err.message))) {
-      console.error(`::error::ASC API key cannot CREATE apps (bundle ${bundleId} is registered).`);
-      console.error(
-        "BLOCKER: Create the iOS app once in App Store Connect UI — name ZenBuy, bundle info.zenbuy.app, SKU zenbuy-ios-001 — or elevate the ASC API key role to Admin/App Manager so CREATE is allowed."
-      );
-      console.error(
-        "Then re-run Actions → TestFlight. Secrets are present; only the ASC app record is missing."
-      );
-    }
-    throw err;
-  }
+  console.error(`::error::No App Store Connect app for ${bundleId}.`);
+  console.error(`Bundle ID status: ${bundleNote}.`);
+  console.error(
+    "BLOCKER: Justin must create Bundle ID + ASC app in Apple Developer / App Store Connect UI first."
+  );
+  console.error(
+    "  • Identifiers → App IDs → info.zenbuy.app (iOS)"
+  );
+  console.error(
+    "  • App Store Connect → My Apps → New App → name ZenBuy, bundle info.zenbuy.app, SKU zenbuy-ios-001"
+  );
+  console.error(
+    "Do NOT create via ASC API (key cannot CREATE apps). After UI create + ASC_* secrets stamped, re-run Actions → TestFlight."
+  );
+  process.exit(1);
 }
 
 async function findOrCreateInternalGroup(appId, groupName) {
@@ -178,6 +152,21 @@ async function findOrCreateInternalGroup(appId, groupName) {
   if (match) {
     console.log(`Beta group exists: ${match.id} (${groupName})`);
     return match;
+  }
+
+  // Prefer Apple's built-in internal group if present under another name.
+  const all = await asc(
+    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({
+      "filter[isInternalGroup]": "true",
+      limit: "20",
+    })}`
+  );
+  const internal = (all.data || []).find((g) => g.attributes?.isInternalGroup);
+  if (internal) {
+    console.log(
+      `Using existing internal group ${internal.id} (${internal.attributes?.name || "internal"})`
+    );
+    return internal;
   }
 
   const created = await asc("/v1/betaGroups", {
@@ -213,9 +202,11 @@ async function inviteTester() {
 
   const app = await findApp(bundleId);
   if (!app) {
-    throw new Error(
-      `No ASC app for ${bundleId}. Run ensure-app first (or wait for create).`
+    console.error(`::error::No ASC app for ${bundleId}.`);
+    console.error(
+      "BLOCKER: Justin must create Bundle ID + ASC app in App Store Connect UI first, then re-run TestFlight."
     );
+    process.exit(1);
   }
 
   const group = await findOrCreateInternalGroup(app.id, groupName);
@@ -252,7 +243,7 @@ async function inviteTester() {
     }
   }
 
-  console.log(`Adding existing tester ${tester.id} to ${groupName}…`);
+  console.log(`Adding existing tester ${tester.id} to group…`);
   try {
     await asc(`/v1/betaGroups/${group.id}/relationships/betaTesters`, {
       method: "POST",
@@ -260,11 +251,11 @@ async function inviteTester() {
         data: [{ type: "betaTesters", id: tester.id }],
       },
     });
-    console.log(`Tester ${email} is in ${groupName}.`);
+    console.log(`Tester ${email} is in ${group.attributes?.name || groupName}.`);
   } catch (err) {
     const detail = String(err.message || "");
     if (err.status === 409 || /already/i.test(detail)) {
-      console.log(`Tester ${email} already in ${groupName}.`);
+      console.log(`Tester ${email} already in group.`);
       return tester;
     }
     throw err;
