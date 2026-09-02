@@ -16,6 +16,9 @@ enum ZenBuyAPIError: LocalizedError {
         case let .decoding(error):
             return "Unexpected response: \(error.localizedDescription)"
         case let .transport(error):
+            if let urlError = error as? URLError, urlError.code == .timedOut {
+                return "Research took too long to finish. A single ticker usually takes about 90 seconds — check your connection and try again."
+            }
             return error.localizedDescription
         }
     }
@@ -28,13 +31,30 @@ final class ZenBuyAPIClient {
     private static let clientValue = "ios"
 
     private let session: URLSession
+    private let researchSession: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    /// Search / config stay snappy. Research SSE uses a long-lived session because
+    /// a single-ticker report is ~85s on the worker before the first sticky/body.
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+            self.researchSession = session
+        } else {
+            self.session = Self.makeSession(requestTimeout: 30, resourceTimeout: 60)
+            self.researchSession = Self.makeSession(requestTimeout: 300, resourceTimeout: 600)
+        }
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()
+    }
+
+    private static func makeSession(requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = requestTimeout
+        config.timeoutIntervalForResource = resourceTimeout
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
     }
 
     private func applyClientHeaders(to request: inout URLRequest) {
@@ -87,7 +107,8 @@ final class ZenBuyAPIClient {
     func streamResearch(
         symbols: [String],
         mode: ReportMode,
-        directive: String = "growth"
+        directive: String = "growth",
+        profitHorizonYears: Int? = nil
     ) -> AsyncThrowingStream<ReportStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -97,12 +118,18 @@ final class ZenBuyAPIClient {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    request.timeoutInterval = 300
                     applyClientHeaders(to: &request)
 
-                    let body = ResearchRequest(symbols: symbols, mode: mode, directive: directive)
+                    let body = ResearchRequest(
+                        symbols: symbols,
+                        mode: mode,
+                        directive: directive,
+                        profitHorizonYears: profitHorizonYears
+                    )
                     request.httpBody = try encoder.encode(body)
 
-                    let (bytes, response) = try await session.bytes(for: request)
+                    let (bytes, response) = try await researchSession.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else {
                         throw ZenBuyAPIError.transport(URLError(.badServerResponse))
                     }
@@ -127,8 +154,10 @@ final class ZenBuyAPIClient {
                         }
                     }
                     continuation.finish()
-                } catch {
+                } catch let error as ZenBuyAPIError {
                     continuation.finish(throwing: error)
+                } catch {
+                    continuation.finish(throwing: ZenBuyAPIError.transport(error))
                 }
             }
 

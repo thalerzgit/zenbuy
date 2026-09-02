@@ -38,6 +38,7 @@ struct ResearchRequest: Codable, Sendable {
     let symbols: [String]
     let mode: ReportMode
     let directive: String?
+    let profitHorizonYears: Int?
 }
 
 struct ReportBadges: Codable, Hashable, Sendable {
@@ -80,7 +81,8 @@ enum ReportStreamEvent: Sendable {
             self = .done(badges: payload?.badges)
         case "error":
             guard let payload = try? decoder.decode(ErrorPayload.self, from: data) else { return nil }
-            self = .error(message: payload.message)
+            let text = payload.message ?? payload.error ?? "Research failed."
+            self = .error(message: text)
         default:
             return nil
         }
@@ -108,5 +110,6 @@ private struct DonePayload: Codable {
 }
 
 private struct ErrorPayload: Codable {
-    let message: String
+    let message: String?
+    let error: String?
 }

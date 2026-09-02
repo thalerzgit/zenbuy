@@ -59,10 +59,21 @@ Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, 
 
 Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6):
 
-1. **Validate rails** — secrets, Xcode 26.6, ExportOptions / scheme / team / bundle id (can be green before the ASC app exists).
-2. **Archive and upload** — read-only ASC app check (never CREATE via API), archive, upload; invite `thalerz@me.com` **only after a successful upload**. Does **not** submit for App Store review.
+1. **Validate rails** — ASC + Dist secrets, Xcode 26.6, ExportOptions (manual Dist) / scheme / team / bundle id.
+2. **Archive and upload** — import Dist p12 + App Store profile, archive with `CODE_SIGN_STYLE=Manual` (no `-allowProvisioningUpdates`), export+upload; invite `thalerz@me.com` **only after a successful upload**. Does **not** submit for App Store review.
 
-Repo Actions secrets required (stamp from Mini — never invent/commit keys): `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY`. Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
+Automatic signing on ephemeral runners mints iOS Development certs and fails when the Apple account is at the 3-cert cap. CI uses **manual Distribution signing** only.
+
+Repo Actions secrets required (stamp from Mini — never invent/commit keys or certs):
+
+| Secret | Role |
+|--------|------|
+| `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` | ASC API (ensure-app, invite, IPA upload) |
+| `ASC_DIST_P12_BASE64` | Apple Distribution .p12 (legacy 3DES — AES-PBES2 fails `security import`) |
+| `ASC_DIST_P12_PASSWORD` | Password for that p12 |
+| `ASC_PROFILE_APP_BASE64` | App Store profile **CI info.zenbuy.app AppStore** (no widget) |
+
+Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
 
 After Justin creates the ASC app: **Actions → TestFlight → Run workflow** (`workflow_dispatch`).
 
@@ -85,5 +96,5 @@ xcodebuild test \
 
 ## Versioning
 
-- Marketing version: `0.1.0` (`Config/Shared.xcconfig`)
+- Marketing version: `0.1.1` (`Config/Shared.xcconfig`)
 - Build number: `CURRENT_PROJECT_VERSION` in the same file — bump before each TestFlight upload.

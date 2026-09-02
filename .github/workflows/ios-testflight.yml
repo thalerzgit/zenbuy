@@ -1,13 +1,15 @@
 # Archive ZenBuy and upload to App Store Connect / TestFlight.
 # Does NOT submit the build for App Store production review.
 #
-# Pattern: zentrade.live `.github/workflows/ios-testflight.yml`
-# (destination: upload, automatic signing, ASC API key on xcodebuild).
+# Pattern: MyRepresent Dist — MANUAL App Store signing.
+# Automatic signing + -allowProvisioningUpdates mints ephemeral iOS Development
+# certs on the runner and dies when the Apple account is at the 3-cert cap
+# (Actions run 33673973276 / build 107).
 #
 # Jobs:
-#   1) Validate rails — ExportOptions / scheme / team / secrets / Xcode (can be green
-#      before Justin creates the ASC app).
-#   2) Archive and upload — READ-ONLY ASC app check (never CREATE), archive, upload,
+#   1) Validate rails — ExportOptions (manual Dist) / scheme / team / secrets / Xcode.
+#   2) Archive and upload — import Dist p12 + App Store profile, archive with
+#      CODE_SIGN_STYLE=Manual (no -allowProvisioningUpdates), export+upload,
 #      then invite thalerz@me.com only after a successful upload.
 name: TestFlight
 
@@ -35,6 +37,7 @@ env:
   IOS_BUNDLE_ID: info.zenbuy.app
   IOS_TEAM_ID: XQP4QUVJYY
   IOS_TESTER_EMAIL: thalerz@me.com
+  IOS_PROFILE_NAME: CI info.zenbuy.app AppStore
 
 jobs:
   rails:
@@ -48,28 +51,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Require App Store Connect API secrets
+      - name: Require ASC API + Dist signing secrets
         working-directory: ${{ github.workspace }}
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_DIST_P12_BASE64: ${{ secrets.ASC_DIST_P12_BASE64 }}
+          ASC_DIST_P12_PASSWORD: ${{ secrets.ASC_DIST_P12_PASSWORD }}
+          ASC_PROFILE_APP_BASE64: ${{ secrets.ASC_PROFILE_APP_BASE64 }}
         run: |
           set -euo pipefail
           missing=0
-          for name in ASC_ISSUER_ID ASC_KEY_ID ASC_PRIVATE_KEY; do
+          for name in ASC_ISSUER_ID ASC_KEY_ID ASC_PRIVATE_KEY ASC_DIST_P12_BASE64 ASC_DIST_P12_PASSWORD ASC_PROFILE_APP_BASE64; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not set on this repository"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::ASC_* secrets missing on thalerzgit/zenbuy."
-            echo "BLOCKER: Stamp ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY from Mini (never invent/commit keys)."
-            echo "Also: Justin must create Bundle ID + ASC app in Apple Developer / App Store Connect UI (API key cannot CREATE apps)."
+            echo "::error::ASC / Dist secrets missing on thalerzgit/zenbuy."
+            echo "BLOCKER: CoS stamps from Mini (never invent/commit certs):"
+            echo "  ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY"
+            echo "  ASC_DIST_P12_BASE64 (legacy 3DES p12), ASC_DIST_P12_PASSWORD"
+            echo "  ASC_PROFILE_APP_BASE64 (profile name: CI info.zenbuy.app AppStore)"
             exit 1
           fi
-          echo "ASC secrets are present (values not printed)."
+          echo "ASC API + Dist signing secrets are present (values not printed)."
 
       - name: Select Xcode 26.6
         working-directory: ${{ github.workspace }}
@@ -108,11 +116,13 @@ jobs:
           style=$(plutil -extract signingStyle raw -o - ExportOptions.plist)
           team=$(plutil -extract teamID raw -o - ExportOptions.plist)
           manage=$(plutil -extract manageAppVersionAndBuildNumber raw -o - ExportOptions.plist)
+          profile=$(/usr/libexec/PlistBuddy -c 'Print :provisioningProfiles:info.zenbuy.app' ExportOptions.plist)
           [ "${method}" = "app-store-connect" ]
           [ "${dest}" = "upload" ]
-          [ "${style}" = "automatic" ]
+          [ "${style}" = "manual" ]
           [ "${team}" = "${IOS_TEAM_ID}" ]
           [ "${manage}" = "false" ]
+          [ "${profile}" = "${IOS_PROFILE_NAME}" ]
 
           grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_ID};" ZenBuy.xcodeproj/project.pbxproj
           grep -q "DEVELOPMENT_TEAM = ${IOS_TEAM_ID};" ZenBuy.xcodeproj/project.pbxproj
@@ -125,8 +135,7 @@ jobs:
           echo "--- xcodebuild -list ---"
           xcodebuild -list -project "${IOS_PROJECT}" | tee "${RUNNER_TEMP}/xcodebuild-list.txt"
           grep -q "^[[:space:]]*${IOS_SCHEME}$" "${RUNNER_TEMP}/xcodebuild-list.txt"
-          echo "Rails check passed: scheme ${IOS_SCHEME}, bundle ${IOS_BUNDLE_ID}, team ${IOS_TEAM_ID}."
-          echo "ASC app existence is checked in the upload job (Justin creates it in Apple UI — never via API)."
+          echo "Rails check passed: scheme ${IOS_SCHEME}, bundle ${IOS_BUNDLE_ID}, team ${IOS_TEAM_ID}, profile '${IOS_PROFILE_NAME}' (manual Dist)."
 
   upload:
     name: Archive and upload
@@ -199,10 +208,9 @@ jobs:
           BUILD=$((GITHUB_RUN_NUMBER + OFFSET))
           echo "IOS_BUILD_NUMBER=${BUILD}" >> "${GITHUB_ENV}"
           echo "Build ${BUILD} = GITHUB_RUN_NUMBER ${GITHUB_RUN_NUMBER} + offset ${OFFSET}"
-          echo "Marketing version stays 0.1.0 (not stamped)."
+          echo "Marketing version comes from Config/Shared.xcconfig (not stamped)."
 
       # READ-ONLY check — never creates Bundle ID or ASC app via API.
-      # Justin creates those in Apple Developer / App Store Connect UI first.
       - name: Check App Store Connect app exists
         working-directory: ${{ github.workspace }}
         env:
@@ -212,10 +220,70 @@ jobs:
           ASC_BUNDLE_ID: info.zenbuy.app
         run: node tools/asc-ios.mjs ensure-app
 
-      - name: Archive
+      - name: Import Dist certificate and App Store profile
+        working-directory: ${{ github.workspace }}
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_DIST_P12_BASE64: ${{ secrets.ASC_DIST_P12_BASE64 }}
+          ASC_DIST_P12_PASSWORD: ${{ secrets.ASC_DIST_P12_PASSWORD }}
+          ASC_PROFILE_APP_BASE64: ${{ secrets.ASC_PROFILE_APP_BASE64 }}
+        run: |
+          set -euo pipefail
+          KCH="${RUNNER_TEMP}/zenbuy.keychain-db"
+          KCH_PASS="ci-${GITHUB_RUN_ID}"
+          echo "IOS_KEYCHAIN_PATH=${KCH}" >> "${GITHUB_ENV}"
+
+          security create-keychain -p "${KCH_PASS}" "${KCH}"
+          security set-keychain-settings -lut 21600 "${KCH}"
+          security unlock-keychain -p "${KCH_PASS}" "${KCH}"
+          security list-keychains -d user -s "${KCH}" $(security list-keychains -d user | sed 's/"//g')
+          security default-keychain -s "${KCH}"
+
+          printf '%s' "${ASC_DIST_P12_BASE64}" | tr -d '[:space:]' | base64 --decode > "${RUNNER_TEMP}/dist-raw.p12"
+          # Prefer direct import (Mini stamps legacy 3DES). AES-PBES2 fails Apple
+          # `security import` — rewrap with OpenSSL -legacy -descert if needed.
+          if ! security import "${RUNNER_TEMP}/dist-raw.p12" -k "${KCH}" -P "${ASC_DIST_P12_PASSWORD}" \
+            -T /usr/bin/codesign -T /usr/bin/security; then
+            echo "Direct p12 import failed; rewrapping as legacy 3DES…"
+            OPENSSL=openssl
+            if [ -x /opt/homebrew/opt/openssl@3/bin/openssl ]; then
+              OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl
+            elif [ -x /usr/local/opt/openssl@3/bin/openssl ]; then
+              OPENSSL=/usr/local/opt/openssl@3/bin/openssl
+            fi
+            if ! "${OPENSSL}" pkcs12 -in "${RUNNER_TEMP}/dist-raw.p12" \
+              -passin pass:"${ASC_DIST_P12_PASSWORD}" -nodes -legacy -out "${RUNNER_TEMP}/dist.pem"; then
+              "${OPENSSL}" pkcs12 -in "${RUNNER_TEMP}/dist-raw.p12" \
+                -passin pass:"${ASC_DIST_P12_PASSWORD}" -nodes -out "${RUNNER_TEMP}/dist.pem"
+            fi
+            "${OPENSSL}" pkcs12 -export -in "${RUNNER_TEMP}/dist.pem" \
+              -out "${RUNNER_TEMP}/dist.p12" \
+              -passout pass:"${ASC_DIST_P12_PASSWORD}" \
+              -legacy -descert -macalg sha1
+            security import "${RUNNER_TEMP}/dist.p12" -k "${KCH}" -P "${ASC_DIST_P12_PASSWORD}" \
+              -T /usr/bin/codesign -T /usr/bin/security
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KCH_PASS}" "${KCH}" >/dev/null
+          echo "Signing identities:"
+          security find-identity -v -p codesigning "${KCH}"
+          if ! security find-identity -v -p codesigning "${KCH}" | grep -q "Apple Distribution"; then
+            echo "::error::No Apple Distribution identity in CI keychain after p12 import."
+            exit 1
+          fi
+
+          mkdir -p "${HOME}/Library/MobileDevice/Provisioning Profiles"
+          printf '%s' "${ASC_PROFILE_APP_BASE64}" | tr -d '[:space:]' | base64 --decode > "${RUNNER_TEMP}/app.mobileprovision"
+          security cms -D -i "${RUNNER_TEMP}/app.mobileprovision" > "${RUNNER_TEMP}/pp.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "${RUNNER_TEMP}/pp.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "${RUNNER_TEMP}/pp.plist")
+          if [ "${NAME}" != "${IOS_PROFILE_NAME}" ]; then
+            echo "::error::Installed profile name '${NAME}' != expected '${IOS_PROFILE_NAME}'"
+            exit 1
+          fi
+          cp "${RUNNER_TEMP}/app.mobileprovision" "${HOME}/Library/MobileDevice/Provisioning Profiles/${UUID}.mobileprovision"
+          echo "Installed profile '${NAME}' (${UUID}). No widget profile (ZenBuy is app-only)."
+          rm -f "${RUNNER_TEMP}/dist-raw.p12" "${RUNNER_TEMP}/dist.p12" "${RUNNER_TEMP}/dist.pem" "${RUNNER_TEMP}/app.mobileprovision"
+
+      - name: Archive
         run: |
           set -euo pipefail
           beautify() {
@@ -225,17 +293,18 @@ jobs:
               cat
             fi
           }
+          # Manual Dist only — do not pass -allowProvisioningUpdates or ASC
+          # auth flags (those mint iOS Development certs on ephemeral runners).
           xcodebuild \
             -project "${IOS_PROJECT}" \
             -scheme "${IOS_SCHEME}" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "${RUNNER_TEMP}/ZenBuy.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "${ASC_API_KEY_PATH}" \
-            -authenticationKeyID "${ASC_KEY_ID}" \
-            -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
+            PROVISIONING_PROFILE_SPECIFIER="${IOS_PROFILE_NAME}" \
             CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER}" \
             archive | beautify
 
@@ -253,12 +322,13 @@ jobs:
               cat
             fi
           }
+          # destination=upload authenticates delivery with the ASC API key.
+          # No -allowProvisioningUpdates (would mint Dev certs).
           xcodebuild \
             -exportArchive \
             -archivePath "${RUNNER_TEMP}/ZenBuy.xcarchive" \
             -exportOptionsPlist ExportOptions.plist \
             -exportPath "${RUNNER_TEMP}/ZenBuy-export" \
-            -allowProvisioningUpdates \
             -authenticationKeyPath "${ASC_API_KEY_PATH}" \
             -authenticationKeyID "${ASC_KEY_ID}" \
             -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
@@ -278,7 +348,7 @@ jobs:
           ASC_GROUP_NAME: Internal Testers
         run: node tools/asc-ios.mjs invite-tester
 
-      - name: Remove API key
+      - name: Remove secrets and CI keychain
         if: always()
         working-directory: ${{ github.workspace }}
         run: |
@@ -286,3 +356,8 @@ jobs:
             rm -f "${ASC_API_KEY_PATH}"
           fi
           rm -f "${RUNNER_TEMP}"/AuthKey_*.p8
+          rm -f "${RUNNER_TEMP}/dist-raw.p12" "${RUNNER_TEMP}/dist.p12" "${RUNNER_TEMP}/dist.pem"
+          rm -f "${RUNNER_TEMP}/app.mobileprovision" "${RUNNER_TEMP}/pp.plist"
+          if [ -n "${IOS_KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "${IOS_KEYCHAIN_PATH}" 2>/dev/null || true
+          fi

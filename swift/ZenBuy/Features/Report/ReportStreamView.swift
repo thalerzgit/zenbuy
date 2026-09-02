@@ -21,7 +21,12 @@ struct ReportStreamView: View {
             .navigationTitle(symbols.joined(separator: ", "))
             .navigationBarTitleDisplayMode(.inline)
             .task {
-                viewModel.start(symbols: symbols, mode: mode, directive: directive)
+                viewModel.start(
+                    symbols: symbols,
+                    mode: mode,
+                    directive: directive,
+                    profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: directive)
+                )
             }
             .onDisappear {
                 viewModel.cancel()
@@ -32,13 +37,8 @@ struct ReportStreamView: View {
     private func reportContent(_ viewModel: ReportViewModel) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if viewModel.isStreaming {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text(viewModel.statusMessage)
-                            .font(.footnote)
-                            .foregroundStyle(ZenBuyTheme.muted)
-                    }
+                if viewModel.processing.isVisible {
+                    ProcessingPanelView(progress: viewModel.processing)
                 }
 
                 if let badges = viewModel.badges {
