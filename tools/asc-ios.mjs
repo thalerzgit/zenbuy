@@ -141,12 +141,10 @@ async function ensureApp() {
 }
 
 async function findOrCreateInternalGroup(appId, groupName) {
-  // ASC rejects filter[name] on betaGroups (400). List internals, match name client-side.
+  // ASC rejects filter[name] and filter[isInternalGroup] on this relationship
+  // (400). List groups, match name / internal flag client-side.
   const listed = await asc(
-    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({
-      "filter[isInternalGroup]": "true",
-      limit: "50",
-    })}`
+    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({ limit: "50" })}`
   );
   const groups = listed.data || [];
   const match = groups.find((g) => g.attributes?.name === groupName);

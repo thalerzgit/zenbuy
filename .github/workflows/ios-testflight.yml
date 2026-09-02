@@ -338,6 +338,7 @@ jobs:
 
       - name: Invite internal TestFlight tester
         if: success() && steps.export_upload.outputs.uploaded == 'true'
+        continue-on-error: true
         working-directory: ${{ github.workspace }}
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
