@@ -16,6 +16,18 @@ struct SearchResponse: Codable, Sendable {
     let throttled: Bool?
 }
 
+struct DiscoverPick: Codable, Identifiable, Hashable, Sendable {
+    var id: String { symbol }
+    let symbol: String
+    let name: String
+    let fitScore: Int
+    let reason: String
+}
+
+struct DiscoverResponse: Codable, Sendable {
+    let picks: [DiscoverPick]
+}
+
 struct APIErrorResponse: Codable, Sendable {
     let error: String?
     let code: String?

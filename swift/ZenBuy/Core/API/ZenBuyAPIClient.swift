@@ -22,6 +22,7 @@ enum ZenBuyAPIError: LocalizedError {
 }
 
 @Observable
+@MainActor
 final class ZenBuyAPIClient {
     private static let clientHeader = "X-ZenBuy-Client"
     private static let clientValue = "ios"
@@ -67,6 +68,20 @@ final class ZenBuyAPIClient {
     func fetchConfig() async throws -> ClientConfigResponse {
         let url = ZenBuyEnvironment.apiBaseURL.appending(path: "api/config")
         return try await get(url)
+    }
+
+    func discover(directive: String, limit: Int = 4) async throws -> [DiscoverPick] {
+        var components = URLComponents(
+            url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/discover"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "directive", value: directive),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        guard let url = components?.url else { throw ZenBuyAPIError.invalidURL }
+        let payload: DiscoverResponse = try await get(url)
+        return payload.picks
     }
 
     func streamResearch(

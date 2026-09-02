@@ -13,6 +13,9 @@ final class ReportViewModel {
 
     private let api: ZenBuyAPIClient
     private var streamTask: Task<Void, Never>?
+    private var pendingBody = ""
+    private var lastFlush = Date.distantPast
+    private let flushInterval: TimeInterval = 0.12
 
     init(api: ZenBuyAPIClient) {
         self.api = api
@@ -23,10 +26,12 @@ final class ReportViewModel {
         bottomLineHTML = ""
         bodyHTML = ""
         scorecardHTML = ""
+        pendingBody = ""
         badges = nil
         errorMessage = nil
         isStreaming = true
         statusMessage = "Connecting…"
+        lastFlush = .distantPast
 
         streamTask = Task {
             do {
@@ -51,19 +56,25 @@ final class ReportViewModel {
                         scorecardHTML = scorecardHtml ?? ""
                         statusMessage = "Streaming report…"
                     case let .body(html):
-                        bodyHTML += html
+                        pendingBody += html
+                        flushBodyIfNeeded(force: false)
                     case let .badges(badges):
                         self.badges = badges
                     case let .done(badges):
                         self.badges = badges ?? self.badges
+                        flushBodyIfNeeded(force: true)
                         statusMessage = "Done"
                         isStreaming = false
                     case let .error(message):
                         errorMessage = message
+                        flushBodyIfNeeded(force: true)
                         isStreaming = false
                     }
                 }
+                flushBodyIfNeeded(force: true)
                 isStreaming = false
+            } catch is CancellationError {
+                return
             } catch {
                 errorMessage = error.localizedDescription
                 isStreaming = false
@@ -74,5 +85,12 @@ final class ReportViewModel {
     func cancel() {
         streamTask?.cancel()
         isStreaming = false
+    }
+
+    private func flushBodyIfNeeded(force: Bool) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastFlush) >= flushInterval else { return }
+        bodyHTML = pendingBody
+        lastFlush = now
     }
 }

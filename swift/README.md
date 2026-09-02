@@ -22,8 +22,8 @@ swift/
     Core/API/             # URLSession client + SSE stream reader
     Core/Models/          # Codable types matching Worker JSON
     Core/Theme/           # Sage green design tokens
-    Features/Search/      # Ticker search + chip picker
-    Features/Report/      # Mode sheet + streaming report view
+    Features/Search/      # Enter Tickers + Find Tickers
+    Features/Report/      # Mode screen + native streaming report
     Resources/            # Assets, Privacy manifest
   ZenBuyTests/
   ZenBuyUITests/
@@ -55,11 +55,14 @@ To point at a local Worker during API work, uncomment `ZENBUY_API_BASE_URL` in `
 
 ### Archive & upload
 
+Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6): archive, upload to App Store Connect, invite the internal tester. It does **not** submit for App Store review.
+
+Repo Actions secrets required: `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY` (same key as sibling apps). Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
+
+Manual local archive:
+
 1. **Product → Archive** (Release configuration).
 2. **Distribute App → App Store Connect**.
-3. Complete metadata, screenshots, and review notes in App Store Connect.
-
-CI for iOS is not wired yet — builds are local/Xcode Cloud for now. Web deploys still flow `main` → GitHub Actions → Cloudflare.
 
 Native iOS requests send `X-ZenBuy-Client: ios`; the Worker skips Turnstile for that header (web clients still require it). Daily rate limits apply to all clients.
 
