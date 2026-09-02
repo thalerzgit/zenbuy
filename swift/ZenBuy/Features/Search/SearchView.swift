@@ -84,7 +84,13 @@ struct SearchView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(ZenBuyTheme.muted)
 
-            TextField("AAPL, Apple, Palo Alto…", text: $viewModel.query)
+            TextField(
+                "AAPL, Apple, Palo Alto…",
+                text: $viewModel.query,
+                prompt: Text("AAPL, Apple, Palo Alto…")
+                    .foregroundStyle(ZenBuyTheme.muted)
+            )
+                .foregroundStyle(ZenBuyTheme.ink)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .padding(14)
