@@ -141,27 +141,21 @@ async function ensureApp() {
 }
 
 async function findOrCreateInternalGroup(appId, groupName) {
-  const q = new URLSearchParams({
-    "filter[name]": groupName,
-    limit: "10",
-  });
-  const existing = await asc(`/v1/apps/${appId}/betaGroups?${q}`);
-  const match = (existing.data || []).find(
-    (g) => g.attributes?.name === groupName
+  // ASC rejects filter[name] on betaGroups (400). List internals, match name client-side.
+  const listed = await asc(
+    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({
+      "filter[isInternalGroup]": "true",
+      limit: "50",
+    })}`
   );
+  const groups = listed.data || [];
+  const match = groups.find((g) => g.attributes?.name === groupName);
   if (match) {
     console.log(`Beta group exists: ${match.id} (${groupName})`);
     return match;
   }
 
-  // Prefer Apple's built-in internal group if present under another name.
-  const all = await asc(
-    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({
-      "filter[isInternalGroup]": "true",
-      limit: "20",
-    })}`
-  );
-  const internal = (all.data || []).find((g) => g.attributes?.isInternalGroup);
+  const internal = groups.find((g) => g.attributes?.isInternalGroup);
   if (internal) {
     console.log(
       `Using existing internal group ${internal.id} (${internal.attributes?.name || "internal"})`
