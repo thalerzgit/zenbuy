@@ -23,7 +23,7 @@ struct ReportHTMLView: View {
                 .foregroundStyle(ZenBuyTheme.sageDark)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case let .paragraph(inlines):
-            Text(attributed(inlines))
+            styledText(inlines)
                 .font(.body)
                 .foregroundStyle(ZenBuyTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -34,7 +34,7 @@ struct ReportHTMLView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text("•")
                             .foregroundStyle(ZenBuyTheme.sage)
-                        Text(attributed(item))
+                        styledText(item)
                             .fixedSize(horizontal: false, vertical: true)
                             .tint(ZenBuyTheme.sageDark)
                     }
@@ -106,26 +106,36 @@ struct ReportHTMLView: View {
         }
     }
 
-    private func attributed(_ inlines: [ReportInline]) -> AttributedString {
-        var result = AttributedString()
-        for inline in inlines {
+    /// Concatenate SwiftUI `Text` pieces. Do not assign AttributedString
+    /// `.font` / `.link` / `.underlineStyle` / `.foregroundColor` — those form
+    /// non-Sendable AttributeScopes key paths and fail Swift 6 / Xcode 26
+    /// (Actions run 33675875514).
+    private func styledText(_ inlines: [ReportInline]) -> Text {
+        inlines.reduce(Text("")) { partial, inline in
             switch inline {
             case let .text(string):
-                result += AttributedString(string)
+                return partial + Text(string)
             case let .strong(string):
-                var piece = AttributedString(string)
-                piece.font = .body.bold()
-                result += piece
+                return partial + Text(string).bold()
             case let .link(label, url):
-                var piece = AttributedString(label)
-                if let link = URL(string: url) {
-                    piece.link = link
-                }
-                piece.underlineStyle = .single
-                piece.foregroundColor = ZenBuyTheme.sageDark
-                result += piece
+                return partial + linkText(label: label, url: url)
             }
         }
-        return result
+    }
+
+    private func linkText(label: String, url: String) -> Text {
+        let escaped = label
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
+        if let parsed = try? AttributedString(
+            markdown: "[\(escaped)](\(url))",
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) {
+            return Text(parsed)
+        }
+        return Text(label).underline().foregroundStyle(ZenBuyTheme.sageDark)
     }
 }
