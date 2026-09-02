@@ -59,7 +59,7 @@ FORMATTING
 Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.
 
 BREVITY
-Respect the word budget in the request as a hard cap. Density beats length: never restate a number you have already given, never recap a previous section, and drop any bullet that carries no number, fact, or decision. Prefer a 4-column table over prose when comparing.`;
+Respect the word budget in the request as a hard cap. Density beats length: never restate a number you have already given, never recap a previous section, and drop any bullet that carries no number, fact, or decision. Prefer a 4-column table over prose when comparing. Stop immediately after SUMMARY — do not add extra sections, recaps, or a second scorecard.`;
 }
 
 export function getSystemPrompt(directiveId?: InvestmentDirectiveId): string {

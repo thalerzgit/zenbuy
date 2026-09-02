@@ -1,4 +1,5 @@
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
+import { assessReportCompleteness } from "./parse";
 import {
   buildLaymanPrompt,
   buildUserPrompt,
@@ -6,6 +7,9 @@ import {
   getSystemPrompt,
 } from "./prompt";
 import type { FundamentalsPayload } from "./finnhub";
+
+/** Headroom for a 1500-word single report or 2200-word comparative. */
+const RESEARCH_MAX_TOKENS = 12_000;
 
 export interface StreamHandlers {
   onDelta: (text: string) => void;
@@ -172,6 +176,24 @@ async function readAnalysisStream(
   return { text: full, stopReason };
 }
 
+function isLaymanComplete(text: string): boolean {
+  return (
+    /^##\s*Bottom line\b/im.test(text) &&
+    /^##\s*What I'd watch next\b/im.test(text) &&
+    text.trim().length >= 400
+  );
+}
+
+/** max_tokens is only fatal when the markdown is actually unfinished. */
+function acceptMaxTokensStop(
+  text: string,
+  kind: "research" | "layman"
+): boolean {
+  return kind === "layman"
+    ? isLaymanComplete(text)
+    : assessReportCompleteness(text).ok;
+}
+
 export async function streamResearch(
   env: Env,
   mode: "separate" | "comparative",
@@ -184,7 +206,7 @@ export async function streamResearch(
     env,
     getSystemPrompt(directive),
     buildUserPrompt(mode, payloads, directive, profitHorizonYears),
-    mode === "comparative" ? 12_000 : 8_000
+    RESEARCH_MAX_TOKENS
   );
 
   if (!res.ok) {
@@ -199,7 +221,7 @@ export async function streamResearch(
       res,
       handlers.onDelta
     );
-    if (stopReason === "max_tokens") {
+    if (stopReason === "max_tokens" && !acceptMaxTokensStop(full, "research")) {
       console.error("analysis truncated by max_tokens", {
         chars: full.length,
         stopReason,
@@ -208,6 +230,11 @@ export async function streamResearch(
         "The analysis hit the length limit before finishing. Try again?"
       );
       return;
+    }
+    if (stopReason === "max_tokens") {
+      console.warn("analysis max_tokens but report complete", {
+        chars: full.length,
+      });
     }
     await handlers.onDone(full);
   } catch (e) {
@@ -258,12 +285,17 @@ export async function streamLayman(
       res,
       handlers.onDelta
     );
-    if (stopReason === "max_tokens") {
+    if (stopReason === "max_tokens" && !acceptMaxTokensStop(full, "layman")) {
       console.error("layman truncated by max_tokens", { chars: full.length });
       handlers.onError(
         "The rewrite hit the length limit before finishing. Try again?"
       );
       return;
+    }
+    if (stopReason === "max_tokens") {
+      console.warn("layman max_tokens but rewrite complete", {
+        chars: full.length,
+      });
     }
     await handlers.onDone(full);
   } catch (e) {
@@ -316,7 +348,7 @@ export async function streamResearchParallel(
           env,
           getSystemPrompt(directive),
           buildUserPrompt("separate", [payload], directive, profitHorizonYears),
-          8_000
+          RESEARCH_MAX_TOKENS
         );
 
         if (!res.ok) {
@@ -332,12 +364,20 @@ export async function streamResearchParallel(
           sections[i] += text;
           emit();
         }).then(({ stopReason }) => {
-          if (stopReason === "max_tokens") {
+          if (
+            stopReason === "max_tokens" &&
+            !acceptMaxTokensStop(sections[i], "research")
+          ) {
             console.error("parallel analysis truncated", payload.symbol);
             failures.push(payload.symbol);
             sections[i] =
               "## BOTTOM LINE\n\n_Analysis cut off before finishing for this ticker._";
             emit(true);
+          } else if (stopReason === "max_tokens") {
+            console.warn(
+              "parallel analysis max_tokens but report complete",
+              payload.symbol
+            );
           }
         });
       } catch (e) {
