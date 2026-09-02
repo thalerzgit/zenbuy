@@ -4,32 +4,19 @@ struct ReportStreamView: View {
     let symbols: [String]
     let mode: ReportMode
     let directive: String
-    let api: ZenBuyAPIClient
-
-    @State private var viewModel: ReportViewModel
-
-    init(symbols: [String], mode: ReportMode, directive: String, api: ZenBuyAPIClient) {
-        self.symbols = symbols
-        self.mode = mode
-        self.directive = directive
-        self.api = api
-        _viewModel = State(initialValue: ReportViewModel(api: api))
-    }
+    @Bindable var viewModel: ReportViewModel
 
     var body: some View {
         reportContent(viewModel)
             .navigationTitle(symbols.joined(separator: ", "))
             .navigationBarTitleDisplayMode(.inline)
-            .task {
-                viewModel.start(
+            .onAppear {
+                viewModel.ensureStarted(
                     symbols: symbols,
                     mode: mode,
                     directive: directive,
                     profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: directive)
                 )
-            }
-            .onDisappear {
-                viewModel.cancel()
             }
     }
 
@@ -108,7 +95,7 @@ private struct BadgePill: View {
             symbols: ["AAPL"],
             mode: .separate,
             directive: "growth",
-            api: ZenBuyAPIClient()
+            viewModel: ReportViewModel(api: ZenBuyAPIClient())
         )
     }
 }

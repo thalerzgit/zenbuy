@@ -13,6 +13,7 @@ enum ProcessingPhase: String, Sendable {
     case finalizing
     case complete
     case simplifying
+    case reconnecting
 
     var copy: String {
         switch self {
@@ -23,6 +24,7 @@ enum ProcessingPhase: String, Sendable {
         case .finalizing: return "Polishing scorecard & summary…"
         case .complete: return "Report ready"
         case .simplifying: return "Rewriting in plain English…"
+        case .reconnecting: return "Still generating…"
         }
     }
 }
@@ -169,6 +171,39 @@ final class ProcessingProgress {
 
     func fail() {
         hide()
+    }
+
+    /// Keep the panel and elapsed ETA; do not reset percent after a background blip.
+    func markReconnecting() {
+        hideTask?.cancel()
+        hideTask = nil
+        phase = .reconnecting
+        isVisible = true
+        if tickTask == nil || quoteTask == nil {
+            resumeTimersIfNeeded()
+        }
+        render()
+    }
+
+    private func resumeTimersIfNeeded() {
+        if tickTask == nil {
+            tickTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    self?.tick()
+                }
+            }
+        }
+        if quoteTask == nil {
+            quoteTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled else { return }
+                    self?.rotateQuote()
+                }
+            }
+        }
     }
 
     func hide() {
