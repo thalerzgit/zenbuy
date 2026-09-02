@@ -57,11 +57,14 @@ Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, 
 
 ### Archive & upload
 
-Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6): archive, upload to App Store Connect, invite the internal tester. It does **not** submit for App Store review.
+Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6):
+
+1. **Validate rails** — secrets, Xcode 26.6, ExportOptions / scheme / team / bundle id (can be green before the ASC app exists).
+2. **Archive and upload** — read-only ASC app check (never CREATE via API), archive, upload; invite `thalerz@me.com` **only after a successful upload**. Does **not** submit for App Store review.
 
 Repo Actions secrets required (stamp from Mini — never invent/commit keys): `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY`. Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
 
-After secrets + ASC app exist: **Actions → TestFlight → Run workflow** (`workflow_dispatch`).
+After Justin creates the ASC app: **Actions → TestFlight → Run workflow** (`workflow_dispatch`).
 
 Manual local archive:
 
