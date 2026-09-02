@@ -1,35 +1,31 @@
 import SwiftUI
-import WebKit
 
 struct ReportStreamView: View {
     let symbols: [String]
     let mode: ReportMode
     let directive: String
+    let api: ZenBuyAPIClient
 
-    @Environment(ZenBuyAPIClient.self) private var api
-    @State private var viewModel: ReportViewModel?
-    @Environment(\.dismiss) private var dismiss
+    @State private var viewModel: ReportViewModel
+
+    init(symbols: [String], mode: ReportMode, directive: String, api: ZenBuyAPIClient) {
+        self.symbols = symbols
+        self.mode = mode
+        self.directive = directive
+        self.api = api
+        _viewModel = State(initialValue: ReportViewModel(api: api))
+    }
 
     var body: some View {
-        Group {
-            if let viewModel {
-                reportContent(viewModel)
-            } else {
-                ProgressView()
+        reportContent(viewModel)
+            .navigationTitle(symbols.joined(separator: ", "))
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                viewModel.start(symbols: symbols, mode: mode, directive: directive)
             }
-        }
-        .navigationTitle(symbols.joined(separator: ", "))
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if viewModel == nil {
-                let vm = ReportViewModel(api: api)
-                viewModel = vm
-                vm.start(symbols: symbols, mode: mode, directive: directive)
+            .onDisappear {
+                viewModel.cancel()
             }
-        }
-        .onDisappear {
-            viewModel?.cancel()
-        }
     }
 
     @ViewBuilder
@@ -50,18 +46,15 @@ struct ReportStreamView: View {
                 }
 
                 if !viewModel.scorecardHTML.isEmpty {
-                    HTMLFragmentView(html: viewModel.scorecardHTML)
-                        .frame(minHeight: 80)
+                    ReportHTMLView(html: viewModel.scorecardHTML)
                 }
 
                 if !viewModel.bottomLineHTML.isEmpty {
-                    HTMLFragmentView(html: viewModel.bottomLineHTML)
-                        .frame(minHeight: 60)
+                    ReportHTMLView(html: viewModel.bottomLineHTML)
                 }
 
                 if !viewModel.bodyHTML.isEmpty {
-                    HTMLFragmentView(html: viewModel.bodyHTML)
-                        .frame(minHeight: 200)
+                    ReportHTMLView(html: viewModel.bodyHTML)
                 }
 
                 if let errorMessage = viewModel.errorMessage {
@@ -109,41 +102,13 @@ private struct BadgePill: View {
     }
 }
 
-/// Renders server-provided HTML fragments (scorecard, markdown body) with ZenBuy styling.
-struct HTMLFragmentView: UIViewRepresentable {
-    let html: String
-
-    func makeUIView(context: Context) -> WKWebView {
-        let webView = WKWebView()
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = false
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        let wrapped = """
-        <!doctype html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { font-family: -apple-system, system-ui, sans-serif; color: #1a1a1a; margin: 0; padding: 0; font-size: 16px; line-height: 1.5; }
-            h1,h2,h3 { color: #4a6b50; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #e8e8e4; padding: 8px; text-align: left; }
-          </style>
-        </head>
-        <body>\(html)</body>
-        </html>
-        """
-        webView.loadHTMLString(wrapped, baseURL: nil)
-    }
-}
-
 #Preview {
     NavigationStack {
-        ReportStreamView(symbols: ["AAPL"], mode: .separate)
-            .environment(ZenBuyAPIClient())
+        ReportStreamView(
+            symbols: ["AAPL"],
+            mode: .separate,
+            directive: "growth",
+            api: ZenBuyAPIClient()
+        )
     }
 }

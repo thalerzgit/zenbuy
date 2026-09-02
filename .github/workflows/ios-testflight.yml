@@ -1,0 +1,246 @@
+# Archive ZenBuy and upload to App Store Connect / TestFlight.
+# Does NOT submit the build for App Store production review.
+#
+# Pattern: zentrade.live `.github/workflows/ios-testflight.yml`
+# (destination: upload, automatic signing, ASC API key on xcodebuild).
+name: TestFlight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "swift/**"
+      - ".github/workflows/ios-testflight.yml"
+      - "tools/asc-ios.mjs"
+      - "!swift/**/*.md"
+      - "!swift/**/*.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testflight:
+    name: Archive and upload
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      IOS_PROJECT: ZenBuy.xcodeproj
+      IOS_SCHEME: ZenBuy
+      IOS_BUNDLE_ID: info.zenbuy.app
+      IOS_TEAM_ID: XQP4QUVJYY
+      IOS_TESTER_EMAIL: thalerz@me.com
+    defaults:
+      run:
+        working-directory: swift
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require App Store Connect API secrets
+        working-directory: ${{ github.workspace }}
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ASC_ISSUER_ID ASC_KEY_ID ASC_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set on this repository"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Stamp ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY under repo Actions secrets (same key as ZenTrade / sibling apps)."
+            echo "Do not invent or commit keys. This job cannot upload to TestFlight without them."
+            exit 1
+          fi
+          echo "ASC secrets are present (values not printed)."
+
+      - name: Write App Store Connect API key
+        working-directory: ${{ github.workspace }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "${ASC_PRIVATE_KEY}" | sed 's/\\n/\n/g' > "${KEY_PATH}"
+          if ! grep -q "BEGIN .*PRIVATE KEY" "${KEY_PATH}"; then
+            {
+              echo "-----BEGIN PRIVATE KEY-----"
+              cat "${KEY_PATH}"
+              echo "-----END PRIVATE KEY-----"
+            } > "${KEY_PATH}.wrapped"
+            mv "${KEY_PATH}.wrapped" "${KEY_PATH}"
+          fi
+          chmod 600 "${KEY_PATH}"
+          echo "ASC_API_KEY_PATH=${KEY_PATH}" >> "${GITHUB_ENV}"
+          echo "Wrote API key file ($(wc -c < "${KEY_PATH}") bytes). Key material not printed."
+
+      - name: Select Xcode 26.6
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          echo "Installed Xcodes:"
+          ls /Applications | grep -i xcode || true
+          XCODE_APP="/Applications/Xcode_26.6.app"
+          if [ ! -d "${XCODE_APP}" ]; then
+            echo "::error::Xcode 26.6 not found at ${XCODE_APP}"
+            exit 1
+          fi
+          sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
+          # Capture then case-match. Do not pipe xcodebuild -version to grep -q:
+          # SIGPIPE abort (exit 134) after Xcode 26.6 selected (MyRepresent /
+          # Actions run 33473157844).
+          XCODE_VER="$(xcodebuild -version)"
+          printf '%s\n' "${XCODE_VER}"
+          case "${XCODE_VER}" in
+            *"Xcode 26.6"*) ;;
+            *)
+              echo "::error::Expected Xcode 26.6, got:"
+              printf '%s\n' "${XCODE_VER}"
+              exit 1
+              ;;
+          esac
+
+      - name: Stamp CURRENT_PROJECT_VERSION
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OFFSET="${{ vars.IOS_BUILD_NUMBER_OFFSET }}"
+          if [ -z "${OFFSET}" ]; then
+            OFFSET=100
+          fi
+          case "${OFFSET}" in
+            ''|*[!0-9]*)
+              echo "::error::vars.IOS_BUILD_NUMBER_OFFSET must be a non-negative integer (got '${OFFSET}')"
+              exit 1
+              ;;
+          esac
+          BUILD=$((GITHUB_RUN_NUMBER + OFFSET))
+          echo "IOS_BUILD_NUMBER=${BUILD}" >> "${GITHUB_ENV}"
+          echo "Build ${BUILD} = GITHUB_RUN_NUMBER ${GITHUB_RUN_NUMBER} + offset ${OFFSET}"
+          echo "Marketing version stays 0.1.0 (not stamped)."
+
+      - name: Validate ExportOptions, scheme, bundle id, team
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          test -f ExportOptions.plist
+          test -f ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
+
+          method=$(plutil -extract method raw -o - ExportOptions.plist)
+          dest=$(plutil -extract destination raw -o - ExportOptions.plist)
+          style=$(plutil -extract signingStyle raw -o - ExportOptions.plist)
+          team=$(plutil -extract teamID raw -o - ExportOptions.plist)
+          manage=$(plutil -extract manageAppVersionAndBuildNumber raw -o - ExportOptions.plist)
+          [ "${method}" = "app-store-connect" ]
+          [ "${dest}" = "upload" ]
+          [ "${style}" = "automatic" ]
+          [ "${team}" = "${IOS_TEAM_ID}" ]
+          [ "${manage}" = "false" ]
+
+          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_ID};" ZenBuy.xcodeproj/project.pbxproj
+          grep -q "DEVELOPMENT_TEAM = ${IOS_TEAM_ID};" ZenBuy.xcodeproj/project.pbxproj
+          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_ID}" Config/Shared.xcconfig
+          grep -q "DEVELOPMENT_TEAM = ${IOS_TEAM_ID}" Config/Shared.xcconfig
+          grep -q 'BlueprintName = "ZenBuy"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
+          grep -q 'BuildableName = "ZenBuy.app"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
+          grep -q 'buildConfiguration = "Release"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
+
+          echo "--- xcodebuild -list ---"
+          xcodebuild -list -project "${IOS_PROJECT}" | tee "${RUNNER_TEMP}/xcodebuild-list.txt"
+          grep -q "^[[:space:]]*${IOS_SCHEME}$" "${RUNNER_TEMP}/xcodebuild-list.txt"
+          echo "Rails check passed: scheme ${IOS_SCHEME}, bundle ${IOS_BUNDLE_ID}, team ${IOS_TEAM_ID}."
+
+      - name: Ensure App Store Connect app exists
+        working-directory: ${{ github.workspace }}
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          ASC_APP_NAME: ZenBuy
+          ASC_SKU: zenbuy-ios-001
+        run: node tools/asc-ios.mjs ensure-app
+
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          beautify() {
+            if command -v xcbeautify >/dev/null 2>&1; then
+              xcbeautify --renderer github-actions
+            else
+              cat
+            fi
+          }
+          xcodebuild \
+            -project "${IOS_PROJECT}" \
+            -scheme "${IOS_SCHEME}" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "${RUNNER_TEMP}/ZenBuy.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${ASC_API_KEY_PATH}" \
+            -authenticationKeyID "${ASC_KEY_ID}" \
+            -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
+            DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
+            CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER}" \
+            archive | beautify
+
+      - name: Export and upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          beautify() {
+            if command -v xcbeautify >/dev/null 2>&1; then
+              xcbeautify --renderer github-actions
+            else
+              cat
+            fi
+          }
+          xcodebuild \
+            -exportArchive \
+            -archivePath "${RUNNER_TEMP}/ZenBuy.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "${RUNNER_TEMP}/ZenBuy-export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${ASC_API_KEY_PATH}" \
+            -authenticationKeyID "${ASC_KEY_ID}" \
+            -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
+            | beautify
+          echo "Upload requested via ExportOptions destination=upload. Not submitted for App Store review."
+
+      - name: Invite internal TestFlight tester
+        working-directory: ${{ github.workspace }}
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          ASC_TESTER_EMAIL: thalerz@me.com
+          ASC_GROUP_NAME: Internal Testers
+        run: node tools/asc-ios.mjs invite-tester
+
+      - name: Remove API key
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -n "${ASC_API_KEY_PATH:-}" ]; then
+            rm -f "${ASC_API_KEY_PATH}"
+          fi
+          rm -f "${RUNNER_TEMP}"/AuthKey_*.p8

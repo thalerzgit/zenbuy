@@ -1,5 +1,25 @@
 import SwiftUI
 
+enum SearchInputMode: String, CaseIterable, Identifiable, Sendable {
+    case enter
+    case find
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .enter: return "Enter Tickers"
+        case .find: return "Find Tickers"
+        }
+    }
+}
+
+enum SearchRoute: Hashable {
+    case reportMode
+    case report
+    case directiveDetail(String)
+}
+
 @Observable
 @MainActor
 final class SearchViewModel {
@@ -8,14 +28,17 @@ final class SearchViewModel {
     var picks: [SymbolResult] = []
     var isSearching = false
     var errorMessage: String?
-    var showModeSheet = false
-    var showReport = false
+    var path: [SearchRoute] = []
     var selectedMode: ReportMode = .separate
     var selectedDirectiveId: String = "growth"
     var directives: [InvestmentDirectiveInfo] = InvestmentDirectiveInfo.bundled
+    var inputMode: SearchInputMode = .enter
+    var discoverResults: [DiscoverPick] = []
+    var isDiscovering = false
 
     private let api: ZenBuyAPIClient
     private var searchTask: Task<Void, Never>?
+    private var discoverTask: Task<Void, Never>?
 
     init(api: ZenBuyAPIClient) {
         self.api = api
@@ -42,6 +65,7 @@ final class SearchViewModel {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 1 else {
             suggestions = []
+            isSearching = false
             return
         }
 
@@ -56,6 +80,8 @@ final class SearchViewModel {
                 guard !Task.isCancelled else { return }
                 suggestions = results
                 errorMessage = nil
+            } catch is CancellationError {
+                return
             } catch {
                 guard !Task.isCancelled else { return }
                 suggestions = []
@@ -77,19 +103,79 @@ final class SearchViewModel {
         picks.removeAll { $0 == result }
     }
 
+    func setInputMode(_ mode: SearchInputMode) {
+        guard inputMode != mode else { return }
+        inputMode = mode
+        errorMessage = nil
+        if mode == .enter {
+            discoverResults = []
+            discoverTask?.cancel()
+            isDiscovering = false
+        } else {
+            query = ""
+            suggestions = []
+            searchTask?.cancel()
+            isSearching = false
+        }
+    }
+
+    func runDiscover() {
+        discoverTask?.cancel()
+        isDiscovering = true
+        errorMessage = nil
+        discoverTask = Task {
+            do {
+                let results = try await api.discover(directive: selectedDirectiveId)
+                guard !Task.isCancelled else { return }
+                discoverResults = results
+                picks = results.map { SymbolResult(symbol: $0.symbol, name: $0.name) }
+                for pick in results.prefix(4) {
+                    Task { await api.prefetch(symbol: pick.symbol) }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                discoverResults = []
+                errorMessage = error.localizedDescription
+            }
+            isDiscovering = false
+        }
+    }
+
+    func toggleDiscoverPick(_ pick: DiscoverPick) {
+        let result = SymbolResult(symbol: pick.symbol, name: pick.name)
+        if picks.contains(result) {
+            removePick(result)
+        } else {
+            addPick(result)
+        }
+    }
+
+    func showDirectiveDetail(_ id: String) {
+        path.append(.directiveDetail(id))
+    }
+
     func beginGenerate() {
         guard canGenerate else { return }
         if picks.count > 1 {
-            showModeSheet = true
+            path.append(.reportMode)
         } else {
             selectedMode = .separate
-            showReport = true
+            path.append(.report)
         }
     }
 
     func confirmMode(_ mode: ReportMode) {
         selectedMode = mode
-        showModeSheet = false
-        showReport = true
+        if path.last == .reportMode {
+            path.append(.report)
+        } else {
+            path.append(.report)
+        }
+    }
+
+    func directive(for id: String) -> InvestmentDirectiveInfo? {
+        directives.first { $0.id == id }
     }
 }

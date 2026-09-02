@@ -16,11 +16,17 @@
 		A10000000000000000000007 /* ZenBuyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* ZenBuyTheme.swift */; };
 		A10000000000000000000008 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* SearchView.swift */; };
 		A10000000000000000000009 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SearchViewModel.swift */; };
-		A1000000000000000000000A /* ReportModeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* ReportModeSheet.swift */; };
+		A1000000000000000000000A /* ReportModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* ReportModeView.swift */; };
 		A1000000000000000000000B /* ReportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* ReportViewModel.swift */; };
 		A1000000000000000000000C /* ReportStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* ReportStreamView.swift */; };
 		A1000000000000000000000D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* Assets.xcassets */; };
 		A10000000000000000000011 /* ZenBuyBrandMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* ZenBuyBrandMark.swift */; };
+		A10000000000000000000012 /* InvestmentGoalPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* InvestmentGoalPicker.swift */; };
+		A10000000000000000000013 /* InvestmentDirectives.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* InvestmentDirectives.swift */; };
+		A10000000000000000000015 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* FlowLayout.swift */; };
+		A10000000000000000000016 /* ReportHTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* ReportHTML.swift */; };
+		A10000000000000000000017 /* ReportHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* ReportHTMLView.swift */; };
+		A10000000000000000000018 /* DirectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* DirectiveDetailView.swift */; };
 		A1000000000000000000000E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000000F /* ZenBuyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* ZenBuyTests.swift */; };
 		A10000000000000000000010 /* ZenBuyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* ZenBuyUITests.swift */; };
@@ -53,7 +59,13 @@
 		B10000000000000000000007 /* ZenBuyTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyTheme.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		B10000000000000000000009 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
-		B1000000000000000000000A /* ReportModeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportModeSheet.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* ReportModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportModeView.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* InvestmentGoalPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvestmentGoalPicker.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* InvestmentDirectives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvestmentDirectives.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* ReportHTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportHTML.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* ReportHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportHTMLView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001A /* DirectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectiveDetailView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000B /* ReportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportViewModel.swift; sourceTree = "<group>"; };
 		B1000000000000000000000C /* ReportStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportStreamView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -196,6 +208,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000006 /* APIModels.swift */,
+				B10000000000000000000016 /* InvestmentDirectives.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -213,6 +226,8 @@
 			children = (
 				B10000000000000000000008 /* SearchView.swift */,
 				B10000000000000000000009 /* SearchViewModel.swift */,
+				B10000000000000000000015 /* InvestmentGoalPicker.swift */,
+				B1000000000000000000001A /* DirectiveDetailView.swift */,
 			);
 			path = Search;
 			sourceTree = "<group>";
@@ -220,9 +235,11 @@
 		H1000000000000000000000E /* Report */ = {
 			isa = PBXGroup;
 			children = (
-				B1000000000000000000000A /* ReportModeSheet.swift */,
+				B1000000000000000000000A /* ReportModeView.swift */,
 				B1000000000000000000000B /* ReportViewModel.swift */,
 				B1000000000000000000000C /* ReportStreamView.swift */,
+				B10000000000000000000018 /* ReportHTML.swift */,
+				B10000000000000000000019 /* ReportHTMLView.swift */,
 			);
 			path = Report;
 			sourceTree = "<group>";
@@ -231,6 +248,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000014 /* ZenBuyBrandMark.swift */,
+				B10000000000000000000017 /* FlowLayout.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -374,10 +392,16 @@
 				A10000000000000000000007 /* ZenBuyTheme.swift in Sources */,
 				A10000000000000000000008 /* SearchView.swift in Sources */,
 				A10000000000000000000009 /* SearchViewModel.swift in Sources */,
-				A1000000000000000000000A /* ReportModeSheet.swift in Sources */,
+				A10000000000000000000012 /* InvestmentGoalPicker.swift in Sources */,
+				A10000000000000000000018 /* DirectiveDetailView.swift in Sources */,
+				A10000000000000000000013 /* InvestmentDirectives.swift in Sources */,
+				A1000000000000000000000A /* ReportModeView.swift in Sources */,
 				A1000000000000000000000B /* ReportViewModel.swift in Sources */,
 				A1000000000000000000000C /* ReportStreamView.swift in Sources */,
+				A10000000000000000000016 /* ReportHTML.swift in Sources */,
+				A10000000000000000000017 /* ReportHTMLView.swift in Sources */,
 				A10000000000000000000011 /* ZenBuyBrandMark.swift in Sources */,
+				A10000000000000000000015 /* FlowLayout.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -462,9 +486,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ZenBuy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -476,7 +502,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = "$(MARKETING_VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = info.zenbuy.app;
 				PRODUCT_NAME = "$(PRODUCT_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -493,9 +519,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ZenBuy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -507,7 +535,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = "$(MARKETING_VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = info.zenbuy.app;
 				PRODUCT_NAME = "$(PRODUCT_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -522,6 +550,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.1.0;
@@ -540,6 +569,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.1.0;
@@ -557,6 +587,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.1.0;
@@ -574,6 +605,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 0.1.0;
