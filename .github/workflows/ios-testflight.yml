@@ -162,15 +162,15 @@ jobs:
           grep -q "^[[:space:]]*${IOS_SCHEME}$" "${RUNNER_TEMP}/xcodebuild-list.txt"
           echo "Rails check passed: scheme ${IOS_SCHEME}, bundle ${IOS_BUNDLE_ID}, team ${IOS_TEAM_ID}."
 
-      - name: Ensure App Store Connect app exists
+      # READ-ONLY check — never creates Bundle ID or ASC app via API.
+      # Justin creates those in Apple Developer / App Store Connect UI first.
+      - name: Check App Store Connect app exists
         working-directory: ${{ github.workspace }}
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
-          ASC_APP_NAME: ZenBuy
-          ASC_SKU: zenbuy-ios-001
         run: node tools/asc-ios.mjs ensure-app
 
       - name: Archive
