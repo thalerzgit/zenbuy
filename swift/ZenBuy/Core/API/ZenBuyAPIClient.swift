@@ -43,17 +43,28 @@ final class ZenBuyAPIClient {
             self.researchSession = session
         } else {
             self.session = Self.makeSession(requestTimeout: 30, resourceTimeout: 60)
-            self.researchSession = Self.makeSession(requestTimeout: 300, resourceTimeout: 600)
+            self.researchSession = Self.makeSession(
+                requestTimeout: 300,
+                resourceTimeout: 600,
+                ephemeral: false
+            )
         }
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()
     }
 
-    private static func makeSession(requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
+    private static func makeSession(
+        requestTimeout: TimeInterval,
+        resourceTimeout: TimeInterval,
+        ephemeral: Bool = true
+    ) -> URLSession {
+        let config = ephemeral
+            ? URLSessionConfiguration.ephemeral
+            : URLSessionConfiguration.default
         config.timeoutIntervalForRequest = requestTimeout
         config.timeoutIntervalForResource = resourceTimeout
         config.waitsForConnectivity = true
+        config.isDiscretionary = false
         return URLSession(configuration: config)
     }
 

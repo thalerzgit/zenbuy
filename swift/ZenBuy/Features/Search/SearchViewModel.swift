@@ -35,6 +35,7 @@ final class SearchViewModel {
     var inputMode: SearchInputMode = .enter
     var discoverResults: [DiscoverPick] = []
     var isDiscovering = false
+    let report: ReportViewModel
 
     private let api: ZenBuyAPIClient
     private var searchTask: Task<Void, Never>?
@@ -42,6 +43,7 @@ final class SearchViewModel {
 
     init(api: ZenBuyAPIClient) {
         self.api = api
+        self.report = ReportViewModel(api: api)
         Task { await loadConfig() }
     }
 
@@ -159,20 +161,37 @@ final class SearchViewModel {
     func beginGenerate() {
         guard canGenerate else { return }
         if picks.count > 1 {
-            path.append(.reportMode)
+            if path.last != .reportMode {
+                path.append(.reportMode)
+            }
         } else {
             selectedMode = .separate
-            path.append(.report)
+            startReportIfNeeded()
+            if path.last != .report {
+                path.append(.report)
+            }
         }
     }
 
     func confirmMode(_ mode: ReportMode) {
         selectedMode = mode
-        if path.last == .reportMode {
-            path.append(.report)
-        } else {
+        startReportIfNeeded()
+        if path.last != .report {
             path.append(.report)
         }
+    }
+
+    func handleScenePhase(_ phase: ScenePhase) {
+        report.handleScenePhase(phase)
+    }
+
+    func startReportIfNeeded() {
+        report.ensureStarted(
+            symbols: picks.map(\.symbol),
+            mode: selectedMode,
+            directive: selectedDirectiveId,
+            profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: selectedDirectiveId)
+        )
     }
 
     func directive(for id: String) -> InvestmentDirectiveInfo? {

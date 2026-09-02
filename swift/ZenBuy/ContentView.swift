@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var viewModel: SearchViewModel
-    @Environment(ZenBuyAPIClient.self) private var api
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack(path: $viewModel.path) {
@@ -19,7 +19,7 @@ struct ContentView: View {
                             symbols: viewModel.picks.map(\.symbol),
                             mode: viewModel.selectedMode,
                             directive: viewModel.selectedDirectiveId,
-                            api: api
+                            viewModel: viewModel.report
                         )
                     case let .directiveDetail(id):
                         if let directive = viewModel.directive(for: id) {
@@ -30,6 +30,9 @@ struct ContentView: View {
                         }
                     }
                 }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            viewModel.handleScenePhase(phase)
         }
     }
 }

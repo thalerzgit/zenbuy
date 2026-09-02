@@ -82,6 +82,9 @@ final class ZenBuyTests: XCTestCase {
         vm.beginGenerate()
         XCTAssertEqual(vm.path, [.report])
         XCTAssertEqual(vm.selectedMode, .separate)
+        XCTAssertEqual(vm.report.activeRequest?.symbols, ["AAPL"])
+        XCTAssertTrue(vm.report.isStreaming)
+        vm.report.cancel()
     }
 
     func testProcessingEstimateMatchesWeb() {
@@ -146,5 +149,76 @@ final class ZenBuyTests: XCTestCase {
         vm.confirmMode(.comparative)
         XCTAssertEqual(vm.selectedMode, .comparative)
         XCTAssertEqual(vm.path, [.reportMode, .report])
+        XCTAssertEqual(vm.report.activeRequest?.symbols, ["AAPL", "MSFT"])
+        XCTAssertEqual(vm.report.activeRequest?.mode, .comparative)
+        vm.report.cancel()
+    }
+
+    func testReportStreamPolicyReusesInFlightAndCompleted() {
+        let request = ReportRequest(symbols: ["DDOG"], mode: .separate, directive: "growth", profitHorizonYears: 12)
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldStartNewStream(
+                incoming: request,
+                active: nil,
+                isStreaming: false,
+                didFinishSuccessfully: false
+            )
+        )
+        XCTAssertFalse(
+            ReportStreamPolicy.shouldStartNewStream(
+                incoming: request,
+                active: request,
+                isStreaming: true,
+                didFinishSuccessfully: false
+            )
+        )
+        XCTAssertFalse(
+            ReportStreamPolicy.shouldStartNewStream(
+                incoming: request,
+                active: request,
+                isStreaming: false,
+                didFinishSuccessfully: true
+            )
+        )
+        let other = ReportRequest(symbols: ["AAPL"], mode: .separate, directive: "growth", profitHorizonYears: 12)
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldStartNewStream(
+                incoming: other,
+                active: request,
+                isStreaming: true,
+                didFinishSuccessfully: false
+            )
+        )
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldStartNewStream(
+                incoming: request,
+                active: request,
+                isStreaming: false,
+                didFinishSuccessfully: false
+            )
+        )
+    }
+
+    func testReportStreamPolicyRetriesLostConnection() {
+        XCTAssertTrue(ReportStreamPolicy.shouldRetryTransport(URLError(.networkConnectionLost)))
+        XCTAssertTrue(ReportStreamPolicy.shouldRetryTransport(ZenBuyAPIError.transport(URLError(.timedOut))))
+        XCTAssertFalse(ReportStreamPolicy.shouldRetryTransport(URLError(.badServerResponse)))
+        XCTAssertFalse(ReportStreamPolicy.shouldRetryTransport(ZenBuyAPIError.invalidURL))
+    }
+
+    func testProcessingReconnectingCopy() {
+        XCTAssertEqual(ProcessingPhase.reconnecting.copy, "Still generating…")
+    }
+
+    @MainActor
+    func testEnsureStartedDoesNotDuplicateInFlight() {
+        let vm = ReportViewModel(api: ZenBuyAPIClient())
+        vm.ensureStarted(symbols: ["DDOG"], mode: .separate, directive: "growth", profitHorizonYears: 12)
+        XCTAssertTrue(vm.isStreaming)
+        let first = vm.activeRequest
+        vm.ensureStarted(symbols: ["DDOG"], mode: .separate, directive: "growth", profitHorizonYears: 12)
+        XCTAssertEqual(first, vm.activeRequest)
+        XCTAssertTrue(vm.isStreaming)
+        vm.cancel()
     }
 }
