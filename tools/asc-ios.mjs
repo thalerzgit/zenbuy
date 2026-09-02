@@ -134,23 +134,36 @@ async function ensureApp() {
   }
 
   console.log(`Creating ASC app ${name} / ${bundleId}…`);
-  const createdApp = await asc("/v1/apps", {
-    method: "POST",
-    body: {
-      data: {
-        type: "apps",
-        attributes: {
-          bundleId,
-          name,
-          primaryLocale: "en-US",
-          sku,
+  try {
+    const createdApp = await asc("/v1/apps", {
+      method: "POST",
+      body: {
+        data: {
+          type: "apps",
+          attributes: {
+            bundleId,
+            name,
+            primaryLocale: "en-US",
+            sku,
+          },
         },
       },
-    },
-  });
-  app = createdApp.data;
-  console.log(`Created ASC app ${app.id}`);
-  return app;
+    });
+    app = createdApp.data;
+    console.log(`Created ASC app ${app.id}`);
+    return app;
+  } catch (err) {
+    if (err.status === 403 || /does not allow 'CREATE'/i.test(String(err.message))) {
+      console.error(`::error::ASC API key cannot CREATE apps (bundle ${bundleId} is registered).`);
+      console.error(
+        "BLOCKER: Create the iOS app once in App Store Connect UI — name ZenBuy, bundle info.zenbuy.app, SKU zenbuy-ios-001 — or elevate the ASC API key role to Admin/App Manager so CREATE is allowed."
+      );
+      console.error(
+        "Then re-run Actions → TestFlight. Secrets are present; only the ASC app record is missing."
+      );
+    }
+    throw err;
+  }
 }
 
 async function findOrCreateInternalGroup(appId, groupName) {
