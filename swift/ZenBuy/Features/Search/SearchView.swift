@@ -13,7 +13,10 @@ struct SearchView: View {
                     .background(ZenBuyTheme.greenDark)
 
                 VStack(alignment: .leading, spacing: 20) {
-                    inputModePicker
+                    InputModeTabs(selection: Binding(
+                        get: { viewModel.inputMode },
+                        set: { viewModel.setInputMode($0) }
+                    ))
 
                     InvestmentGoalPicker(
                         selectedId: $viewModel.selectedDirectiveId,
@@ -72,18 +75,6 @@ struct SearchView: View {
             }
         }
         .background(ZenBuyTheme.background)
-    }
-
-    private var inputModePicker: some View {
-        Picker("Ticker source", selection: Binding(
-            get: { viewModel.inputMode },
-            set: { viewModel.setInputMode($0) }
-        )) {
-            ForEach(SearchInputMode.allCases) { mode in
-                Text(mode.title).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
     }
 
     @ViewBuilder

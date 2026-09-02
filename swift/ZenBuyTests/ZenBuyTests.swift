@@ -84,6 +84,56 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(vm.selectedMode, .separate)
     }
 
+    func testProcessingEstimateMatchesWeb() {
+        XCTAssertEqual(ProcessingProgressLogic.estimateProcessingMs(symbolCount: 1, mode: .separate), 85_000)
+        XCTAssertEqual(ProcessingProgressLogic.estimateProcessingMs(symbolCount: 2, mode: .separate), 155_000)
+        XCTAssertEqual(ProcessingProgressLogic.estimateProcessingMs(symbolCount: 2, mode: .comparative), 145_000)
+    }
+
+    func testProcessingEtaCopy() {
+        XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 0, percent: 100), "Complete")
+        XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 4_000, percent: 90), "Almost there…")
+        XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 42_000, percent: 40), "About 42s remaining")
+        XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 70_000, percent: 20), "About 2 min remaining")
+    }
+
+    func testProcessingQuotesIncludeDavidMorgenthaler() {
+        let authors = Set(ProcessingProgressLogic.quotes.map(\.author))
+        XCTAssertTrue(authors.contains("David Morgenthaler"))
+        XCTAssertGreaterThanOrEqual(ProcessingProgressLogic.quotes.filter { $0.author == "David Morgenthaler" }.count, 8)
+    }
+
+    func testWorkerErrorEventUsesErrorField() {
+        let event = SSEEvent(
+            name: "error",
+            data: #"{"error":"We couldn't pull market data for DDOG.","retry":true}"#
+        )
+        let parsed = ReportStreamEvent(sseEvent: event)
+        guard case let .error(message) = parsed else {
+            return XCTFail("Expected error event")
+        }
+        XCTAssertTrue(message.contains("DDOG"))
+    }
+
+    func testResearchRequestEncodesProfitHorizon() throws {
+        let body = ResearchRequest(symbols: ["DDOG"], mode: .separate, directive: "growth", profitHorizonYears: 12)
+        let data = try JSONEncoder().encode(body)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["profitHorizonYears"] as? Int, 12)
+        XCTAssertEqual(json["directive"] as? String, "growth")
+    }
+
+    func testDefaultProfitHorizonMatchesWebDirectives() {
+        XCTAssertEqual(InvestmentDirectiveInfo.defaultProfitHorizonYears(for: "growth"), 12)
+        XCTAssertEqual(InvestmentDirectiveInfo.defaultProfitHorizonYears(for: "aggressive_growth"), 18)
+        XCTAssertEqual(InvestmentDirectiveInfo.defaultProfitHorizonYears(for: "conservative"), 5)
+    }
+
+    func testTimeoutErrorIsActionable() {
+        let error = ZenBuyAPIError.transport(URLError(.timedOut))
+        XCTAssertTrue(error.localizedDescription.contains("90 seconds"))
+    }
+
     @MainActor
     func testMultiTickerPushesReportModeThenReport() {
         let vm = SearchViewModel(api: ZenBuyAPIClient())

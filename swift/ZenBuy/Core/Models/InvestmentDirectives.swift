@@ -90,4 +90,16 @@ extension InvestmentDirectiveInfo {
             detailProfile: "Stable balance sheets and modest returns over 3–7 years. Lower risk — sleep-well priority."
         ),
     ]
+
+    /// Matches `promptHorizonYears` on the web directives (API overlay).
+    static func defaultProfitHorizonYears(for directiveId: String) -> Int {
+        switch directiveId {
+        case "aggressive_growth": return 18
+        case "growth": return 12
+        case "growth_income": return 10
+        case "value_income": return 7
+        case "conservative": return 5
+        default: return 12
+        }
+    }
 }

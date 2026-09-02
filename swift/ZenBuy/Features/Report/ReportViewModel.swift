@@ -7,9 +7,9 @@ final class ReportViewModel {
     var bodyHTML = ""
     var scorecardHTML = ""
     var badges: ReportBadges?
-    var statusMessage = "Starting research…"
     var isStreaming = false
     var errorMessage: String?
+    let processing = ProcessingProgress()
 
     private let api: ZenBuyAPIClient
     private var streamTask: Task<Void, Never>?
@@ -21,7 +21,12 @@ final class ReportViewModel {
         self.api = api
     }
 
-    func start(symbols: [String], mode: ReportMode, directive: String) {
+    func start(
+        symbols: [String],
+        mode: ReportMode,
+        directive: String,
+        profitHorizonYears: Int? = nil
+    ) {
         streamTask?.cancel()
         bottomLineHTML = ""
         bodyHTML = ""
@@ -30,53 +35,58 @@ final class ReportViewModel {
         badges = nil
         errorMessage = nil
         isStreaming = true
-        statusMessage = "Connecting…"
         lastFlush = .distantPast
+        processing.start(symbolCount: symbols.count, mode: mode)
 
         streamTask = Task {
             do {
                 let stream = api.streamResearch(
                     symbols: symbols,
                     mode: mode,
-                    directive: directive
+                    directive: directive,
+                    profitHorizonYears: profitHorizonYears
                 )
 
                 for try await event in stream {
                     guard !Task.isCancelled else { return }
                     switch event {
-                    case let .meta(cached, asOf, showAsOf):
-                        if cached {
-                            statusMessage = "Loaded cached report"
-                        } else if showAsOf, let asOf {
-                            statusMessage = "Data as of \(asOf)"
-                        }
+                    case .meta:
+                        processing.onMeta()
                     case let .sticky(bottomLineHtml, badges, scorecardHtml):
+                        processing.onSticky()
                         bottomLineHTML = bottomLineHtml
                         self.badges = badges
                         scorecardHTML = scorecardHtml ?? ""
-                        statusMessage = "Streaming report…"
                     case let .body(html):
-                        pendingBody += html
+                        processing.onBody()
+                        // Worker re-sends the full rendered body each SSE event (web replaces).
+                        pendingBody = html
                         flushBodyIfNeeded(force: false)
                     case let .badges(badges):
                         self.badges = badges
                     case let .done(badges):
                         self.badges = badges ?? self.badges
                         flushBodyIfNeeded(force: true)
-                        statusMessage = "Done"
+                        processing.onDone()
                         isStreaming = false
                     case let .error(message):
                         errorMessage = message
                         flushBodyIfNeeded(force: true)
+                        processing.fail()
                         isStreaming = false
                     }
                 }
                 flushBodyIfNeeded(force: true)
+                if isStreaming {
+                    processing.onDone()
+                }
                 isStreaming = false
             } catch is CancellationError {
+                processing.hide()
                 return
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                processing.fail()
                 isStreaming = false
             }
         }
@@ -84,6 +94,7 @@ final class ReportViewModel {
 
     func cancel() {
         streamTask?.cancel()
+        processing.hide()
         isStreaming = false
     }
 
