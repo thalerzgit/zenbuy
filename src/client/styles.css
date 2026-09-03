@@ -1322,6 +1322,19 @@ input[type="text"]:focus {
   margin: 0.25rem 0;
 }
 
+.site-footer .footer-links {
+  margin-top: 0.7rem;
+}
+
+.site-footer a {
+  color: var(--sage-dark);
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 600px) {
   .search-panel,
   .report-panel {

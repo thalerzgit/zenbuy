@@ -50,7 +50,7 @@ To point at a local Worker during API work, uncomment `ZENBUY_API_BASE_URL` in `
 | ASC app | **Justin creates in App Store Connect UI** — name ZenBuy, bundle `info.zenbuy.app`, SKU `zenbuy-ios-001` |
 | Category | Finance |
 | App icon | 1024×1024 PNG in `Assets.xcassets/AppIcon` |
-| Privacy | `PrivacyInfo.xcprivacy` included; update if you add analytics |
+| Privacy | Policy URL: `https://zenbuy.info/privacy` (Worker HTML). `PrivacyInfo.xcprivacy` included; update if you add analytics |
 | Export compliance | Standard HTTPS only — `ITSAppUsesNonExemptEncryption = NO` |
 
 Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, then archives/uploads and invites `thalerz@me.com`.

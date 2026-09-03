@@ -92,6 +92,8 @@ npm run deploy
 | `/api/health` | GET | Config summary; `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
 | `/api/prefetch?symbol=` | GET | Warms a symbol's fundamentals into KV so they're not on the critical path |
 | `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken? }` — Turnstile required for web; native iOS sends `X-ZenBuy-Client: ios` and skips it |
+| `/privacy` | GET | Privacy policy HTML (Worker, not the SPA) |
+| `/support` | GET | Support / contact HTML (Worker, not the SPA) |
 
 ## Native iOS
 
