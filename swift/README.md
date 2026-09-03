@@ -96,5 +96,5 @@ xcodebuild test \
 
 ## Versioning
 
-- Marketing version: `0.1.1` (`Config/Shared.xcconfig`)
+- Marketing version: `1.0` (`Config/Shared.xcconfig`)
 - Build number: `CURRENT_PROJECT_VERSION` in the same file — bump before each TestFlight upload.
