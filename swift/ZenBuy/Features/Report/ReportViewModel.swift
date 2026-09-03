@@ -125,6 +125,7 @@ final class ReportViewModel {
 
     /// Explicit abandon only. Leaving the report screen or backgrounding must not call this.
     func cancel() {
+        ReportVerboseLog.log("stream cancel generation=\(streamGeneration)")
         abandoned = true
         streamGeneration += 1
         streamTask?.cancel()
@@ -154,6 +155,9 @@ final class ReportViewModel {
         cachedShareURL = nil
         processing.start(symbolCount: request.symbols.count, mode: request.mode)
         beginResearchBackgroundTask()
+        ReportVerboseLog.log(
+            "stream start gen=\(generation) symbols=\(request.symbols.joined(separator: ",")) mode=\(request.mode.rawValue) directive=\(request.directive) verbose=\(ReportVerboseLog.enabled)"
+        )
 
         streamTask = Task { [weak self] in
             await self?.consume(request, generation: generation)
@@ -171,6 +175,7 @@ final class ReportViewModel {
         isStreaming = true
         processing.markReconnecting()
         beginResearchBackgroundTask()
+        ReportVerboseLog.log("stream resume gen=\(generation) attempt=\(resumeAttempts)")
 
         streamTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
@@ -192,27 +197,49 @@ final class ReportViewModel {
                 guard generation == streamGeneration, !abandoned else { return }
                 switch event {
                 case .meta:
+                    ReportVerboseLog.log("sse meta phase=\(processing.phase.rawValue)")
                     processing.onMeta()
                 case let .sticky(bottomLineHtml, badges, scorecardHtml):
                     processing.onSticky()
                     bottomLineHTML = bottomLineHtml
                     self.badges = badges
                     scorecardHTML = scorecardHtml ?? ""
+                    let visible = ReportHTML.hasVisibleContent(
+                        bottomLineHTML: bottomLineHTML,
+                        bodyHTML: bodyHTML,
+                        scorecardHTML: scorecardHTML
+                    )
+                    ReportVerboseLog.log(
+                        "sse sticky \(ReportVerboseLog.htmlPreview(bottomLineHtml)) scorecardLen=\(scorecardHTML.count) visible=\(visible) processingVisible=\(processing.isVisible)"
+                    )
                 case let .body(html):
                     processing.onBody()
                     // Worker re-sends the full rendered body each SSE event (web replaces).
                     pendingBody = html
                     flushBodyIfNeeded(force: false)
+                    ReportVerboseLog.log(
+                        "sse body \(ReportVerboseLog.htmlPreview(html)) phase=\(processing.phase.rawValue) percent=\(Int(processing.percent))"
+                    )
                 case let .badges(badges):
                     self.badges = badges
+                    ReportVerboseLog.log("sse badges")
                 case let .done(badges):
                     self.badges = badges ?? self.badges
                     flushBodyIfNeeded(force: true)
+                    let visible = ReportHTML.hasVisibleContent(
+                        bottomLineHTML: bottomLineHTML,
+                        bodyHTML: bodyHTML,
+                        scorecardHTML: scorecardHTML
+                    )
+                    ReportVerboseLog.log(
+                        "sse done visible=\(visible) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count)"
+                    )
                     processing.onDone()
                     isStreaming = false
                     didFinishSuccessfully = true
                     endResearchBackgroundTask()
                 case let .error(message):
+                    ReportVerboseLog.log("sse error msgLen=\(message.count)")
                     errorMessage = message
                     flushBodyIfNeeded(force: true)
                     processing.fail()
@@ -223,6 +250,7 @@ final class ReportViewModel {
             guard generation == streamGeneration, !abandoned else { return }
             flushBodyIfNeeded(force: true)
             if isStreaming {
+                ReportVerboseLog.log("stream ended without done event — treating as complete")
                 processing.onDone()
                 didFinishSuccessfully = true
             }
@@ -230,6 +258,7 @@ final class ReportViewModel {
             endResearchBackgroundTask()
         } catch is CancellationError {
             guard generation == streamGeneration, !abandoned else { return }
+            ReportVerboseLog.log("stream cancelled gen=\(generation) resumeAttempts=\(resumeAttempts)")
             if resumeAttempts < maxResumeAttempts {
                 resume(request)
                 return
@@ -239,6 +268,7 @@ final class ReportViewModel {
             endResearchBackgroundTask()
         } catch {
             guard generation == streamGeneration, !abandoned else { return }
+            ReportVerboseLog.log("stream transport error: \(error.localizedDescription)")
             if ReportStreamPolicy.shouldRetryTransport(error), resumeAttempts < maxResumeAttempts {
                 resume(request)
                 return
@@ -260,6 +290,7 @@ final class ReportViewModel {
     /// Local PDF for the system share sheet (Files / Messages / Mail / AirDrop).
     func sharePDFURL(title: String) -> URL? {
         #if canImport(UIKit)
+        ReportVerboseLog.log("sharePDF attempt titleLen=\(title.count)")
         let key = [
             title,
             scorecardHTML,
@@ -270,6 +301,7 @@ final class ReportViewModel {
             badges?.conviction ?? "",
         ].joined(separator: "\u{1e}")
         if key == cachedShareKey, let cachedShareURL {
+            ReportVerboseLog.log("sharePDF cache hit")
             return cachedShareURL
         }
         guard let url = ReportPDFExporter.makePDF(
@@ -279,10 +311,12 @@ final class ReportViewModel {
             bottomLineHTML: bottomLineHTML,
             bodyHTML: bodyHTML
         ) else {
+            ReportVerboseLog.log("sharePDF failed — exporter returned nil")
             return nil
         }
         cachedShareKey = key
         cachedShareURL = url
+        ReportVerboseLog.log("sharePDF ok")
         return url
         #else
         return nil

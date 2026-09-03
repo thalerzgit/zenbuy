@@ -12,6 +12,22 @@ struct ReportStreamView: View {
         !viewModel.bottomLineHTML.isEmpty || !viewModel.bodyHTML.isEmpty || hasScorecard
     }
 
+    /// Non-empty parsed sections / scorecard rows — not merely non-empty HTML strings.
+    private var hasVisibleReportContent: Bool {
+        ReportHTML.hasVisibleContent(
+            bottomLineHTML: viewModel.bottomLineHTML,
+            bodyHTML: viewModel.bodyHTML,
+            scorecardHTML: viewModel.scorecardHTML
+        )
+    }
+
+    /// Never leave the user on empty chrome: keep the panel until content or error.
+    private var shouldShowProcessingPanel: Bool {
+        if viewModel.errorMessage != nil { return false }
+        if !hasVisibleReportContent { return true }
+        return viewModel.processing.isVisible
+    }
+
     var body: some View {
         reportContent(viewModel)
             .navigationTitle(title)
@@ -34,6 +50,9 @@ struct ReportStreamView: View {
                 }
             }
             .onAppear {
+                ReportVerboseLog.log(
+                    "ReportStreamView.onAppear symbols=\(symbols.joined(separator: ",")) mode=\(mode.rawValue)"
+                )
                 viewModel.ensureStarted(
                     symbols: symbols,
                     mode: mode,
@@ -47,7 +66,7 @@ struct ReportStreamView: View {
     private func reportContent(_ viewModel: ReportViewModel) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if viewModel.processing.isVisible {
+                if shouldShowProcessingPanel {
                     ProcessingPanelView(progress: viewModel.processing)
                 }
 
@@ -56,12 +75,7 @@ struct ReportStreamView: View {
                 }
 
                 if hasScorecard {
-                    let scoreNodes = ReportHTML.parse(viewModel.scorecardHTML)
-                    ForEach(Array(scoreNodes.enumerated()), id: \.offset) { _, node in
-                        if case let .scorecard(rows) = node {
-                            ScorecardView(rows: rows)
-                        }
-                    }
+                    scorecardBlock
                 }
 
                 if !viewModel.bottomLineHTML.isEmpty {
@@ -84,13 +98,48 @@ struct ReportStreamView: View {
                     Text(errorMessage)
                         .font(.footnote)
                         .foregroundStyle(ZenBuyTheme.bear)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Guarantee non-zero content height while waiting (nav chrome alone = white void).
+                if !shouldShowProcessingPanel,
+                   !hasVisibleReportContent,
+                   viewModel.errorMessage == nil,
+                   viewModel.bottomLineHTML.isEmpty,
+                   viewModel.bodyHTML.isEmpty,
+                   !hasScorecard {
+                    Text("Receiving report…")
+                        .font(.body)
+                        .foregroundStyle(ZenBuyTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ZenBuyTheme.background)
+        .onChange(of: viewModel.processing.isVisible) { _, visible in
+            ReportVerboseLog.log(
+                "processing visible=\(visible) phase=\(viewModel.processing.phase.rawValue) percent=\(Int(viewModel.processing.percent)) hasContent=\(hasVisibleReportContent)"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var scorecardBlock: some View {
+        let scoreNodes = ReportHTML.parse(viewModel.scorecardHTML)
+        if scoreNodes.isEmpty {
+            Text("Receiving scorecard…")
+                .font(.footnote)
+                .foregroundStyle(ZenBuyTheme.muted)
+        } else {
+            ForEach(Array(scoreNodes.enumerated()), id: \.offset) { _, node in
+                if case let .scorecard(rows) = node {
+                    ScorecardView(rows: rows)
+                }
+            }
+        }
     }
 }
 

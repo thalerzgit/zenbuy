@@ -44,12 +44,13 @@ struct SearchView: View {
                                     HStack(spacing: 6) {
                                         Text(pick.symbol)
                                             .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(ZenBuyTheme.ink)
                                         Button {
                                             viewModel.removePick(pick)
                                         } label: {
                                             Image(systemName: "xmark.circle.fill")
                                                 .font(.caption)
-                                                .foregroundStyle(ZenBuyTheme.muted)
+                                                .foregroundStyle(ZenBuyTheme.ink)
                                         }
                                     }
                                     .padding(.horizontal, 12)

@@ -194,6 +194,36 @@ enum ReportHTML {
         unescape(stripTags(html)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// True when sticky/body/scorecard HTML yields something a user can see.
+    static func hasVisibleContent(
+        bottomLineHTML: String,
+        bodyHTML: String,
+        scorecardHTML: String
+    ) -> Bool {
+        let hasScorecard = !scorecardHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !parse(scorecardHTML).isEmpty
+        if hasScorecard { return true }
+        if !sections(
+            from: parseProgressive(bottomLineHTML, hasScorecard: hasScorecard).nodes,
+            hasScorecard: hasScorecard
+        ).isEmpty {
+            return true
+        }
+        if !sections(
+            from: parseProgressive(bodyHTML, hasScorecard: hasScorecard).nodes,
+            hasScorecard: hasScorecard
+        ).isEmpty {
+            return true
+        }
+        return false
+    }
+
+    /// Safe fallback copy when HTML is present but progressive parse yields no sections.
+    static func fallbackPlainText(_ html: String) -> String {
+        let text = plainText(html)
+        return text.isEmpty ? "Receiving report…" : text
+    }
+
     static func parseInlines(_ html: String) -> [ReportInline] {
         var result: [ReportInline] = []
         var remaining = html
