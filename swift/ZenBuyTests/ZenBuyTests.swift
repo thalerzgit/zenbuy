@@ -313,4 +313,19 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertTrue(vm.isStreaming)
         vm.cancel()
     }
+
+    func testFlowLayoutSizingNeverReturnsInfinity() {
+        XCTAssertEqual(FlowLayoutSizing.wrapWidth(proposalWidth: nil), 10_000)
+        XCTAssertEqual(FlowLayoutSizing.wrapWidth(proposalWidth: .infinity), 10_000)
+        XCTAssertEqual(FlowLayoutSizing.wrapWidth(proposalWidth: 0), 10_000)
+        XCTAssertEqual(FlowLayoutSizing.wrapWidth(proposalWidth: -1), 10_000)
+        XCTAssertEqual(FlowLayoutSizing.wrapWidth(proposalWidth: 320), 320)
+
+        XCTAssertEqual(FlowLayoutSizing.reportedWidth(proposalWidth: nil, usedWidth: 180), 180)
+        XCTAssertEqual(FlowLayoutSizing.reportedWidth(proposalWidth: .infinity, usedWidth: 180), 180)
+        XCTAssertEqual(FlowLayoutSizing.reportedWidth(proposalWidth: 0, usedWidth: 180), 180)
+        XCTAssertEqual(FlowLayoutSizing.reportedWidth(proposalWidth: 320, usedWidth: 180), 320)
+        XCTAssertFalse(FlowLayoutSizing.reportedWidth(proposalWidth: nil, usedWidth: 42).isInfinite)
+        XCTAssertEqual(FlowLayoutSizing.reportedHeight(usedHeight: 24), 24)
+    }
 }
