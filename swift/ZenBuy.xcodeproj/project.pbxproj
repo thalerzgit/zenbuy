@@ -30,6 +30,7 @@
 		A10000000000000000000019 /* InputModeTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* InputModeTabs.swift */; };
 		A1000000000000000000001A /* ProcessingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* ProcessingProgress.swift */; };
 		A1000000000000000000001B /* ProcessingPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* ProcessingPanelView.swift */; };
+		A1000000000000000000001C /* ReportPDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* ReportPDFExporter.swift */; };
 		A1000000000000000000000E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000000F /* ZenBuyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* ZenBuyTests.swift */; };
 		A10000000000000000000010 /* ZenBuyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* ZenBuyUITests.swift */; };
@@ -72,6 +73,7 @@
 		B1000000000000000000001B /* InputModeTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputModeTabs.swift; sourceTree = "<group>"; };
 		B1000000000000000000001C /* ProcessingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingProgress.swift; sourceTree = "<group>"; };
 		B1000000000000000000001D /* ProcessingPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingPanelView.swift; sourceTree = "<group>"; };
+		B1000000000000000000001E /* ReportPDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportPDFExporter.swift; sourceTree = "<group>"; };
 		B1000000000000000000000B /* ReportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportViewModel.swift; sourceTree = "<group>"; };
 		B1000000000000000000000C /* ReportStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportStreamView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -248,6 +250,7 @@
 				B1000000000000000000001D /* ProcessingPanelView.swift */,
 				B10000000000000000000018 /* ReportHTML.swift */,
 				B10000000000000000000019 /* ReportHTMLView.swift */,
+				B1000000000000000000001E /* ReportPDFExporter.swift */,
 			);
 			path = Report;
 			sourceTree = "<group>";
@@ -414,6 +417,7 @@
 				A10000000000000000000019 /* InputModeTabs.swift in Sources */,
 				A1000000000000000000001A /* ProcessingProgress.swift in Sources */,
 				A1000000000000000000001B /* ProcessingPanelView.swift in Sources */,
+				A1000000000000000000001C /* ReportPDFExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

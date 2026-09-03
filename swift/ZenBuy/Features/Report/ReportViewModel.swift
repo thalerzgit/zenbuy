@@ -64,6 +64,8 @@ final class ReportViewModel {
     private var resumeAttempts = 0
     private let maxResumeAttempts = 2
     private var abandoned = false
+    private var cachedShareKey = ""
+    private var cachedShareURL: URL?
     #if canImport(UIKit)
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     #endif
@@ -148,6 +150,8 @@ final class ReportViewModel {
         didFinishSuccessfully = false
         isStreaming = true
         lastFlush = .distantPast
+        cachedShareKey = ""
+        cachedShareURL = nil
         processing.start(symbolCount: request.symbols.count, mode: request.mode)
         beginResearchBackgroundTask()
 
@@ -251,6 +255,38 @@ final class ReportViewModel {
         guard force || now.timeIntervalSince(lastFlush) >= flushInterval else { return }
         bodyHTML = pendingBody
         lastFlush = now
+    }
+
+    /// Local PDF for the system share sheet (Files / Messages / Mail / AirDrop).
+    func sharePDFURL(title: String) -> URL? {
+        #if canImport(UIKit)
+        let key = [
+            title,
+            scorecardHTML,
+            bottomLineHTML,
+            bodyHTML,
+            badges?.recommendation ?? "",
+            badges?.sentiment ?? "",
+            badges?.conviction ?? "",
+        ].joined(separator: "\u{1e}")
+        if key == cachedShareKey, let cachedShareURL {
+            return cachedShareURL
+        }
+        guard let url = ReportPDFExporter.makePDF(
+            title: title,
+            badges: badges,
+            scorecardHTML: scorecardHTML,
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML
+        ) else {
+            return nil
+        }
+        cachedShareKey = key
+        cachedShareURL = url
+        return url
+        #else
+        return nil
+        #endif
     }
 
     private func beginResearchBackgroundTask() {
