@@ -19,8 +19,8 @@ enum ProcessingPhase: String, Sendable {
         switch self {
         case .preparing: return "Preparing your research request…"
         case .fundamentals: return "Pulling live fundamentals & peer data…"
-        case .analysis: return "Running valuation and thesis analysis…"
-        case .drafting: return "Drafting your research report…"
+        case .analysis: return "Verdict ready — finishing the full report…"
+        case .drafting: return "Drafting the rest of your report…"
         case .finalizing: return "Polishing scorecard & summary…"
         case .complete: return "Report ready"
         case .simplifying: return "Rewriting in plain English…"
@@ -40,13 +40,18 @@ enum ProcessingProgressLogic {
         return 75_000 + symbolCount * 40_000
     }
 
-    static func formatEta(remainingMs: Int, percent: Double) -> String {
+    static func formatEta(remainingMs: Int, percent: Double, hasVerdict: Bool = false) -> String {
         if percent >= 100 { return "Complete" }
         if remainingMs <= 5_000 { return "Almost there…" }
         let sec = Int(ceil(Double(remainingMs) / 1000.0))
-        if sec < 60 { return "About \(sec)s remaining" }
-        let minutes = Int(ceil(Double(sec) / 60.0))
-        return minutes == 1 ? "About 1 min remaining" : "About \(minutes) min remaining"
+        let base: String
+        if sec < 60 {
+            base = "About \(sec)s remaining"
+        } else {
+            let minutes = Int(ceil(Double(sec) / 60.0))
+            base = minutes == 1 ? "About 1 min remaining" : "About \(minutes) min remaining"
+        }
+        return hasVerdict ? "Full report · \(base)" : base
     }
 
     /// Ported from `PROCESSING_QUOTES` — includes David Morgenthaler.
@@ -104,6 +109,7 @@ final class ProcessingProgress {
     private var startedAt = Date()
     private var estimateMs = 90_000
     private var floor: Double = 0
+    private var hasVerdict = false
     private var quotes: [ProcessingQuote] = []
     private var quoteIndex = 0
     private var tickTask: Task<Void, Never>?
@@ -119,6 +125,7 @@ final class ProcessingProgress {
         )
         percent = 2
         floor = 2
+        hasVerdict = false
         quotes = ProcessingProgressLogic.quotes.shuffled()
         quoteIndex = 0
         self.phase = phase
@@ -147,6 +154,7 @@ final class ProcessingProgress {
     }
 
     func onSticky() {
+        hasVerdict = true
         floor = max(floor, 48)
         phase = .analysis
     }
@@ -227,7 +235,11 @@ final class ProcessingProgress {
     private func render() {
         let remaining = max(0, Double(estimateMs) - Date().timeIntervalSince(startedAt) * 1000)
             * (1 - percent / 100)
-        eta = ProcessingProgressLogic.formatEta(remainingMs: Int(remaining), percent: percent)
+        eta = ProcessingProgressLogic.formatEta(
+            remainingMs: Int(remaining),
+            percent: percent,
+            hasVerdict: hasVerdict
+        )
     }
 
     private func stopTimers() {

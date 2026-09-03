@@ -10,5 +10,6 @@
     "isolatedModules": true,
     "types": []
   },
-  "include": ["src/worker/**/*.ts", "src/lib/**/*.ts", "worker-configuration.d.ts"]
+  "include": ["src/worker/**/*.ts", "src/lib/**/*.ts", "worker-configuration.d.ts"],
+  "exclude": ["src/worker/**/*.test.ts"]
 }

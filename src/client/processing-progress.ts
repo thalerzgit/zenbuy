@@ -165,8 +165,8 @@ export const QUOTE_ROTATION_MS = 5_000;
 const PHASES = {
   preparing: "Preparing your research request…",
   fundamentals: "Pulling live fundamentals & peer data…",
-  analysis: "Running valuation and thesis analysis…",
-  drafting: "Drafting your research report…",
+  analysis: "Verdict ready — finishing the full report…",
+  drafting: "Drafting the rest of your report…",
   finalizing: "Polishing scorecard & summary…",
   complete: "Report ready",
   simplifying: "Rewriting in plain English…",
@@ -184,12 +184,16 @@ export function estimateProcessingMs(
   return 75_000 + symbolCount * 40_000;
 }
 
-function formatEta(remainingMs: number): string {
+export function formatEta(remainingMs: number, hasVerdict = false): string {
   if (remainingMs <= 5_000) return "Almost there…";
   const sec = Math.ceil(remainingMs / 1000);
-  if (sec < 60) return `About ${sec}s remaining`;
-  const min = Math.ceil(sec / 60);
-  return min === 1 ? "About 1 min remaining" : `About ${min} min remaining`;
+  const base =
+    sec < 60
+      ? `About ${sec}s remaining`
+      : Math.ceil(sec / 60) === 1
+        ? "About 1 min remaining"
+        : `About ${Math.ceil(sec / 60)} min remaining`;
+  return hasVerdict ? `Full report · ${base}` : base;
 }
 
 function shuffle<T>(items: readonly T[]): T[] {
@@ -235,6 +239,7 @@ export function createProcessingController(
   let estimateMs = 90_000;
   let progress = 0;
   let floor = 0;
+  let hasVerdict = false;
   let quoteIndex = 0;
   let quotes: ProcessingQuote[] = [];
   let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -267,7 +272,7 @@ export function createProcessingController(
     trackEl.setAttribute("aria-valuenow", String(Math.round(pct)));
     const remaining =
       Math.max(0, estimateMs - (Date.now() - startedAt)) * (1 - pct / 100);
-    etaEl.textContent = pct >= 100 ? "Complete" : formatEta(remaining);
+    etaEl.textContent = pct >= 100 ? "Complete" : formatEta(remaining, hasVerdict);
   };
 
   const tick = () => {
@@ -299,6 +304,7 @@ export function createProcessingController(
       estimateMs = estimateProcessingMs(Math.max(1, symbolCount), mode);
       progress = 2;
       floor = 2;
+      hasVerdict = false;
       quotes = shuffle(PROCESSING_QUOTES);
       quoteIndex = 0;
       setPhase(phase);
@@ -315,6 +321,7 @@ export function createProcessingController(
     },
 
     onSticky() {
+      hasVerdict = true;
       floor = Math.max(floor, 48);
       setPhase("analysis");
     },

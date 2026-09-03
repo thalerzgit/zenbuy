@@ -95,6 +95,17 @@ export function splitReport(markdown: string): { bottomLine: string; body: strin
   return { bottomLine, body };
 }
 
+/**
+ * True once ## BOTTOM LINE has more than a heading — do not wait for
+ * FUNDAMENTALS. Used so the first sticky can paint a usable verdict.
+ */
+export function isParseableBottomLine(markdown: string): boolean {
+  if (!BOTTOM_RE.test(markdown)) return false;
+  const { bottomLine } = splitReport(markdown);
+  const afterHeading = bottomLine.replace(/^##\s*BOTTOM LINE[^\n]*/im, "").trim();
+  return afterHeading.length > 0;
+}
+
 export function parseReport(markdown: string): ParsedReport {
   const { bottomLine, body } = splitReport(markdown);
   return {

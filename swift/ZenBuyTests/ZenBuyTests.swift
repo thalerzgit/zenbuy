@@ -190,6 +190,11 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 4_000, percent: 90), "Almost there…")
         XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 42_000, percent: 40), "About 42s remaining")
         XCTAssertEqual(ProcessingProgressLogic.formatEta(remainingMs: 70_000, percent: 20), "About 2 min remaining")
+        XCTAssertEqual(
+            ProcessingProgressLogic.formatEta(remainingMs: 42_000, percent: 50, hasVerdict: true),
+            "Full report · About 42s remaining"
+        )
+        XCTAssertEqual(ProcessingPhase.analysis.copy, "Verdict ready — finishing the full report…")
     }
 
     func testProcessingQuotesIncludeDavidMorgenthaler() {
