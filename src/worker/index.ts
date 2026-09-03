@@ -354,6 +354,7 @@ const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
   "Cache-Control": "no-cache",
   Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
 };
 
 /**
@@ -933,6 +934,15 @@ async function handleResearch(
       const send = (event: string, data: unknown) => {
         controller.enqueue(enc.encode(sseLine(event, data)));
       };
+      // Keep the HTTP/2 stream alive during the long LLM gap after meta
+      // so iOS URLSession / proxies do not treat silence as EOF.
+      const ping = setInterval(() => {
+        try {
+          controller.enqueue(enc.encode(": ka\n\n"));
+        } catch {
+          /* stream already closed */
+        }
+      }, 12_000);
 
       try {
         if (cached) {
@@ -973,7 +983,6 @@ async function handleResearch(
             directiveLabel: getInvestmentDirective(cachedDirective).label,
             profitHorizonYears: cachedHorizon ?? profitHorizonYears,
           });
-          controller.close();
           return;
         }
 
@@ -1001,7 +1010,6 @@ async function handleResearch(
             retry: true,
             code: "fundamentals_unavailable",
           });
-          controller.close();
           return;
         }
 
@@ -1141,6 +1149,7 @@ async function handleResearch(
           code: "research_failed",
         });
       } finally {
+        clearInterval(ping);
         controller.close();
       }
     },

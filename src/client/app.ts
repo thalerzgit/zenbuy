@@ -917,11 +917,14 @@ export function mountApp(root: HTMLElement): void {
       for (const chunk of chunks) {
         const lines = chunk.split("\n");
         let event = "message";
-        let data = "";
+        const dataLines: string[] = [];
         for (const line of lines) {
-          if (line.startsWith("event: ")) event = line.slice(7);
-          if (line.startsWith("data: ")) data = line.slice(6);
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).replace(/^ /, ""));
+          }
         }
+        const data = dataLines.join("\n");
         if (!data) continue;
         onEvent(event, JSON.parse(data) as Record<string, unknown>);
       }
