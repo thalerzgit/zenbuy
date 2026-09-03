@@ -20,7 +20,10 @@ enum ReportVerboseLog {
 
     static func log(_ message: @autoclosure () -> String) {
         guard enabled else { return }
-        logger.info("\(message(), privacy: .public)")
+        // Evaluate before Logger interpolation — escaping autoclosure cannot
+        // capture a non-escaping parameter (Swift 6 / Xcode 26 archive).
+        let text = message()
+        logger.info("\(text, privacy: .public)")
     }
 
     /// Truncated HTML preview — no secrets/PII; length only + short head.
