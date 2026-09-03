@@ -515,11 +515,40 @@ final class ZenBuyTests: XCTestCase {
             data: #"{"badges":{"recommendation":"HOLD"},"reportId":"report:separate:growth:h12:AAPL"}"#
         )
         let parsed = ReportStreamEvent(sseEvent: event)
-        guard case let .done(badges, reportId) = parsed else {
+        guard case let .done(badges, reportId, warning) = parsed else {
             return XCTFail("Expected done")
         }
         XCTAssertEqual(badges?.recommendation, "HOLD")
         XCTAssertEqual(reportId, "report:separate:growth:h12:AAPL")
+        XCTAssertNil(warning)
+    }
+
+    func testReportStreamEventDoneCapturesPartialWarning() {
+        let event = SSEEvent(
+            name: "done",
+            data: #"{"reportId":"report:separate:growth:h12:AAPL","partial":true,"warning":"Report may be incomplete — tap Generate to refresh."}"#
+        )
+        let parsed = ReportStreamEvent(sseEvent: event)
+        guard case let .done(_, reportId, warning) = parsed else {
+            return XCTFail("Expected done with warning")
+        }
+        XCTAssertEqual(reportId, "report:separate:growth:h12:AAPL")
+        XCTAssertEqual(warning, ReportStreamPolicy.partialReportWarning)
+    }
+
+    func testPartialWarningDoesNotBlockShareWhenHTMLPresent() {
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldTreatErrorAsWarning(hasVisibleContent: true)
+        )
+        XCTAssertFalse(
+            ReportStreamPolicy.shouldTreatErrorAsWarning(hasVisibleContent: false)
+        )
+        XCTAssertEqual(
+            ReportStreamPolicy.warningFromDone(warning: ReportStreamPolicy.partialReportWarning),
+            ReportStreamPolicy.partialReportWarning
+        )
+        XCTAssertNil(ReportStreamPolicy.warningFromDone(warning: "  "))
+        XCTAssertNil(ReportStreamPolicy.warningFromDone(warning: nil))
     }
 
     func testReportStreamEventCompaniesFallback() {
@@ -647,7 +676,7 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertTrue(html.contains("FUNDAMENTALS"))
 
         let done = ReportStreamEvent(sseEvent: SSEEvent(name: "done", data: doneData))
-        guard case let .done(doneBadges, reportId) = done else {
+        guard case let .done(doneBadges, reportId, _) = done else {
             return XCTFail("Probe done must decode, got \(done)")
         }
         XCTAssertEqual(reportId, "report:separate:growth:h12:AAPL")

@@ -104,6 +104,9 @@ export interface CachedReport {
   scorecardHtml: string;
   asOf: string;
   stale: boolean;
+  /** Incomplete but usable — optional so older KV entries still decode. */
+  partial?: boolean;
+  warning?: string;
 }
 
 /** Immutable snapshot for a single share link (24-hour TTL). */
@@ -118,6 +121,8 @@ export interface SharedReportSnapshot {
   scorecardHtml: string;
   asOf: string;
   stale: boolean;
+  partial?: boolean;
+  warning?: string;
 }
 
 export const SHARE_TTL_SECONDS = 86_400;

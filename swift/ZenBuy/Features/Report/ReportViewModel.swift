@@ -84,6 +84,21 @@ enum ReportStreamPolicy {
             && scorecardHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    static let partialReportWarning =
+        "Report may be incomplete — tap Generate to refresh."
+
+    static func warningFromDone(warning: String?) -> String? {
+        guard let warning, !warning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return warning
+    }
+
+    /// SSE `error` after a painted report is a soft warning — do not block Share.
+    static func shouldTreatErrorAsWarning(hasVisibleContent: Bool) -> Bool {
+        hasVisibleContent
+    }
+
     static func shouldRetryEmptyStream(retryCount: Int, maxRetries: Int = 1) -> Bool {
         retryCount < maxRetries
     }
@@ -104,6 +119,7 @@ final class ReportViewModel {
     var badges: ReportBadges?
     var isStreaming = false
     var errorMessage: String?
+    var warningMessage: String?
     var didFinishSuccessfully = false
     private(set) var activeRequest: ReportRequest?
     let processing = ProcessingProgress()
@@ -205,6 +221,7 @@ final class ReportViewModel {
         pendingBody = ""
         badges = nil
         errorMessage = nil
+        warningMessage = nil
         didFinishSuccessfully = false
         isStreaming = true
         lastFlush = .distantPast
@@ -295,7 +312,7 @@ final class ReportViewModel {
                         scorecardHtml: score,
                         badges: badges
                     )
-                case let .done(badges, reportId):
+                case let .done(badges, reportId, warning):
                     recordTrace("done")
                     // Do not clear already-applied HTML. A later long
                     // `companies` drop must not wipe sticky/body.
@@ -303,13 +320,22 @@ final class ReportViewModel {
                     if let reportId, !reportId.isEmpty {
                         lastReportId = reportId
                     }
+                    warningMessage = ReportStreamPolicy.warningFromDone(warning: warning)
                     await recoverOrFinish(request, generation: generation, reason: "sse done")
                     return
                 case let .error(message):
                     recordTrace("error")
                     ReportVerboseLog.log("sse error msgLen=\(message.count)")
-                    errorMessage = message
                     flushBodyIfNeeded(force: true)
+                    if ReportStreamPolicy.shouldTreatErrorAsWarning(
+                        hasVisibleContent: !isEmptyHTML()
+                    ) {
+                        warningMessage = ReportStreamPolicy.partialReportWarning
+                        errorMessage = nil
+                        await recoverOrFinish(request, generation: generation, reason: "sse error with content")
+                        return
+                    }
+                    errorMessage = message
                     processing.fail()
                     isStreaming = false
                     endResearchBackgroundTask()
@@ -425,6 +451,11 @@ final class ReportViewModel {
         }
         if let badges = payload.badges {
             self.badges = badges
+        }
+        if let warning = payload.warning, !warning.isEmpty {
+            warningMessage = warning
+        } else if payload.partial == true {
+            warningMessage = ReportStreamPolicy.partialReportWarning
         }
         if !bottomLineHTML.isEmpty {
             processing.onSticky()

@@ -1,6 +1,10 @@
 import { RATE_LIMIT_TTL_SECONDS } from "./cache";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
-import { assessReportCompleteness } from "./parse";
+import {
+  isUsablePartialReport,
+  planResearchFinish,
+  shouldSilentRetryIncomplete,
+} from "./parse";
 import {
   buildLaymanPrompt,
   buildUserPrompt,
@@ -24,6 +28,8 @@ export interface StreamHandlers {
   onDelta: (text: string) => void;
   onDone: (full: string) => void | Promise<void>;
   onError: (message: string) => void;
+  /** Clear the client accumulator before a silent incomplete retry. */
+  onRestart?: () => void;
 }
 
 export function primaryModel(env: Env): string {
@@ -446,14 +452,14 @@ function isLaymanComplete(text: string): boolean {
   );
 }
 
-/** max_tokens is only fatal when the markdown is actually unfinished. */
+/** max_tokens is only fatal when the markdown is actually unusable. */
 function acceptMaxTokensStop(
   text: string,
   kind: "research" | "layman"
 ): boolean {
   return kind === "layman"
     ? isLaymanComplete(text)
-    : assessReportCompleteness(text).ok;
+    : planResearchFinish(text).action !== "fail";
 }
 
 async function finishAnalysis(
@@ -494,13 +500,30 @@ export async function streamResearch(
   profitHorizonYears?: number
 ): Promise<void> {
   try {
-    const result = await analyzeStream(
+    const system = getSystemPrompt(directive);
+    const user = buildUserPrompt(mode, payloads, directive, profitHorizonYears);
+    let result = await analyzeStream(
       env,
-      getSystemPrompt(directive),
-      buildUserPrompt(mode, payloads, directive, profitHorizonYears),
+      system,
+      user,
       RESEARCH_MAX_TOKENS,
       handlers.onDelta
     );
+    // One silent retry only when the first pass painted little/no usable sticky.
+    // A usable BOTTOM LINE must not double-bill — finish() caches that partial.
+    if (result.ok && shouldSilentRetryIncomplete(result.text)) {
+      console.warn("silent retry incomplete research", {
+        chars: result.text.length,
+      });
+      handlers.onRestart?.();
+      result = await analyzeStream(
+        env,
+        system,
+        user,
+        RESEARCH_MAX_TOKENS,
+        handlers.onDelta
+      );
+    }
     await finishAnalysis(result, "research", handlers);
   } catch (e) {
     console.error("stream read failed", e);
@@ -586,16 +609,24 @@ export async function streamResearchParallel(
   await Promise.all(
     payloads.map(async (payload, i) => {
       try {
-        const result = await analyzeStream(
-          env,
-          getSystemPrompt(directive),
-          buildUserPrompt("separate", [payload], directive, profitHorizonYears),
-          RESEARCH_MAX_TOKENS,
-          (text) => {
-            sections[i] += text;
-            emit();
-          }
-        );
+        const runTicker = (): Promise<Attempt> =>
+          analyzeStream(
+            env,
+            getSystemPrompt(directive),
+            buildUserPrompt("separate", [payload], directive, profitHorizonYears),
+            RESEARCH_MAX_TOKENS,
+            (text) => {
+              sections[i] += text;
+              emit();
+            }
+          );
+
+        let result = await runTicker();
+        if (result.ok && shouldSilentRetryIncomplete(sections[i])) {
+          console.warn("silent retry incomplete parallel", payload.symbol);
+          sections[i] = "";
+          result = await runTicker();
+        }
 
         if (!result.ok) {
           console.error("analysis failed", payload.symbol, result.message);
@@ -616,7 +647,9 @@ export async function streamResearchParallel(
           emit(true);
         } else if (result.stopReason === "max_tokens") {
           console.warn(
-            "parallel analysis max_tokens but report complete",
+            isUsablePartialReport(sections[i])
+              ? "parallel analysis max_tokens but report usable"
+              : "parallel analysis max_tokens but report complete",
             payload.symbol
           );
         }
