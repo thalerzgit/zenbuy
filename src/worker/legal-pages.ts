@@ -1,7 +1,5 @@
 /** App Store / web legal pages — Worker HTML, never the SPA catch-all. */
 
-const CONTACT_EMAIL = "Justin@thalerz.com";
-
 export function legalPageResponse(pathname: string): Response | null {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (path === "/privacy") return htmlPage(privacyPolicyHtml());
@@ -120,7 +118,7 @@ function privacyPolicyHtml(): string {
       <p>We send these providers what they need to do that job — not a customer profile. Cloudflare may set a short-lived bot-management cookie on the website.</p>
 
       <h2>Your choices (California, GDPR, and similar)</h2>
-      <p>You can ask what we hold about you, or ask us to delete it, by emailing <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>. Because there are no accounts, we usually match a request to an IP address and time window.</p>
+      <p>You can ask what we hold about you, or ask us to delete it, via the <a href="/support">Support page</a>. Because there are no accounts, we usually match a request to an IP address and time window.</p>
       <p>California: we do not sell personal information, and we do not “share” it for cross-context advertising.</p>
       <p>EEA/UK: we process the data above to provide the research you asked for, and to keep the service secure and fairly rate-limited.</p>
 
@@ -131,7 +129,7 @@ function privacyPolicyHtml(): string {
       <p>If our practices change, we will update this page. The date at the top is the latest version.</p>
 
       <h2>Contact</h2>
-      <p><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> · <a href="/support">Support</a></p>
+      <p>Contact us via the <a href="/support">Support page</a>.</p>
     `
   );
 }
@@ -144,8 +142,9 @@ function supportHtml(): string {
     `
       <h1>Support</h1>
       <p class="updated">ZenBuy.info · research only</p>
-      <p>Questions about the website or the iOS app? Email <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>. We read every note; replies may take a business day or two.</p>
-      <p>Please include the ticker(s) you were researching and whether you were on the web or iOS app. Do not send brokerage passwords or account numbers — we cannot access trading accounts, and we do not need them.</p>
+      <p>Questions about the website or the iOS app? We do not publish a personal email address or phone number.</p>
+      <p>If you have the iOS app (TestFlight or the App Store), send feedback through Apple’s TestFlight or App Store feedback for ZenBuy. Include the ticker(s) you were researching and whether you were on the web or iOS app. Do not send brokerage passwords or account numbers — we cannot access trading accounts, and we do not need them.</p>
+      <p>Privacy requests (what we hold, or a deletion request) use the same path: mark the note as a privacy request and include an approximate time so we can match it to an IP window.</p>
 
       <h2>What ZenBuy is (and is not)</h2>
       <ul>
