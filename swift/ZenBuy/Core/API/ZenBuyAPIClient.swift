@@ -17,7 +17,7 @@ enum ZenBuyAPIError: LocalizedError {
             return "Unexpected response: \(error.localizedDescription)"
         case let .transport(error):
             if let urlError = error as? URLError, urlError.code == .timedOut {
-                return "Research took too long to finish. A single ticker usually takes about 90 seconds — check your connection and try again."
+                return "Research took too long to finish. The verdict usually appears first; the full report can take about 90 seconds. Check your connection and try again."
             }
             return error.localizedDescription
         }
@@ -36,7 +36,8 @@ final class ZenBuyAPIClient {
     private let encoder: JSONEncoder
 
     /// Search / config stay snappy. Research SSE uses a long-lived session because
-    /// a single-ticker report is ~85s on the worker before the first sticky/body.
+    /// a single-ticker full report is ~85s; BOTTOM LINE sticky is streamed as soon
+    /// as it is parseable (well before FUNDAMENTALS / done).
     init(session: URLSession? = nil) {
         if let session {
             self.session = session

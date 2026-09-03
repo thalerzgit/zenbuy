@@ -150,6 +150,9 @@ Wall time is dominated by output tokens, so:
 - `/api/prefetch` and a background Turnstile pre-solve fire when a ticker is
   picked, keeping data fetching and verification off the critical path.
 - Body repaints are throttled rather than re-rendering markdown per token.
+- BOTTOM LINE sticky is emitted as soon as that section is parseable (do
+  not wait for FUNDAMENTALS), so the verdict paints well before the full
+  ~85s report. Scorecard still arrives with SUMMARY / `done`.
 
 ## Typecheck
 

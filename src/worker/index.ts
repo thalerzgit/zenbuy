@@ -41,6 +41,7 @@ import {
   companyProfilesFromMarkdown,
   parseReport,
   assessReportCompleteness,
+  isParseableBottomLine,
   renderMarkdown,
   scorecardHtml,
 } from "./parse";
@@ -1043,6 +1044,9 @@ async function handleResearch(
         });
 
         let stickySent = false;
+        let stickyComplete = false;
+        let lastStickyAt = 0;
+        let lastStickyLen = 0;
         let lastBodyAt = 0;
         let lastBodyLen = 0;
 
@@ -1052,20 +1056,34 @@ async function handleResearch(
         const BODY_GROWTH = 600;
 
         const renderProgress = (full: string, force = false): void => {
-          if (!stickySent && /^##\s*FUNDAMENTALS/im.test(full)) {
-            const partial = parseReport(full);
-            if (partial.bottomLine) {
+          const now = Date.now();
+
+          // Phase 1: paint BOTTOM LINE as soon as it is parseable. Do not
+          // wait for FUNDAMENTALS (that gate delayed first paint 20–40s+).
+          // Keep refreshing sticky while BOTTOM LINE is still growing.
+          if (isParseableBottomLine(full) && !stickyComplete) {
+            const stickyGrown = full.length - lastStickyLen;
+            const stickyDue =
+              !stickySent ||
+              force ||
+              now - lastStickyAt >= BODY_INTERVAL_MS ||
+              stickyGrown >= BODY_GROWTH;
+            if (stickyDue) {
+              const partial = parseReport(full);
               send("sticky", {
                 bottomLineHtml: renderMarkdown(partial.bottomLine),
                 badges: partial.badges,
-                scorecardHtml: "",
+                scorecardHtml: scorecardHtml(partial.scorecard),
               });
               stickySent = true;
+              lastStickyAt = now;
+              lastStickyLen = full.length;
+              if (/^##\s*FUNDAMENTALS/im.test(full)) stickyComplete = true;
             }
           }
+
           if (!stickySent) return;
 
-          const now = Date.now();
           const grown = full.length - lastBodyLen;
           if (!force && now - lastBodyAt < BODY_INTERVAL_MS && grown < BODY_GROWTH) {
             return;
