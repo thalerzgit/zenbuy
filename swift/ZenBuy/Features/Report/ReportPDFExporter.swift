@@ -4,6 +4,11 @@ import UIKit
 
 /// Builds a local PDF from the native report model (not a webview screenshot).
 enum ReportPDFExporter {
+    private static let pageWidth: CGFloat = 612
+    private static let pageHeight: CGFloat = 792
+    private static let inset: CGFloat = 48
+    private static var contentWidth: CGFloat { pageWidth - inset * 2 }
+
     static func makePDF(
         title: String,
         badges: ReportBadges?,
@@ -18,31 +23,28 @@ enum ReportPDFExporter {
         let bottomSections = ReportHTML.sections(from: bottom.nodes, hasScorecard: hasScorecard)
         let bodySections = ReportHTML.sections(from: body.nodes, hasScorecard: hasScorecard)
 
-        let page = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
-        let inset: CGFloat = 48
-        let contentWidth = page.width - inset * 2
+        let page = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
         let renderer = UIGraphicsPDFRenderer(bounds: page)
 
         let data = renderer.pdfData { context in
             var y = inset
+
             func newPage() {
                 context.beginPage()
                 y = inset
             }
-            newPage()
 
             func ensureSpace(_ needed: CGFloat) {
-                if y + needed > page.height - inset {
+                if y + needed > pageHeight - inset {
                     newPage()
                 }
             }
 
-            func draw(_ string: String, font: UIFont, color: UIColor, width: CGFloat = contentWidth) -> CGFloat {
+            func draw(_ string: String, font: UIFont, color: UIColor, width: CGFloat = ReportPDFExporter.contentWidth) {
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: font,
                     .foregroundColor: color,
                 ]
-                let box = CGRect(x: inset, y: y, width: width, height: .greatestFiniteMagnitude)
                 let height = (string as NSString).boundingRect(
                     with: CGSize(width: width, height: .greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -50,10 +52,14 @@ enum ReportPDFExporter {
                     context: nil
                 ).height.rounded(.up)
                 ensureSpace(height + 4)
-                (string as NSString).draw(in: CGRect(x: inset, y: y, width: width, height: height), withAttributes: attrs)
+                (string as NSString).draw(
+                    in: CGRect(x: inset, y: y, width: width, height: height),
+                    withAttributes: attrs
+                )
                 y += height + 8
-                return height
             }
+
+            newPage()
 
             draw(title, font: .boldSystemFont(ofSize: 20), color: .black)
             draw("ZenBuy research report", font: .systemFont(ofSize: 11), color: .darkGray)
@@ -63,24 +69,37 @@ enum ReportPDFExporter {
             if let s = badges?.sentiment, !s.isEmpty { badgeBits.append(s) }
             if let c = badges?.conviction, !c.isEmpty { badgeBits.append(c) }
             if !badgeBits.isEmpty {
-                draw(badgeBits.joined(separator: " · "), font: .boldSystemFont(ofSize: 12), color: UIColor(red: 0.20, green: 0.43, blue: 0.15, alpha: 1))
+                draw(
+                    badgeBits.joined(separator: " · "),
+                    font: .boldSystemFont(ofSize: 12),
+                    color: UIColor(red: 0.20, green: 0.43, blue: 0.15, alpha: 1)
+                )
             }
 
             for node in scoreNodes {
                 if case let .scorecard(rows) = node {
-                    draw("Scorecard", font: .boldSystemFont(ofSize: 14), color: UIColor(red: 0.20, green: 0.43, blue: 0.15, alpha: 1))
+                    draw(
+                        "Scorecard",
+                        font: .boldSystemFont(ofSize: 14),
+                        color: UIColor(red: 0.20, green: 0.43, blue: 0.15, alpha: 1)
+                    )
                     for row in rows {
-                        let bar = String(repeating: "█", count: max(1, Int((row.fraction * 10).rounded())))
-                            + String(repeating: "░", count: max(0, 10 - Int((row.fraction * 10).rounded())))
+                        let filled = max(1, Int((row.fraction * 10).rounded()))
+                        let bar = String(repeating: "█", count: filled)
+                            + String(repeating: "░", count: max(0, 10 - filled))
                         draw("\(row.label)  \(bar)  \(row.value)", font: .systemFont(ofSize: 11), color: .black)
                     }
                 }
             }
 
             for section in bottomSections + bodySections {
-                if let title = section.title {
+                if let sectionTitle = section.title {
                     ensureSpace(28)
-                    draw(title, font: .boldSystemFont(ofSize: 14), color: UIColor(red: 0.20, green: 0.43, blue: 0.15, alpha: 1))
+                    draw(
+                        sectionTitle,
+                        font: .boldSystemFont(ofSize: 14),
+                        color: UIColor(red: 0.20, green: 0.43, blue: 0.15, alpha: 1)
+                    )
                 }
                 for node in section.nodes {
                     drawNode(node, draw: draw, ensureSpace: ensureSpace)
@@ -107,28 +126,28 @@ enum ReportPDFExporter {
 
     private static func drawNode(
         _ node: ReportHTMLNode,
-        draw: (String, UIFont, UIColor, CGFloat) -> CGFloat,
+        draw: (String, UIFont, UIColor, CGFloat) -> Void,
         ensureSpace: (CGFloat) -> Void
     ) {
         switch node {
         case let .heading(_, text):
-            _ = draw(text, .boldSystemFont(ofSize: 13), .black, 516)
+            draw(text, .boldSystemFont(ofSize: 13), .black, contentWidth)
         case let .paragraph(inlines):
-            _ = draw(plain(inlines), .systemFont(ofSize: 11), .black, 516)
+            draw(plain(inlines), .systemFont(ofSize: 11), .black, contentWidth)
         case let .list(items):
             for item in items {
-                _ = draw("• " + plain(item), .systemFont(ofSize: 11), .black, 516)
+                draw("• " + plain(item), .systemFont(ofSize: 11), .black, contentWidth)
             }
         case let .table(headers, rows):
             if !headers.isEmpty {
-                _ = draw(headers.joined(separator: " | "), .boldSystemFont(ofSize: 10), .darkGray, 516)
+                draw(headers.joined(separator: " | "), .boldSystemFont(ofSize: 10), .darkGray, contentWidth)
             }
             for row in rows {
-                _ = draw(row.joined(separator: " | "), .systemFont(ofSize: 10), .black, 516)
+                draw(row.joined(separator: " | "), .systemFont(ofSize: 10), .black, contentWidth)
             }
         case let .scorecard(rows):
             for row in rows {
-                _ = draw("\(row.label): \(row.value)", .systemFont(ofSize: 11), .black, 516)
+                draw("\(row.label): \(row.value)", .systemFont(ofSize: 11), .black, contentWidth)
             }
         case .spacer:
             ensureSpace(8)
