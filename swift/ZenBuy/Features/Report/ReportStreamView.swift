@@ -99,6 +99,13 @@ struct ReportStreamView: View {
                     )
                 }
 
+                if let warningMessage = viewModel.warningMessage, viewModel.errorMessage == nil {
+                    Text(warningMessage)
+                        .font(.footnote)
+                        .foregroundStyle(ZenBuyTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 if let errorMessage = viewModel.errorMessage {
                     Text(errorMessage)
                         .font(.footnote)

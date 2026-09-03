@@ -53,7 +53,7 @@ enum ReportStreamEvent: Sendable {
     case body(html: String)
     case badges(ReportBadges)
     case companies(bottomLineHtml: String, bodyHtml: String, scorecardHtml: String?, badges: ReportBadges?)
-    case done(badges: ReportBadges?, reportId: String?)
+    case done(badges: ReportBadges?, reportId: String?, warning: String?)
     case error(message: String)
     case skipped(name: String, dataLength: Int)
 
@@ -142,9 +142,13 @@ enum ReportStreamEvent: Sendable {
         case "done":
             let payload = try? decoder.decode(DonePayload.self, from: data)
             let obj = Self.jsonObject(data)
+            let warning =
+                payload?.warning
+                ?? (obj?["warning"] as? String)
             self = .done(
                 badges: payload?.badges ?? Self.extractBadges(obj?["badges"]),
-                reportId: payload?.reportId ?? (obj?["reportId"] as? String)
+                reportId: payload?.reportId ?? (obj?["reportId"] as? String),
+                warning: warning?.isEmpty == false ? warning : nil
             )
         case "error":
             if let payload: ErrorPayload = Self.decodeKnown(name, from: data, decoder: decoder) {
@@ -321,6 +325,8 @@ private struct BodyPayload: Decodable {
 private struct DonePayload: Codable {
     let badges: ReportBadges?
     let reportId: String?
+    let warning: String?
+    let partial: Bool?
 }
 
 private struct CompaniesPayload: Decodable {
@@ -340,6 +346,8 @@ struct CachedReportPayload: Codable, Sendable {
     let scorecardHtml: String?
     let badges: ReportBadges?
     let reportId: String?
+    let warning: String?
+    let partial: Bool?
 }
 
 /// Matches worker `reportCacheKey` in `src/worker/cache.ts`.

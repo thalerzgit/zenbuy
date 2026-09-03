@@ -40,8 +40,8 @@ import {
 import {
   companyProfilesFromMarkdown,
   parseReport,
-  assessReportCompleteness,
   isParseableBottomLine,
+  planResearchFinish,
   renderMarkdown,
   scorecardHtml,
 } from "./parse";
@@ -85,6 +85,13 @@ function clientIp(request: Request): string {
 /** Native iOS app — Turnstile is web-only; rate limits still apply. */
 function isNativeIOSClient(request: Request): boolean {
   return request.headers.get("X-ZenBuy-Client")?.toLowerCase() === "ios";
+}
+
+function cachedReportHasContent(report: CachedReport | null): boolean {
+  if (!report) return false;
+  return Boolean(
+    report.bottomLineHtml?.trim() || report.bodyHtml?.trim()
+  );
 }
 
 function emitParsed(
@@ -426,7 +433,7 @@ async function handleCreateShare(request: Request, env: Env): Promise<Response> 
     };
   } else {
     const report = await cacheGet<CachedReport>(env.CACHE, reportId);
-    if (!report?.bodyHtml) {
+    if (!cachedReportHasContent(report)) {
       return json(
         {
           error: "That report has expired. Generate a fresh one to share.",
@@ -441,12 +448,14 @@ async function handleCreateShare(request: Request, env: Env): Promise<Response> 
       variant: "full",
       mode,
       symbols,
-      badges: report.badges,
-      bottomLineHtml: report.bottomLineHtml,
-      bodyHtml: report.bodyHtml,
-      scorecardHtml: report.scorecardHtml,
-      asOf: report.asOf,
-      stale: report.stale,
+      badges: report!.badges,
+      bottomLineHtml: report!.bottomLineHtml,
+      bodyHtml: report!.bodyHtml,
+      scorecardHtml: report!.scorecardHtml,
+      asOf: report!.asOf,
+      stale: report!.stale,
+      partial: report!.partial,
+      warning: report!.warning,
     };
   }
 
@@ -471,7 +480,7 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
 
   if (reportId.startsWith("share:")) {
     const snapshot = await cacheGet<SharedReportSnapshot>(env.CACHE, reportId);
-    if (!snapshot?.bodyHtml) {
+    if (!snapshot?.bottomLineHtml?.trim() && !snapshot?.bodyHtml?.trim()) {
       return json(
         {
           error: "This share link has expired. Ask for a fresh link.",
@@ -492,6 +501,8 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
       scorecardHtml: snapshot.scorecardHtml,
       asOf: snapshot.asOf,
       stale: snapshot.stale,
+      partial: snapshot.partial,
+      warning: snapshot.warning,
     });
   }
 
@@ -527,7 +538,7 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
   }
 
   const report = await cacheGet<CachedReport>(env.CACHE, reportId);
-  if (!report?.bodyHtml) {
+  if (!cachedReportHasContent(report)) {
     return json(
       {
         error: "That shared report has expired. Generate a fresh one.",
@@ -544,15 +555,17 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
     variant: "full",
     mode,
     symbols,
-    badges: report.badges,
-    bottomLineHtml: report.bottomLineHtml,
-    bodyHtml: report.bodyHtml,
-    scorecardHtml: report.scorecardHtml,
-    companies: report.markdown
-      ? companyProfilesFromMarkdown(report.markdown, symbols)
+    badges: report!.badges,
+    bottomLineHtml: report!.bottomLineHtml,
+    bodyHtml: report!.bodyHtml,
+    scorecardHtml: report!.scorecardHtml,
+    companies: report!.markdown
+      ? companyProfilesFromMarkdown(report!.markdown, symbols)
       : [],
-    asOf: report.asOf,
-    stale: report.stale,
+    asOf: report!.asOf,
+    stale: report!.stale,
+    partial: report!.partial,
+    warning: report!.warning,
   });
 }
 
@@ -983,6 +996,8 @@ async function handleResearch(
             directive: cachedDirective,
             directiveLabel: getInvestmentDirective(cachedDirective).label,
             profitHorizonYears: cachedHorizon ?? profitHorizonYears,
+            partial: cached.partial === true,
+            warning: cached.warning,
           });
           return;
         }
@@ -1098,23 +1113,31 @@ async function handleResearch(
         };
 
         const finish = async (markdown: string): Promise<void> => {
-          const completeness = assessReportCompleteness(markdown);
-          if (!completeness.ok) {
+          const plan = planResearchFinish(markdown);
+          if (plan.action === "fail") {
             console.error("incomplete report refused cache", {
-              reason: completeness.reason,
-              missing: completeness.missing,
+              reason: plan.completeness.reason,
+              missing: plan.completeness.missing,
               chars: markdown.length,
               symbols: payloads.map((p) => p.symbol),
             });
-            fail(
-              "The analysis cut off before finishing — nothing was cached. Tap Generate Report to try again."
-            );
+            fail(plan.failMessage ?? "The analysis cut off before finishing.");
             return;
           }
 
           const report = emitParsed(send, markdown);
           report.asOf = oldestAsOf(payloads);
           report.stale = showAsOf;
+          if (plan.action === "cache_partial") {
+            report.partial = true;
+            report.warning = plan.warning;
+            console.warn("incomplete report cached as partial", {
+              reason: plan.completeness.reason,
+              missing: plan.completeness.missing,
+              chars: markdown.length,
+              symbols: payloads.map((p) => p.symbol),
+            });
+          }
           const symbolList = payloads.map((p) => p.symbol);
           const companies = companyProfilesFromMarkdown(markdown, symbolList);
           const doneKey = reportCacheKey(
@@ -1133,6 +1156,8 @@ async function handleResearch(
             directive,
             directiveLabel: getInvestmentDirective(directive).label,
             profitHorizonYears,
+            partial: report.partial === true,
+            warning: report.warning,
           });
         };
 
@@ -1153,6 +1178,15 @@ async function handleResearch(
             onDelta(text) {
               full += text;
               renderProgress(full);
+            },
+            onRestart() {
+              full = "";
+              stickySent = false;
+              stickyComplete = false;
+              lastStickyAt = 0;
+              lastStickyLen = 0;
+              lastBodyAt = 0;
+              lastBodyLen = 0;
             },
             onDone: finish,
             onError: fail,

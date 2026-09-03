@@ -184,6 +184,7 @@ export function mountApp(root: HTMLElement): void {
       <div class="skeleton-lines"><span></span><span></span><span></span><span></span></div>
     </div>
     <p id="as-of" class="as-of hidden"></p>
+    <p id="report-warning" class="report-warning hidden" role="status"></p>
   `;
 
   const footer = el("footer", "site-footer");
@@ -244,6 +245,7 @@ export function mountApp(root: HTMLElement): void {
   const scorecardWrap = report.querySelector("#scorecard-wrap") as HTMLDivElement;
   const reportBody = report.querySelector("#report-body") as HTMLDivElement;
   const asOfEl = report.querySelector("#as-of") as HTMLParagraphElement;
+  const reportWarning = report.querySelector("#report-warning") as HTMLParagraphElement;
 
   let debounce: ReturnType<typeof setTimeout>;
   let searchAbort: AbortController | null = null;
@@ -488,6 +490,27 @@ export function mountApp(root: HTMLElement): void {
     formError.classList.add("hidden");
   }
 
+  function showReportWarning(msg: string): void {
+    reportWarning.textContent = msg;
+    reportWarning.classList.remove("hidden");
+  }
+
+  function hideReportWarning(): void {
+    reportWarning.textContent = "";
+    reportWarning.classList.add("hidden");
+  }
+
+  function hasVisibleReportContent(): boolean {
+    const sticky =
+      bottomLine.classList.contains("revealed") &&
+      (bottomLine.textContent?.trim().length ?? 0) > 20;
+    const body =
+      !reportBody.classList.contains("loading") &&
+      (reportBody.textContent?.trim().length ?? 0) > 20;
+    const score = scorecardWrap.innerHTML.trim().length > 20;
+    return sticky || body || score;
+  }
+
   /** Ticker-shaped token (spaces around commas are trimmed before this runs). */
   const TICKER_TOKEN = /^[A-Za-z][A-Za-z0-9.\-]{0,11}$/;
 
@@ -701,6 +724,7 @@ export function mountApp(root: HTMLElement): void {
     reportBody.innerHTML =
       '<div class="skeleton-lines"><span></span><span></span><span></span><span></span></div>';
     asOfEl.classList.add("hidden");
+    hideReportWarning();
   }
 
   /**
@@ -933,6 +957,7 @@ export function mountApp(root: HTMLElement): void {
 
   async function runResearch(): Promise<void> {
     hideError();
+    hideReportWarning();
     state.loading = true;
     hasReport = false;
     submitBtn.disabled = true;
@@ -1080,11 +1105,27 @@ export function mountApp(root: HTMLElement): void {
             simplifyBtn.textContent = "Explain in Lay Terms";
             hasReport = true;
             showPostReportActions();
+            const warning =
+              typeof payload.warning === "string" ? payload.warning.trim() : "";
+            if (warning || payload.partial === true) {
+              showReportWarning(
+                warning || "Report may be incomplete — tap Generate to refresh."
+              );
+            }
           }
 
           if (event === "error") {
-            processing.fail();
-            showError(String(payload.error), payload.retry !== false);
+            if (hasVisibleReportContent()) {
+              processing.onDone();
+              hasReport = true;
+              showPostReportActions();
+              showReportWarning(
+                "Report may be incomplete — tap Generate to refresh."
+              );
+            } else {
+              processing.fail();
+              showError(String(payload.error), payload.retry !== false);
+            }
           }
         }
       });
@@ -1355,6 +1396,8 @@ export function mountApp(root: HTMLElement): void {
         mode?: ReportMode;
         asOf?: string;
         stale?: boolean;
+        partial?: boolean;
+        warning?: string;
       };
 
       if (!res.ok) {
@@ -1422,6 +1465,12 @@ export function mountApp(root: HTMLElement): void {
         : "Explain in Lay Terms";
       hasReport = true;
       showPostReportActions();
+      const warning = data.warning?.trim() ?? "";
+      if (warning || data.partial === true) {
+        showReportWarning(
+          warning || "Report may be incomplete — tap Generate to refresh."
+        );
+      }
       reportPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
       showSharedLoadError("This shared report couldn't be loaded.");

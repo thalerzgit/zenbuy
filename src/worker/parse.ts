@@ -62,14 +62,21 @@ export function parseBadges(markdown: string): Badges {
   };
 }
 
+/** Accepts `7/10` and `7.5/10` (Opus often emits half-points). */
+const SCORE_NUM = String.raw`(\d{1,2}(?:\.\d)?)`;
+const OVERALL_SCORE_RE = new RegExp(
+  String.raw`overall:?\s*${SCORE_NUM}\s*/\s*10`,
+  "i"
+);
+
 const SCORE_KEYS: Array<{ key: keyof Scorecard; re: RegExp }> = [
-  { key: "growth", re: /growth:\s*(\d{1,2})\s*\/\s*10/i },
-  { key: "moat", re: /moat:\s*(\d{1,2})\s*\/\s*10/i },
-  { key: "management", re: /management:\s*(\d{1,2})\s*\/\s*10/i },
-  { key: "valuation", re: /valuation:\s*(\d{1,2})\s*\/\s*10/i },
-  { key: "balanceSheet", re: /balance\s*sheet:\s*(\d{1,2})\s*\/\s*10/i },
-  { key: "catalysts", re: /catalysts:\s*(\d{1,2})\s*\/\s*10/i },
-  { key: "overall", re: /overall:\s*(\d{1,2})\s*\/\s*10/i },
+  { key: "growth", re: new RegExp(String.raw`growth:\s*${SCORE_NUM}\s*/\s*10`, "i") },
+  { key: "moat", re: new RegExp(String.raw`moat:\s*${SCORE_NUM}\s*/\s*10`, "i") },
+  { key: "management", re: new RegExp(String.raw`management:\s*${SCORE_NUM}\s*/\s*10`, "i") },
+  { key: "valuation", re: new RegExp(String.raw`valuation:\s*${SCORE_NUM}\s*/\s*10`, "i") },
+  { key: "balanceSheet", re: new RegExp(String.raw`balance\s*sheet:\s*${SCORE_NUM}\s*/\s*10`, "i") },
+  { key: "catalysts", re: new RegExp(String.raw`catalysts:\s*${SCORE_NUM}\s*/\s*10`, "i") },
+  { key: "overall", re: OVERALL_SCORE_RE },
 ];
 
 export function parseScorecard(markdown: string): Scorecard {
@@ -135,9 +142,40 @@ export interface CompletenessResult {
   missing?: string[];
 }
 
+export const PARTIAL_REPORT_WARNING =
+  "Report may be incomplete — tap Generate to refresh.";
+
+export const INCOMPLETE_HARD_FAIL =
+  "The analysis cut off before finishing — nothing was cached. Tap Generate Report to try again.";
+
+export type ResearchFinishAction = "cache" | "cache_partial" | "fail";
+
+export interface ResearchFinishPlan {
+  action: ResearchFinishAction;
+  completeness: CompletenessResult;
+  usable: boolean;
+  warning?: string;
+  failMessage?: string;
+}
+
+const SECTION_HEADER_RE = (name: string): RegExp =>
+  new RegExp(`^##\\s*${name}\\b`, "im");
+
+function missingRequiredSections(text: string): string[] {
+  return REQUIRED_SECTIONS.filter((name) => !SECTION_HEADER_RE(name).test(text));
+}
+
+function hasOverallScore(text: string): boolean {
+  return OVERALL_SCORE_RE.test(text);
+}
+
+function hasSummarySection(text: string): boolean {
+  return SECTION_HEADER_RE("SUMMARY").test(text);
+}
+
 /**
- * Guard against caching truncated LLM output (stream drop / max_tokens).
- * Incomplete reports must never be written to KV as successful cache hits.
+ * Guard against treating truncated LLM output as a finished report.
+ * Incomplete-but-usable reports are accepted via planResearchFinish.
  */
 export function assessReportCompleteness(
   markdown: string,
@@ -153,30 +191,86 @@ export function assessReportCompleteness(
     };
   }
 
-  const missing = REQUIRED_SECTIONS.filter(
-    (name) => !new RegExp(`^##\\s*${name}\\b`, "im").test(text)
-  );
+  const missing = missingRequiredSections(text);
   if (missing.length) {
     return { ok: false, reason: "missing_sections", missing: [...missing] };
   }
 
   // SUMMARY must include a usable Overall score — mid-stream cuts often leave
-  // the header without finishing the scorecard.
-  if (!/overall:\s*\d{1,2}\s*\/\s*10/i.test(text)) {
+  // the header without finishing the scorecard. Half-points (7.5/10) count.
+  if (!hasOverallScore(text)) {
     return { ok: false, reason: "incomplete_summary" };
   }
 
   // Mid-word cutoffs look like "...oligopoly benef" with no terminal mark.
+  // If SUMMARY + Overall already landed, a trailing mid-word is a false
+  // positive (scorecard prose often ends mid-clause after the scores).
+  if (hasSummarySection(text) && hasOverallScore(text)) {
+    return { ok: true };
+  }
+
   const lastLine = text.split("\n").filter(Boolean).pop()?.trim() ?? "";
   const looksFinished =
     /[.!?…]["')\]]?\s*$/u.test(lastLine) ||
-    /\d{1,2}\s*\/\s*10\s*$/u.test(lastLine) ||
+    /\d{1,2}(?:\.\d)?\s*\/\s*10\s*$/u.test(lastLine) ||
     /\|\s*$/u.test(lastLine);
   if (!looksFinished && /[A-Za-z]{4,}$/u.test(lastLine)) {
     return { ok: false, reason: "truncated_tail" };
   }
 
   return { ok: true };
+}
+
+const STUB_BOTTOM_LINE_RE =
+  /^_?(Analysis cut off|Analysis unavailable|Analysis service)/i;
+
+/**
+ * A report the user can keep: parseable BOTTOM LINE with real content,
+ * plus Overall x/10 or most required sections. Too short / no BOTTOM LINE
+ * stays unusable.
+ */
+export function isUsablePartialReport(markdown: string): boolean {
+  if (!isParseableBottomLine(markdown)) return false;
+  const { bottomLine } = splitReport(markdown);
+  const afterHeading = bottomLine
+    .replace(/^##\s*BOTTOM LINE[^\n]*/im, "")
+    .trim();
+  if (afterHeading.length < 40) return false;
+  if (STUB_BOTTOM_LINE_RE.test(afterHeading)) return false;
+
+  if (hasOverallScore(markdown)) return true;
+  const present = REQUIRED_SECTIONS.length - missingRequiredSections(markdown).length;
+  return present >= 5;
+}
+
+/** One silent retry only when the first stream has no usable sticky. */
+export function shouldSilentRetryIncomplete(markdown: string): boolean {
+  return !isUsablePartialReport(markdown);
+}
+
+/**
+ * Worker finish() decision: cache complete, cache usable partial, or hard-fail.
+ */
+export function planResearchFinish(markdown: string): ResearchFinishPlan {
+  const completeness = assessReportCompleteness(markdown);
+  const usable = isUsablePartialReport(markdown);
+  if (completeness.ok) {
+    return { action: "cache", completeness, usable: true };
+  }
+  if (usable) {
+    return {
+      action: "cache_partial",
+      completeness,
+      usable: true,
+      warning: PARTIAL_REPORT_WARNING,
+    };
+  }
+  return {
+    action: "fail",
+    completeness,
+    usable: false,
+    failMessage: INCOMPLETE_HARD_FAIL,
+  };
 }
 
 export interface CompanySection {
