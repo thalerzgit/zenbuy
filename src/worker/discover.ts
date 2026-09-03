@@ -1,4 +1,10 @@
-import { cacheGet, cacheSet, fundCacheKey } from "./cache";
+import {
+  cacheGet,
+  cacheSet,
+  fundCacheKey,
+  DEFAULT_CACHE_TTL_SECONDS,
+  DISCOVER_CACHE_TTL_SECONDS,
+} from "./cache";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
 import { getInvestmentDirective } from "../lib/investment-directives";
 import {
@@ -19,8 +25,6 @@ export interface DiscoverPick {
     dividendYieldPct: number | null;
   };
 }
-
-const DISCOVER_CACHE_TTL = 43_200; // 12h
 
 const POOLS: Record<InvestmentDirectiveId, string[]> = {
   aggressive_growth: [
@@ -255,7 +259,7 @@ export async function discoverPicksForGoal(
   if (cached?.length) return cached;
 
   const pool = [...new Set(POOLS[directive] ?? POOLS.growth)];
-  const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
+  const ttl = Number(env.CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL_SECONDS);
 
   const fundamentals = await Promise.all(
     pool.map(async (sym) => {
@@ -283,7 +287,7 @@ export async function discoverPicksForGoal(
 
   const picks = ranked.slice(0, limit);
   if (picks.length) {
-    await cacheSet(env.CACHE, cacheKey, picks, DISCOVER_CACHE_TTL).catch(() => {});
+    await cacheSet(env.CACHE, cacheKey, picks, DISCOVER_CACHE_TTL_SECONDS).catch(() => {});
   }
   return picks;
 }

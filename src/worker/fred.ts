@@ -41,7 +41,7 @@ const MACRO_SERIES: Array<{ id: string; label: string }> = [
 ];
 
 const MACRO_TTL = 43_200; // 12h
-const ARCHIVE_TTL = 604_800; // 7d
+const ARCHIVE_TTL = 86_400; // 24h
 
 function num(v: unknown): number | null {
   if (v == null || v === ".") return null;

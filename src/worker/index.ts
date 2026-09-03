@@ -1,11 +1,14 @@
 import { randomError } from "./errors";
 import {
-  appendReportArchive,
   cacheGet,
   cacheSet,
   fundCacheKey,
   parseReportCacheKey,
   reportCacheKey,
+  DEFAULT_CACHE_TTL_SECONDS,
+  SEARCH_HIT_TTL_SECONDS,
+  SEARCH_EMPTY_TTL_SECONDS,
+  RATE_LIMIT_TTL_SECONDS,
   SHARE_TTL_SECONDS,
   LAUNCH_TTL_SECONDS,
   launchCacheKey,
@@ -15,7 +18,6 @@ import {
 } from "./cache";
 import {
   enrichPayloadsForResearch,
-  extractArchiveEntry,
   type ResearchPayload,
 } from "./enrich";
 import {
@@ -129,7 +131,7 @@ async function handleSearch(request: Request, env: Env): Promise<Response> {
   try {
     const results = await searchSymbols(env.FINNHUB_API_KEY, q);
     // Misses are cheap to re-check later; hits are stable.
-    const ttl = results.length ? 86_400 : 3_600;
+    const ttl = results.length ? SEARCH_HIT_TTL_SECONDS : SEARCH_EMPTY_TTL_SECONDS;
     await cacheSet(env.CACHE, key, results, ttl).catch(() => {});
     return json({ results });
   } catch (e) {
@@ -165,10 +167,10 @@ async function handlePrefetch(
   const used = Number((await env.CACHE.get(guard)) || 0);
   if (used >= 120) return json({ ok: false, code: "prefetch_limit" });
   ctx.waitUntil(
-    env.CACHE.put(guard, String(used + 1), { expirationTtl: 86_400 })
+    env.CACHE.put(guard, String(used + 1), { expirationTtl: RATE_LIMIT_TTL_SECONDS })
   );
 
-  const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
+  const ttl = Number(env.CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL_SECONDS);
   ctx.waitUntil(
     getFundamentalsCached(env.CACHE, env.FINNHUB_API_KEY, symbol, ttl).then(
       () => undefined,
@@ -726,7 +728,7 @@ async function handleSimplify(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
+  const ttl = Number(env.CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL_SECONDS);
   const laymanKey = `layman:${reportId}`;
 
   const stream = new ReadableStream({
@@ -921,7 +923,7 @@ async function handleResearch(
     );
   }
 
-  const ttl = Number(env.CACHE_TTL_SECONDS || 86400);
+  const ttl = Number(env.CACHE_TTL_SECONDS || DEFAULT_CACHE_TTL_SECONDS);
   const cacheKey = reportCacheKey(mode, symbols, directive, profitHorizonYears);
   const cached = await cacheGet<CachedReport>(env.CACHE, cacheKey);
 
@@ -1096,21 +1098,6 @@ async function handleResearch(
             profitHorizonYears
           );
           await cacheSet(env.CACHE, doneKey, report, ttl);
-
-          const parsed = parseReport(markdown);
-          const archiveEntry = extractArchiveEntry(
-            markdown,
-            parsed.badges,
-            parsed.scorecard,
-            report.asOf
-          );
-          await Promise.all(
-            symbolList.map((sym) =>
-              appendReportArchive(env.CACHE, directive, sym, archiveEntry).catch(
-                console.error
-              )
-            )
-          );
 
           ctx.waitUntil(incrementRateLimit(env, ip).catch(console.error));
           send("companies", { companies, mode: effectiveMode });

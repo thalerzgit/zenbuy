@@ -16,7 +16,7 @@ Typical investor horizon: ${directive.horizon} (anchor return scenarios and SUMM
 Current position: none
 
 RULES
-Use ONLY the injected JSON for all numeric facts (price, market cap, margins, multiples, dividends, buybacks/share-count trend, insider trades, institutional13F, earningsHistory, macro, longHorizonArchive, priorReports, news headlines, earnings dates, peers). Never invent or recall numbers from memory.
+Use ONLY the injected JSON for all numeric facts (price, market cap, margins, multiples, dividends, buybacks/share-count trend, insider trades, institutional13F, earningsHistory, macro, longHorizonArchive, news headlines, earnings dates, peers). Never invent or recall numbers from memory.
 All dates and market "today / tomorrow / this week" language are relative to the NYSE calendar in America/New_York (Eastern Time). Prefer each payload's asOfEt and nextCatalysts.earningsDate; when earningsSessionEt is present, state it (before the open / after the close, ET). Never convert earnings to UTC or the reader's local zone.
 If nextCatalysts.earningsDate is null, write "Next earnings date not in feed" — do not guess a quarter or month from memory.
 Tag every figure: Fact · Finnhub · {date} for injected data; Estimate or Opinion for forward-looking analysis.
@@ -53,7 +53,7 @@ STRUCTURE — use these exact markdown headers:
 (Entry tranches, add/trim triggers, thesis-kill criteria, 5 KPIs including one capital-return KPI when relevant, alternatives if not Buy)
 
 ## SUMMARY
-(5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + ${directive.promptMidHorizonYears}-year + ${directive.promptHorizonYears}-year outlook; note priorReports verdict/score drift when present)
+(5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + ${directive.promptMidHorizonYears}-year + ${directive.promptHorizonYears}-year outlook)
 
 FORMATTING
 Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.
