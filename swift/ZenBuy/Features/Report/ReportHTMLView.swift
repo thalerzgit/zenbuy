@@ -7,17 +7,69 @@ struct ReportHTMLView: View {
     var showWritingIndicator: Bool = false
 
     var body: some View {
+        renderedContent
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var renderedContent: some View {
+        let model = Self.buildModel(html: html, hasScorecard: hasScorecard)
+        switch model {
+        case let .sections(sections, isIncomplete):
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    sectionCard(section)
+                }
+                if showWritingIndicator && isIncomplete {
+                    WritingIndicator()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case let .fallback(text, isIncomplete):
+            VStack(alignment: .leading, spacing: 10) {
+                Text(text)
+                    .font(.body)
+                    .foregroundStyle(ZenBuyTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if showWritingIndicator || isIncomplete {
+                    WritingIndicator()
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ZenBuyTheme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(ZenBuyTheme.border, lineWidth: 1)
+            )
+        }
+    }
+
+    private enum RenderModel {
+        case sections([ReportSection], isIncomplete: Bool)
+        case fallback(String, isIncomplete: Bool)
+    }
+
+    private static func buildModel(html: String, hasScorecard: Bool) -> RenderModel {
+        // Isolate parse work so empty/mid-stream fragments cannot blank report chrome.
         let parsed = ReportHTML.parseProgressive(html, hasScorecard: hasScorecard)
         let sections = ReportHTML.sections(from: parsed.nodes, hasScorecard: hasScorecard)
-        VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                sectionCard(section)
+        ReportVerboseLog.log(
+            "parse html=\(ReportVerboseLog.htmlPreview(html)) sections=\(sections.count) incomplete=\(parsed.isIncomplete)"
+        )
+        if sections.isEmpty {
+            let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return .fallback("Receiving report…", isIncomplete: true)
             }
-            if showWritingIndicator && parsed.isIncomplete {
-                WritingIndicator()
-            }
+            return .fallback(
+                ReportHTML.fallbackPlainText(html),
+                isIncomplete: true
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        return .sections(sections, isIncomplete: parsed.isIncomplete)
     }
 
     @ViewBuilder

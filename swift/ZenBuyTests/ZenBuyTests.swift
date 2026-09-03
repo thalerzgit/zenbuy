@@ -328,4 +328,38 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertFalse(FlowLayoutSizing.reportedWidth(proposalWidth: nil, usedWidth: 42).isInfinite)
         XCTAssertEqual(FlowLayoutSizing.reportedHeight(usedHeight: 24), 24)
     }
+
+    func testReportVerboseLogDeadlineIsSep3_2026_0700UTC() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let expected = calendar.date(
+            from: DateComponents(year: 2026, month: 9, day: 3, hour: 7, minute: 0, second: 0)
+        )!
+        XCTAssertEqual(ReportVerboseLog.deadlineUTC, expected)
+        // Before deadline → enabled; at/after → off (zero permanent noisy prod logs).
+        XCTAssertEqual(ReportVerboseLog.enabled, Date() < expected)
+    }
+
+    func testReportHTMLHasVisibleContentRequiresSections() {
+        XCTAssertFalse(
+            ReportHTML.hasVisibleContent(bottomLineHTML: "", bodyHTML: "", scorecardHTML: "")
+        )
+        // Header-only sticky mid-stream must NOT count as visible (would blank the chrome).
+        XCTAssertFalse(
+            ReportHTML.hasVisibleContent(
+                bottomLineHTML: "<h2>BOTTOM LINE</h2>",
+                bodyHTML: "",
+                scorecardHTML: ""
+            )
+        )
+        XCTAssertTrue(
+            ReportHTML.hasVisibleContent(
+                bottomLineHTML: "<h2>BOTTOM LINE</h2><p>Buy AAPL.</p>",
+                bodyHTML: "",
+                scorecardHTML: ""
+            )
+        )
+        XCTAssertEqual(ReportHTML.fallbackPlainText("<h2>X</h2>"), "X")
+        XCTAssertEqual(ReportHTML.fallbackPlainText("   "), "Receiving report…")
+    }
 }
