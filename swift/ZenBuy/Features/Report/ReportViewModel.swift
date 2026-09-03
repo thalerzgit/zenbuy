@@ -11,6 +11,9 @@ struct ReportRequest: Equatable, Sendable {
 }
 
 enum ReportStreamPolicy {
+    static let emptyFinishedReportMessage =
+        "The report finished, but the content didn't arrive or failed to render. Try Generate again."
+
     static func shouldStartNewStream(
         incoming: ReportRequest,
         active: ReportRequest?,
@@ -39,6 +42,36 @@ enum ReportStreamPolicy {
         default:
             return false
         }
+    }
+
+    /// Mid-stream: keep the panel until visible content or error (no empty chrome).
+    /// After the stream finishes, never pin the panel open solely because HTML
+    /// didn't parse — `processing.isVisible` hides after onDone (~700ms).
+    static func shouldShowProcessingPanel(
+        hasError: Bool,
+        hasVisibleReportContent: Bool,
+        isStreaming: Bool,
+        didFinishSuccessfully: Bool,
+        processingIsVisible: Bool
+    ) -> Bool {
+        if hasError { return false }
+        if didFinishSuccessfully || !isStreaming {
+            return processingIsVisible
+        }
+        if !hasVisibleReportContent { return true }
+        return processingIsVisible
+    }
+
+    static func emptyFinishedReportMessageIfNeeded(
+        bottomLineHTML: String,
+        bodyHTML: String,
+        scorecardHTML: String
+    ) -> String? {
+        let empty =
+            bottomLineHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && bodyHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && scorecardHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return empty ? emptyFinishedReportMessage : nil
     }
 }
 
@@ -225,19 +258,7 @@ final class ReportViewModel {
                     ReportVerboseLog.log("sse badges")
                 case let .done(badges):
                     self.badges = badges ?? self.badges
-                    flushBodyIfNeeded(force: true)
-                    let visible = ReportHTML.hasVisibleContent(
-                        bottomLineHTML: bottomLineHTML,
-                        bodyHTML: bodyHTML,
-                        scorecardHTML: scorecardHTML
-                    )
-                    ReportVerboseLog.log(
-                        "sse done visible=\(visible) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count)"
-                    )
-                    processing.onDone()
-                    isStreaming = false
-                    didFinishSuccessfully = true
-                    endResearchBackgroundTask()
+                    finishSuccessfully(reason: "sse done")
                 case let .error(message):
                     ReportVerboseLog.log("sse error msgLen=\(message.count)")
                     errorMessage = message
@@ -248,14 +269,12 @@ final class ReportViewModel {
                 }
             }
             guard generation == streamGeneration, !abandoned else { return }
-            flushBodyIfNeeded(force: true)
             if isStreaming {
-                ReportVerboseLog.log("stream ended without done event — treating as complete")
-                processing.onDone()
-                didFinishSuccessfully = true
+                finishSuccessfully(reason: "stream ended without done event")
+            } else {
+                isStreaming = false
+                endResearchBackgroundTask()
             }
-            isStreaming = false
-            endResearchBackgroundTask()
         } catch is CancellationError {
             guard generation == streamGeneration, !abandoned else { return }
             ReportVerboseLog.log("stream cancelled gen=\(generation) resumeAttempts=\(resumeAttempts)")
@@ -278,6 +297,29 @@ final class ReportViewModel {
             isStreaming = false
             endResearchBackgroundTask()
         }
+    }
+
+    private func finishSuccessfully(reason: String) {
+        flushBodyIfNeeded(force: true)
+        let visible = ReportHTML.hasVisibleContent(
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML,
+            scorecardHTML: scorecardHTML
+        )
+        ReportVerboseLog.log(
+            "\(reason) visible=\(visible) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count) scorecardLen=\(scorecardHTML.count)"
+        )
+        if let emptyMessage = ReportStreamPolicy.emptyFinishedReportMessageIfNeeded(
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML,
+            scorecardHTML: scorecardHTML
+        ) {
+            errorMessage = emptyMessage
+        }
+        processing.onDone()
+        isStreaming = false
+        didFinishSuccessfully = true
+        endResearchBackgroundTask()
     }
 
     private func flushBodyIfNeeded(force: Bool) {

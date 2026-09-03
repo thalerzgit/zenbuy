@@ -25,14 +25,16 @@ struct ReportHTMLView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        case let .fallback(text, isIncomplete):
+        case let .fallback(text, _):
             VStack(alignment: .leading, spacing: 10) {
                 Text(text)
                     .font(.body)
                     .foregroundStyle(ZenBuyTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if showWritingIndicator || isIncomplete {
+                // After the stream finishes, showWritingIndicator is false so
+                // fallback copy is not stuck under a permanent “Writing…”.
+                if showWritingIndicator {
                     WritingIndicator()
                 }
             }

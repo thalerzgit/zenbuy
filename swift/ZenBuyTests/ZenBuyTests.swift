@@ -344,8 +344,9 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertFalse(
             ReportHTML.hasVisibleContent(bottomLineHTML: "", bodyHTML: "", scorecardHTML: "")
         )
-        // Header-only sticky mid-stream must NOT count as visible (would blank the chrome).
-        XCTAssertFalse(
+        // Header-only sticky is visible via plainText so fallback can take over
+        // after done. Mid-stream empty chrome is handled by shouldShowProcessingPanel.
+        XCTAssertTrue(
             ReportHTML.hasVisibleContent(
                 bottomLineHTML: "<h2>BOTTOM LINE</h2>",
                 bodyHTML: "",
@@ -361,5 +362,145 @@ final class ZenBuyTests: XCTestCase {
         )
         XCTAssertEqual(ReportHTML.fallbackPlainText("<h2>X</h2>"), "X")
         XCTAssertEqual(ReportHTML.fallbackPlainText("   "), "Receiving report…")
+    }
+
+    func testReportHTMLHasVisibleContentTreatsUnsectionedPlainTextAsVisible() {
+        XCTAssertTrue(
+            ReportHTML.hasVisibleContent(
+                bottomLineHTML: "<h2>BOTTOM LINE</h2>",
+                bodyHTML: "",
+                scorecardHTML: ""
+            )
+        )
+        XCTAssertTrue(
+            ReportHTML.hasVisibleContent(
+                bottomLineHTML: "Buy AAPL on the dip.",
+                bodyHTML: "",
+                scorecardHTML: ""
+            )
+        )
+        XCTAssertTrue(
+            ReportHTML.hasVisibleContent(
+                bottomLineHTML: "",
+                bodyHTML: "<div>Unsectioned body copy.</div>",
+                scorecardHTML: ""
+            )
+        )
+        XCTAssertFalse(
+            ReportHTML.hasVisibleContent(
+                bottomLineHTML: "<div>   </div>",
+                bodyHTML: "",
+                scorecardHTML: ""
+            )
+        )
+    }
+
+    func testShouldShowProcessingPanelHidesAfterDoneWhenEmpty() {
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldShowProcessingPanel(
+                hasError: false,
+                hasVisibleReportContent: false,
+                isStreaming: true,
+                didFinishSuccessfully: false,
+                processingIsVisible: true
+            ),
+            "Mid-stream empty chrome must keep the panel"
+        )
+        XCTAssertFalse(
+            ReportStreamPolicy.shouldShowProcessingPanel(
+                hasError: false,
+                hasVisibleReportContent: false,
+                isStreaming: false,
+                didFinishSuccessfully: true,
+                processingIsVisible: false
+            ),
+            "After done + hide, empty content must not pin Report ready"
+        )
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldShowProcessingPanel(
+                hasError: false,
+                hasVisibleReportContent: false,
+                isStreaming: false,
+                didFinishSuccessfully: true,
+                processingIsVisible: true
+            ),
+            "onDone may keep the panel visible for the ~700ms hide delay"
+        )
+        XCTAssertFalse(
+            ReportStreamPolicy.shouldShowProcessingPanel(
+                hasError: true,
+                hasVisibleReportContent: false,
+                isStreaming: false,
+                didFinishSuccessfully: true,
+                processingIsVisible: true
+            )
+        )
+        XCTAssertEqual(
+            ReportStreamPolicy.emptyFinishedReportMessageIfNeeded(
+                bottomLineHTML: "",
+                bodyHTML: "",
+                scorecardHTML: ""
+            ),
+            ReportStreamPolicy.emptyFinishedReportMessage
+        )
+        XCTAssertNil(
+            ReportStreamPolicy.emptyFinishedReportMessageIfNeeded(
+                bottomLineHTML: "<p>Buy</p>",
+                bodyHTML: "",
+                scorecardHTML: ""
+            )
+        )
+    }
+
+    func testReportStreamEventMetaToleratesMissingShowAsOf() {
+        let event = SSEEvent(name: "meta", data: #"{"cached":true,"asOf":"2026-01-01"}"#)
+        let parsed = ReportStreamEvent(sseEvent: event)
+        guard case let .meta(cached, asOf, showAsOf) = parsed else {
+            return XCTFail("Expected meta without showAsOf")
+        }
+        XCTAssertTrue(cached)
+        XCTAssertEqual(asOf, "2026-01-01")
+        XCTAssertFalse(showAsOf)
+    }
+
+    func testReportStreamEventStickyToleratesMissingHtmlAndOddBadges() {
+        let missingHtml = SSEEvent(
+            name: "sticky",
+            data: #"{"badges":{"recommendation":"Buy"},"scorecardHtml":null}"#
+        )
+        let parsedMissing = ReportStreamEvent(sseEvent: missingHtml)
+        guard case let .sticky(html, badges, scorecard) = parsedMissing else {
+            return XCTFail("Expected sticky with missing bottomLineHtml")
+        }
+        XCTAssertEqual(html, "")
+        XCTAssertEqual(badges?.recommendation, "Buy")
+        XCTAssertNil(scorecard)
+
+        let oddBadges = SSEEvent(
+            name: "sticky",
+            data: #"{"bottomLineHtml":"<p>Buy AAPL.</p>","badges":["Buy"],"scorecardHtml":""}"#
+        )
+        let parsedOdd = ReportStreamEvent(sseEvent: oddBadges)
+        guard case let .sticky(oddHtml, oddBadge, _) = parsedOdd else {
+            return XCTFail("Expected sticky to survive odd badges")
+        }
+        XCTAssertEqual(oddHtml, "<p>Buy AAPL.</p>")
+        XCTAssertNil(oddBadge)
+
+        let nullHtml = SSEEvent(name: "sticky", data: #"{"bottomLineHtml":null}"#)
+        let parsedNull = ReportStreamEvent(sseEvent: nullHtml)
+        guard case let .sticky(nullBottom, _, _) = parsedNull else {
+            return XCTFail("Expected sticky with null bottomLineHtml")
+        }
+        XCTAssertEqual(nullBottom, "")
+    }
+
+    func testReportStreamEventBodyToleratesMissingHtml() {
+        let event = SSEEvent(name: "body", data: #"{"streaming":true}"#)
+        let parsed = ReportStreamEvent(sseEvent: event)
+        guard case let .body(html) = parsed else {
+            return XCTFail("Expected body with missing html")
+        }
+        XCTAssertEqual(html, "")
     }
 }

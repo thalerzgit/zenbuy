@@ -215,6 +215,9 @@ enum ReportHTML {
         ).isEmpty {
             return true
         }
+        // Unsectioned / unparsed HTML still counts if the user would see text.
+        if !plainText(bottomLineHTML).isEmpty { return true }
+        if !plainText(bodyHTML).isEmpty { return true }
         return false
     }
 

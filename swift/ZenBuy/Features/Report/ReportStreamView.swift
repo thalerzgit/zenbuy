@@ -21,11 +21,16 @@ struct ReportStreamView: View {
         )
     }
 
-    /// Never leave the user on empty chrome: keep the panel until content or error.
+    /// Mid-stream: keep the panel until content or error. After finish, follow
+    /// `processing.isVisible` so "Report ready" cannot pin forever on empty HTML.
     private var shouldShowProcessingPanel: Bool {
-        if viewModel.errorMessage != nil { return false }
-        if !hasVisibleReportContent { return true }
-        return viewModel.processing.isVisible
+        ReportStreamPolicy.shouldShowProcessingPanel(
+            hasError: viewModel.errorMessage != nil,
+            hasVisibleReportContent: hasVisibleReportContent,
+            isStreaming: viewModel.isStreaming,
+            didFinishSuccessfully: viewModel.didFinishSuccessfully,
+            processingIsVisible: viewModel.processing.isVisible
+        )
     }
 
     var body: some View {
