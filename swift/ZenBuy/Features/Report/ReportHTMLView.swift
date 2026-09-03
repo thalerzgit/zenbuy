@@ -3,19 +3,52 @@ import SwiftUI
 /// Native rendering of Worker HTML fragments — no WKWebView.
 struct ReportHTMLView: View {
     let html: String
+    var hasScorecard: Bool = false
+    var showWritingIndicator: Bool = false
 
     var body: some View {
-        let nodes = ReportHTML.parse(html)
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(nodes.enumerated()), id: \.offset) { _, node in
-                nodeView(node)
+        let parsed = ReportHTML.parseProgressive(html, hasScorecard: hasScorecard)
+        let sections = ReportHTML.sections(from: parsed.nodes, hasScorecard: hasScorecard)
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                sectionCard(section)
+            }
+            if showWritingIndicator && parsed.isIncomplete {
+                WritingIndicator()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private func nodeView(_ node: ReportHTMLNode) -> some View {
+    private func sectionCard(_ section: ReportSection) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let title = section.title {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(ZenBuyTheme.sageDark)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textCase(.uppercase)
+            }
+            ForEach(Array(section.nodes.enumerated()), id: \.offset) { _, node in
+                nodeView(node)
+            }
+            if !section.sources.isEmpty {
+                SourceChipRow(sources: section.sources)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ZenBuyTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(ZenBuyTheme.border, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    func nodeView(_ node: ReportHTMLNode) -> some View {
         switch node {
         case let .heading(level, text):
             Text(text)
@@ -29,12 +62,14 @@ struct ReportHTMLView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .tint(ZenBuyTheme.sageDark)
         case let .list(items):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 8) {
                         Text("•")
                             .foregroundStyle(ZenBuyTheme.sage)
                         styledText(item)
+                            .font(.body)
+                            .foregroundStyle(ZenBuyTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .tint(ZenBuyTheme.sageDark)
                     }
@@ -48,6 +83,7 @@ struct ReportHTMLView: View {
                             ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
                                 Text(header)
                                     .font(.caption.weight(.semibold))
+                                    .foregroundStyle(ZenBuyTheme.ink)
                                     .padding(8)
                                     .frame(minWidth: 72, alignment: .leading)
                                     .background(ZenBuyTheme.sageLight)
@@ -59,6 +95,7 @@ struct ReportHTMLView: View {
                             ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
                                 Text(cell)
                                     .font(.caption)
+                                    .foregroundStyle(ZenBuyTheme.ink)
                                     .padding(8)
                                     .frame(minWidth: 72, alignment: .leading)
                             }
@@ -71,36 +108,7 @@ struct ReportHTMLView: View {
                 )
             }
         case let .scorecard(rows):
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    HStack(spacing: 10) {
-                        Text(row.label)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(ZenBuyTheme.muted)
-                            .frame(width: 72, alignment: .leading)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(ZenBuyTheme.surface)
-                                Capsule()
-                                    .fill(ZenBuyTheme.sage)
-                                    .frame(width: max(4, geo.size.width * row.fraction))
-                            }
-                        }
-                        .frame(height: 8)
-                        Text(row.value)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(ZenBuyTheme.ink)
-                            .frame(width: 40, alignment: .trailing)
-                    }
-                }
-            }
-            .padding(12)
-            .background(ZenBuyTheme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(ZenBuyTheme.border, lineWidth: 1)
-            )
+            ScorecardView(rows: rows)
         case .spacer:
             Spacer().frame(height: 4)
         }
@@ -137,5 +145,98 @@ struct ReportHTMLView: View {
             return Text(parsed)
         }
         return Text(label).underline().foregroundStyle(ZenBuyTheme.sageDark)
+    }
+}
+
+struct ScorecardView: View {
+    let rows: [ReportHTMLNode.ScoreRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 10) {
+                    Text(row.label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(ZenBuyTheme.muted)
+                        .frame(width: 72, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(ZenBuyTheme.surface)
+                            Capsule()
+                                .fill(ZenBuyTheme.sage)
+                                .frame(width: max(4, geo.size.width * row.fraction))
+                        }
+                    }
+                    .frame(height: 8)
+                    Text(row.value)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(ZenBuyTheme.ink)
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+        }
+        .padding(12)
+        .background(ZenBuyTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(ZenBuyTheme.border, lineWidth: 1)
+        )
+    }
+}
+
+struct SourceChipRow: View {
+    let sources: [ReportSource]
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(sources) { source in
+                if let url = URL(string: source.url) {
+                    Link(destination: url) {
+                        Text(source.label)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(ZenBuyTheme.sageLight)
+                            .foregroundStyle(ZenBuyTheme.sageDark)
+                            .clipShape(Capsule())
+                    }
+                } else {
+                    Text(source.label)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(ZenBuyTheme.sageLight)
+                        .foregroundStyle(ZenBuyTheme.sageDark)
+                        .clipShape(Capsule())
+                }
+            }
+        }
+    }
+}
+
+private struct WritingIndicator: View {
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(ZenBuyTheme.sage)
+                .frame(width: 6, height: 6)
+                .opacity(pulse ? 1 : 0.35)
+            Text("Writing…")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(ZenBuyTheme.muted)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ZenBuyTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 }

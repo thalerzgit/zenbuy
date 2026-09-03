@@ -45,6 +45,98 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(items.count, 2)
     }
 
+    func testReportHTMLUnescapeNamedAndNumericEntities() {
+        XCTAssertEqual(ReportHTML.unescape("A &amp; B &#183; C &middot; D"), "A & B · C · D")
+        XCTAssertEqual(ReportHTML.unescape("arrow &#x2192; here"), "arrow → here")
+        XCTAssertEqual(ReportHTML.unescape("times &#215;"), "times ×")
+    }
+
+    func testReportHTMLRepairsUTF8Mojibake() {
+        // UTF-8 middot (C2 B7) mis-decoded byte-as-scalar → Â·
+        let middotMojibake = String(bytes: [0xC2, 0xB7], encoding: .isoLatin1)!
+        XCTAssertEqual(ReportHTML.repairMojibake("Growth 9/10\(middotMojibake) Moat"), "Growth 9/10· Moat")
+        // UTF-8 arrow (E2 86 92)
+        let arrowMojibake = String(bytes: [0xE2, 0x86, 0x92], encoding: .isoLatin1)!
+        XCTAssertEqual(ReportHTML.repairMojibake("bear \(arrowMojibake) $140"), "bear → $140")
+        // UTF-8 multiply (C3 97)
+        let timesMojibake = String(bytes: [0xC3, 0x97], encoding: .isoLatin1)!
+        XCTAssertEqual(ReportHTML.repairMojibake("38\(timesMojibake) sales"), "38× sales")
+    }
+
+    func testReportHTMLProgressiveHoldsIncompleteList() {
+        let html = """
+        <h2>BOTTOM LINE</h2>
+        <ul><li>Complete bullet</li><li>Still writing
+        """
+        let parsed = ReportHTML.parseProgressive(html)
+        XCTAssertTrue(parsed.isIncomplete)
+        XCTAssertEqual(parsed.nodes.count, 2)
+        guard case let .list(items) = parsed.nodes[1] else {
+            return XCTFail("Expected list of complete items only, got \(parsed.nodes)")
+        }
+        XCTAssertEqual(items.count, 1)
+        XCTAssertTrue(parsed.incompleteTail.contains("<li>Still writing"))
+    }
+
+    func testReportHTMLProgressiveHoldsIncompleteParagraph() {
+        let html = #"<h2>MOAT</h2><p>Wide moat via <a href="https://finance.yahoo.com">Yahoo"#
+        let parsed = ReportHTML.parseProgressive(html)
+        XCTAssertTrue(parsed.isIncomplete)
+        XCTAssertEqual(parsed.nodes.count, 1)
+        guard case let .heading(_, text) = parsed.nodes[0] else {
+            return XCTFail("Expected heading only")
+        }
+        XCTAssertEqual(text, "MOAT")
+        XCTAssertTrue(parsed.incompleteTail.hasPrefix("<p>"))
+    }
+
+    func testReportHTMLDropsScoreDumpWhenScorecardPresent() {
+        let html = """
+        <h2>SUMMARY</h2>
+        <p>Growth: 9/10 · Moat: 8/10 · Management: 7/10 · Valuation: 2/10 · Balance sheet: 7/10 · Catalysts: 6/10 · Overall: 6/10</p>
+        <ul><li>12-mo: +3.3% expected</li></ul>
+        """
+        let parsed = ReportHTML.parseProgressive(html, hasScorecard: true)
+        let sections = ReportHTML.sections(from: parsed.nodes, hasScorecard: true)
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].title, "SUMMARY")
+        XCTAssertFalse(sections[0].nodes.contains { node in
+            if case let .paragraph(inlines) = node {
+                return inlines.contains { inline in
+                    if case let .text(s) = inline { return s.lowercased().contains("growth:") }
+                    return false
+                }
+            }
+            return false
+        })
+        guard case let .list(items) = sections[0].nodes.first else {
+            return XCTFail("Expected outlook list to remain")
+        }
+        XCTAssertEqual(items.count, 1)
+    }
+
+    func testReportHTMLSkipsEmptySectionHeaders() {
+        let html = "<h2>CATALYSTS AND RISKS</h2>"
+        let sections = ReportHTML.sections(from: ReportHTML.parse(html))
+        XCTAssertTrue(sections.isEmpty)
+    }
+
+    func testReportHTMLLiftsCitationChips() {
+        let html = """
+        <h2>SECTOR AND MACRO</h2>
+        <p>Tech mixed. Fact · <a class="src-link" href="https://finance.yahoo.com/quote/AAPL">Yahoo</a> · today.</p>
+        """
+        let nodes = ReportHTML.parse(html)
+        let sections = ReportHTML.sections(from: nodes)
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].sources.map(\.label), ["Yahoo"])
+        guard case let .paragraph(inlines) = sections[0].nodes.first else {
+            return XCTFail("Expected paragraph")
+        }
+        XCTAssertTrue(inlines.contains(.text("Yahoo")))
+        XCTAssertFalse(inlines.contains { if case .link = $0 { return true }; return false })
+    }
+
     func testReportHTMLParsesScorecard() {
         let html = """
         <div class="scorecard">

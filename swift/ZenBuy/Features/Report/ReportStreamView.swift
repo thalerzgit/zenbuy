@@ -6,10 +6,29 @@ struct ReportStreamView: View {
     let directive: String
     @Bindable var viewModel: ReportViewModel
 
+    private var title: String { symbols.joined(separator: ", ") }
+    private var hasScorecard: Bool { !viewModel.scorecardHTML.isEmpty }
+    private var canShare: Bool {
+        !viewModel.bottomLineHTML.isEmpty || !viewModel.bodyHTML.isEmpty || hasScorecard
+    }
+
     var body: some View {
         reportContent(viewModel)
-            .navigationTitle(symbols.joined(separator: ", "))
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if canShare, let url = viewModel.sharePDFURL(title: title) {
+                        ShareLink(item: url) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(ZenBuyTheme.muted.opacity(0.45))
+                            .accessibilityLabel("Share unavailable")
+                    }
+                }
+            }
             .onAppear {
                 viewModel.ensureStarted(
                     symbols: symbols,
@@ -32,16 +51,29 @@ struct ReportStreamView: View {
                     BadgeRow(badges: badges)
                 }
 
-                if !viewModel.scorecardHTML.isEmpty {
-                    ReportHTMLView(html: viewModel.scorecardHTML)
+                if hasScorecard {
+                    let scoreNodes = ReportHTML.parse(viewModel.scorecardHTML)
+                    ForEach(Array(scoreNodes.enumerated()), id: \.offset) { _, node in
+                        if case let .scorecard(rows) = node {
+                            ScorecardView(rows: rows)
+                        }
+                    }
                 }
 
                 if !viewModel.bottomLineHTML.isEmpty {
-                    ReportHTMLView(html: viewModel.bottomLineHTML)
+                    ReportHTMLView(
+                        html: viewModel.bottomLineHTML,
+                        hasScorecard: hasScorecard,
+                        showWritingIndicator: viewModel.isStreaming && viewModel.bodyHTML.isEmpty
+                    )
                 }
 
                 if !viewModel.bodyHTML.isEmpty {
-                    ReportHTMLView(html: viewModel.bodyHTML)
+                    ReportHTMLView(
+                        html: viewModel.bodyHTML,
+                        hasScorecard: hasScorecard,
+                        showWritingIndicator: viewModel.isStreaming
+                    )
                 }
 
                 if let errorMessage = viewModel.errorMessage {
