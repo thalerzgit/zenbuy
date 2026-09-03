@@ -34,7 +34,7 @@ export interface Institutional13FContext {
   _citation: string;
 }
 
-const TTL_SECONDS = 86_400 * 7;
+const TTL_SECONDS = 86_400;
 
 async function finnhubInstitutional(
   apiKey: string,

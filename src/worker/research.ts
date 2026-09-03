@@ -1,3 +1,4 @@
+import { RATE_LIMIT_TTL_SECONDS } from "./cache";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
 import { assessReportCompleteness } from "./parse";
 import {
@@ -694,5 +695,5 @@ export async function incrementRateLimit(env: Env, ip: string): Promise<void> {
   if (isRateLimitExempt(env, ip)) return;
   const key = `rl:${ip}:${new Date().toISOString().slice(0, 10)}`;
   const current = Number((await env.CACHE.get(key)) || 0);
-  await env.CACHE.put(key, String(current + 1), { expirationTtl: 86_400 });
+  await env.CACHE.put(key, String(current + 1), { expirationTtl: RATE_LIMIT_TTL_SECONDS });
 }

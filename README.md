@@ -118,7 +118,7 @@ The Finnhub free tier allows roughly 60 requests/minute, and a single
 multi-ticker report costs ~11 calls per symbol. Several things keep that
 within budget:
 
-- **Search results are KV-cached** (24h for hits, 1h for misses) and the
+- **Search results are KV-cached** (1h for hits, 15m for misses) and the
   client debounces, memoizes, and aborts superseded lookups. Typeahead used
   to spend one call per keystroke, which alone could exhaust the quota.
 - **`FINNHUB_API_KEY` accepts a comma-separated pool.** Each key carries its
@@ -177,6 +177,6 @@ ANTHROPIC_API_KEY=... node tools/smoke-test.mjs --llm comparative AAPL CSCO PANW
 - Multi-ticker modal: separate vs comparative (required)
 - Hidden aggressive-growth thesis in server prompt
 - Soft cap report length, section streaming, sage green UI
-- KV 24h cache + AI Gateway cache on the analysis providers
+- KV 1h shared report cache + AI Gateway cache on the analysis providers
 - Print-to-PDF with logo watermark
 - 5 reports / IP / day (configurable via `RATE_LIMIT_DAILY`; exempt IPs via `RATE_LIMIT_WHITELIST`)

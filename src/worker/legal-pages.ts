@@ -93,34 +93,40 @@ function privacyPolicyHtml(): string {
   return shell(
     "privacy",
     "Privacy Policy — ZenBuy.info",
-    "How ZenBuy handles ticker queries, research reports, and the small amount of technical data we need to run the service.",
+    "ZenBuy does not keep personal research history. Operational caches and abuse counters expire automatically.",
     `
       <h1>Privacy Policy</h1>
       <p class="updated">Last updated September 3, 2026</p>
       <p>ZenBuy (the website at zenbuy.info and the ZenBuy iOS app) is a <strong>research tool</strong>. We help you read equity research before you decide anything. We are <strong>not a broker</strong>, bank, or registered investment advisor. We do not open accounts, hold money, or place trades.</p>
-      <p>There are <strong>no logins or user accounts</strong> today. This page explains the little we do collect to run the service.</p>
+      <p>There are <strong>no logins, user accounts, or personal profiles</strong>. We do <strong>not</strong> keep a personal research history. We do not run an ads or product-analytics suite. We do not sell personal information.</p>
 
-      <h2>What we collect</h2>
+      <h2>What we store (operational only)</h2>
+      <p>A research request is processed in the moment to produce a report. We do not attach that request to an identity or keep a per-person dossier. What remains on our side is short-lived operational data, stored in Cloudflare KV and deleted automatically when its TTL expires:</p>
       <ul>
-        <li><strong>Research requests</strong> — ticker symbols you look up, plus options such as report mode, investment style, and time horizon.</li>
-        <li><strong>Technical data</strong> — IP address (used for a daily report limit), approximate request time, and standard browser or app headers. The iOS app also sends a client marker so we can skip the website bot check.</li>
-        <li><strong>Optional share links</strong> — if you create a share or “show more like this” link, we store that snapshot for a limited time.</li>
-        <li><strong>On your device</strong> — the website may remember your last research preferences in local storage. That does not leave your browser.</li>
+        <li><strong>Shared result cache (~1 hour)</strong> — a finished report (and a plain-English rewrite, if you asked for one) may be reused for the same tickers and settings so we do not regenerate it immediately. That cache is global to the lookup, not tied to you. Anyone who can guess or reuse the cache id can read it until it expires. Search hits last up to 1 hour; empty search results up to 15 minutes. Discover picks last up to 1 hour.</li>
+        <li><strong>Daily abuse counters (purged within 24 hours)</strong> — your IP is counted for a daily research limit and a prefetch budget. Those counters expire within 24 hours. We do not use them to build a profile.</li>
+        <li><strong>Optional share snapshot (up to 24 hours)</strong> — if you create a share link, we store that HTML snapshot for at most 24 hours, then it disappears.</li>
+        <li><strong>Launch pass (about 3 minutes)</strong> — “show more like this” uses a one-time pass that expires in about 180 seconds.</li>
+        <li><strong>On your device only</strong> — the website may remember your last investment style and profit-window preference in the browser. We do not store tickers in local storage. Those preferences do not leave your device.</li>
       </ul>
-      <p>We do <strong>not</strong> run advertising SDKs or a product-analytics suite. We do not sell personal information.</p>
+      <p>Market-data caches (company fundamentals, 13F context, and macro series) are operational copies of public market feeds, not user records. They expire within 24 hours (macro snapshot within 12 hours).</p>
+
+      <h2>In transit and at rest</h2>
+      <p>Traffic uses TLS. At rest, the keys above live only in Cloudflare KV and auto-expire via TTL. We do not keep a year-long verdict archive or any other personal research history.</p>
 
       <h2>Who helps us run ZenBuy</h2>
       <ul>
-        <li><strong>Cloudflare</strong> — hosts the site and app API, and provides security (including Turnstile bot checks on the website only).</li>
-        <li><strong>Finnhub</strong> — market data used for ticker search and company fundamentals.</li>
-        <li><strong>AI providers</strong> — we may use AI providers such as Anthropic and xAI to write the research reports from the tickers and settings you submit.</li>
+        <li><strong>Cloudflare</strong> — hosts the site and API, stores the ephemeral KV keys above, and provides security. The website uses Cloudflare Turnstile (a bot check). The iOS app sends a client marker so it can skip that web check; rate limits still apply.</li>
+        <li><strong>Finnhub</strong> — market data for ticker search and company fundamentals.</li>
+        <li><strong>Anthropic (Claude)</strong> — writes research reports from the tickers and settings in that request.</li>
+        <li><strong>xAI (Grok)</strong> — used only if the primary model is unavailable, for the same one-off report job.</li>
       </ul>
       <p>We send these providers what they need to do that job — not a customer profile. Cloudflare may set a short-lived bot-management cookie on the website.</p>
 
       <h2>Your choices (California, GDPR, and similar)</h2>
-      <p>You can ask what we hold about you, or ask us to delete it, via the <a href="/support">Support page</a>. Because there are no accounts, we usually match a request to an IP address and time window.</p>
+      <p>Because there are no accounts and no personal research history, there is usually nothing durable to export or delete. Operational keys expire on the windows above. If you still need help, use the <a href="/support">Support page</a> — we do not publish a personal email or phone number.</p>
       <p>California: we do not sell personal information, and we do not “share” it for cross-context advertising.</p>
-      <p>EEA/UK: we process the data above to provide the research you asked for, and to keep the service secure and fairly rate-limited.</p>
+      <p>EEA/UK: we process the operational data above to provide the report you asked for and to keep the service secure and fairly rate-limited.</p>
 
       <h2>Children</h2>
       <p>ZenBuy is not directed at children under 13 (or under 16 in the EEA).</p>
@@ -129,7 +135,7 @@ function privacyPolicyHtml(): string {
       <p>If our practices change, we will update this page. The date at the top is the latest version.</p>
 
       <h2>Contact</h2>
-      <p>Contact us via the <a href="/support">Support page</a>.</p>
+      <p>Use the <a href="/support">Support page</a>. We do not list a personal email or phone number.</p>
     `
   );
 }
@@ -142,9 +148,8 @@ function supportHtml(): string {
     `
       <h1>Support</h1>
       <p class="updated">ZenBuy.info · research only</p>
-      <p>Questions about the website or the iOS app? We do not publish a personal email address or phone number.</p>
-      <p>If you have the iOS app (TestFlight or the App Store), send feedback through Apple’s TestFlight or App Store feedback for ZenBuy. Include the ticker(s) you were researching and whether you were on the web or iOS app. Do not send brokerage passwords or account numbers — we cannot access trading accounts, and we do not need them.</p>
-      <p>Privacy requests (what we hold, or a deletion request) use the same path: mark the note as a privacy request and include an approximate time so we can match it to an IP window.</p>
+      <p>Questions about the website or the iOS app? We do not publish a personal email address or phone number, and we do not collect contact details on this page.</p>
+      <p>If you have the iOS app (TestFlight or the App Store), send feedback through Apple’s TestFlight or App Store feedback for ZenBuy. Mention whether you were on the web or iOS app. Do not send brokerage passwords or account numbers — we cannot access trading accounts, and we do not need them.</p>
 
       <h2>What ZenBuy is (and is not)</h2>
       <ul>
@@ -154,7 +159,7 @@ function supportHtml(): string {
       </ul>
 
       <h2>Privacy</h2>
-      <p>We do not have logins today. See the <a href="/privacy">Privacy Policy</a> for what we collect and who helps us run the service (Cloudflare, Finnhub, and AI providers such as Anthropic and xAI).</p>
+      <p>We do not have logins or a personal research history. Operational caches and daily abuse counters expire on their own. See the <a href="/privacy">Privacy Policy</a> for the exact windows and who helps us run the service (Cloudflare, Finnhub, Anthropic, and xAI as a failover).</p>
     `
   );
 }

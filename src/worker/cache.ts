@@ -85,47 +85,12 @@ export function fundCacheKey(symbol: string): string {
   return `fund:${symbol.toUpperCase()}`;
 }
 
-export function reportArchiveKey(
-  directive: InvestmentDirectiveId,
-  symbol: string
-): string {
-  return `hist:${directive}:${symbol.toUpperCase()}`;
-}
-
-export interface ReportArchiveEntry {
-  asOf: string;
-  verdict: string | null;
-  overallScore: number | null;
-}
-
-const ARCHIVE_MAX_ENTRIES = 5;
-const ARCHIVE_TTL_SECONDS = 365 * 86_400;
-
-export async function getReportArchive(
-  kv: KVNamespace,
-  directive: InvestmentDirectiveId,
-  symbol: string
-): Promise<ReportArchiveEntry[]> {
-  return (await cacheGet<ReportArchiveEntry[]>(
-    kv,
-    reportArchiveKey(directive, symbol)
-  )) ?? [];
-}
-
-export async function appendReportArchive(
-  kv: KVNamespace,
-  directive: InvestmentDirectiveId,
-  symbol: string,
-  entry: ReportArchiveEntry
-): Promise<void> {
-  const key = reportArchiveKey(directive, symbol);
-  const prior = await getReportArchive(kv, directive, symbol);
-  const next = [entry, ...prior.filter((e) => e.asOf !== entry.asOf)].slice(
-    0,
-    ARCHIVE_MAX_ENTRIES
-  );
-  await cacheSet(kv, key, next, ARCHIVE_TTL_SECONDS);
-}
+/** Shared report + fundamentals KV TTL when `CACHE_TTL_SECONDS` is unset. */
+export const DEFAULT_CACHE_TTL_SECONDS = 3_600;
+export const SEARCH_HIT_TTL_SECONDS = 3_600;
+export const SEARCH_EMPTY_TTL_SECONDS = 900;
+export const DISCOVER_CACHE_TTL_SECONDS = 3_600;
+export const RATE_LIMIT_TTL_SECONDS = 86_400;
 
 export function rateLimitKey(ip: string): string {
   return `rl:${ip}:${new Date().toISOString().slice(0, 10)}`;
@@ -141,7 +106,7 @@ export interface CachedReport {
   stale: boolean;
 }
 
-/** Immutable snapshot for a single share link (7-day TTL). */
+/** Immutable snapshot for a single share link (24-hour TTL). */
 export interface SharedReportSnapshot {
   reportId: string;
   variant: "full" | "layman";
@@ -155,7 +120,7 @@ export interface SharedReportSnapshot {
   stale: boolean;
 }
 
-export const SHARE_TTL_SECONDS = 7 * 86_400;
+export const SHARE_TTL_SECONDS = 86_400;
 
 /** One-time research pass issued after Turnstile on "Show more like this". */
 export interface LaunchSession {

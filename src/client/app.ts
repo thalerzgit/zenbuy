@@ -253,7 +253,7 @@ export function mountApp(root: HTMLElement): void {
   /** Snapshot of the analyst report so the lay rewrite can be toggled off. */
   let fullView: { bodyHtml: string; bottomLineHtml: string } | null = null;
   let showingLayman = false;
-  /** Immutable share snapshot id (7-day TTL) created when the user shares. */
+  /** Immutable share snapshot id (24-hour TTL) created when the user shares. */
   let activeShareId = "";
   /** One-time pass for autostart tabs opened from Show more like this. */
   let pendingLaunchId = "";
@@ -1323,7 +1323,7 @@ export function mountApp(root: HTMLElement): void {
     title.textContent = "Link unavailable";
     titleWrap.append(title);
     reportBody.className = "report-body revealed shared-error-body";
-    reportBody.innerHTML = `<p>${message}</p><p class="shared-error-hint">Shared links stay live for 7 days. Generate a fresh report below.</p>`;
+    reportBody.innerHTML = `<p>${message}</p><p class="shared-error-hint">Shared links stay live for 24 hours. Generate a fresh report below.</p>`;
     hasReport = false;
     hidePostReportActions();
   }
