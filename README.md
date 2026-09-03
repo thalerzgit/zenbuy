@@ -2,7 +2,7 @@
 
 Calm equity research — **Know before you trade.**
 
-Alpha stack: Cloudflare Pages + Workers, Finnhub fundamentals, Claude Sonnet (via AI Gateway), KV cache.
+Alpha stack: Cloudflare Workers, Finnhub fundamentals, Claude Opus (Anthropic) with xAI Grok backup, KV cache.
 
 ## Quick start
 
@@ -17,6 +17,7 @@ npm run dev                 # http://localhost:5173
 ```bash
 wrangler secret put FINNHUB_API_KEY   # one key, or "key1,key2" to pool budgets
 wrangler secret put ANTHROPIC_API_KEY
+wrangler secret put XAI_API_KEY             # optional; enables grok-4.5 failover
 wrangler secret put AI_GATEWAY_ACCOUNT_ID   # optional
 wrangler secret put AI_GATEWAY_ID           # optional
 wrangler secret put AI_GATEWAY_TOKEN        # optional
@@ -66,7 +67,17 @@ Recommended token (dashboard → API Tokens → Create Custom Token), name e.g. 
 - **thalerz → zenbuy.info** — Workers Routes Edit, DNS Edit
 - **All users** — User Details Read
 
-Worker runtime secrets (`FINNHUB_API_KEY`, `ANTHROPIC_API_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`, …) stay in the Cloudflare Worker — set once with `wrangler secret put`. The client loads the public Turnstile site key from `GET /api/config`.
+Worker runtime secrets (`FINNHUB_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`, …) stay in the Cloudflare Worker — set once with `wrangler secret put`. The client loads the public Turnstile site key from `GET /api/config`.
+
+Optional Worker vars (also in `wrangler.jsonc`; `ZENBUY_MODEL` **must** stay `claude-opus-5` there so a deploy cannot reset production to Sonnet):
+
+| Var | Default | Role |
+|-----|---------|------|
+| `ZENBUY_MODEL` | `claude-opus-5` | Primary Anthropic model |
+| `ZENBUY_BACKUP_MODEL` | `grok-4.5` | Cross-provider backup when Anthropic is down |
+| `ZENBUY_BACKUP_PROVIDER` | `xai` | Backup provider id |
+
+`XAI_API_KEY` is optional at runtime. Without it, reports stay Anthropic-only and failover is skipped.
 
 Manual redeploy: Actions → **Deploy** → **Run workflow**.
 
@@ -89,7 +100,7 @@ npm run deploy
 | `/api/search?q=` | GET | Symbol autocomplete (Finnhub), KV-cached per query |
 | `/api/discover` | GET | Goal-fit ticker picks (`directive`, optional `horizon` / `limit`) |
 | `/api/config` | GET | Public client config (Turnstile site key) |
-| `/api/health` | GET | Config summary; `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
+| `/api/health` | GET | Primary `model`, `backupModel`, key presence booleans (`anthropic`, `xai`, …). `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
 | `/api/prefetch?symbol=` | GET | Warms a symbol's fundamentals into KV so they're not on the critical path |
 | `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken? }` — Turnstile required for web; native iOS sends `X-ZenBuy-Client: ios` and skips it |
 | `/privacy` | GET | Privacy policy HTML (Worker, not the SPA) |
@@ -123,7 +134,10 @@ within budget:
   unavailable rather than estimating them. Price only — it is a last resort,
   not a substitute.
 - **Model retirement self-heals:** a `404` on `ZENBUY_MODEL` resolves a live
-  model id from `/v1/models`, retries once, and caches the result for a day.
+  Anthropic model id from `/v1/models`, retries once, and caches the result
+  for a day. If Opus still fails, one `claude-sonnet-5` attempt runs, then
+  (when `XAI_API_KEY` is set) the request fails over to xAI `grok-4.5`.
+  Ordinary `400` prompt errors do not fail over.
 
 ## Latency
 
@@ -163,6 +177,6 @@ ANTHROPIC_API_KEY=... node tools/smoke-test.mjs --llm comparative AAPL CSCO PANW
 - Multi-ticker modal: separate vs comparative (required)
 - Hidden aggressive-growth thesis in server prompt
 - Soft cap report length, section streaming, sage green UI
-- KV 24h cache + AI Gateway cache on Claude
+- KV 24h cache + AI Gateway cache on the analysis providers
 - Print-to-PDF with logo watermark
 - 5 reports / IP / day (configurable via `RATE_LIMIT_DAILY`; exempt IPs via `RATE_LIMIT_WHITELIST`)

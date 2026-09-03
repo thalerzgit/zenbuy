@@ -113,7 +113,7 @@ function privacyPolicyHtml(): string {
       <ul>
         <li><strong>Cloudflare</strong> — hosts the site and app API, and provides security (including Turnstile bot checks on the website only).</li>
         <li><strong>Finnhub</strong> — market data used for ticker search and company fundamentals.</li>
-        <li><strong>Anthropic (Claude)</strong> — writes the research reports from the tickers and settings you submit.</li>
+        <li><strong>AI providers</strong> — we may use AI providers such as Anthropic and xAI to write the research reports from the tickers and settings you submit.</li>
       </ul>
       <p>We send these providers what they need to do that job — not a customer profile. Cloudflare may set a short-lived bot-management cookie on the website.</p>
 
@@ -154,7 +154,7 @@ function supportHtml(): string {
       </ul>
 
       <h2>Privacy</h2>
-      <p>We do not have logins today. See the <a href="/privacy">Privacy Policy</a> for what we collect and who helps us run the service (Cloudflare, Finnhub, Anthropic).</p>
+      <p>We do not have logins today. See the <a href="/privacy">Privacy Policy</a> for what we collect and who helps us run the service (Cloudflare, Finnhub, and AI providers such as Anthropic and xAI).</p>
     `
   );
 }

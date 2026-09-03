@@ -45,8 +45,11 @@ import {
 import { discoverPicksForGoal } from "./discover";
 import { findSimilarSymbols } from "./similar";
 import {
+  backupModel,
   checkRateLimit,
+  hasXaiKey,
   incrementRateLimit,
+  primaryModel,
   streamLayman,
   streamResearch,
   streamResearchParallel,
@@ -183,12 +186,14 @@ async function handlePrefetch(
  * solving a Turnstile challenge. Reports statuses only — never key material.
  */
 async function handleHealth(request: Request, env: Env): Promise<Response> {
-  const model = env.ZENBUY_MODEL || "claude-sonnet-5";
+  const model = primaryModel(env);
   const out: Record<string, unknown> = {
     model,
+    backupModel: backupModel(env),
     keys: {
       finnhub: parseKeyPool(env.FINNHUB_API_KEY ?? "").length,
       anthropic: Boolean(env.ANTHROPIC_API_KEY),
+      xai: hasXaiKey(env),
       turnstile: Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY),
     },
   };
@@ -262,6 +267,17 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
       }
     } catch {
       out.anthropic = "unreachable";
+    }
+  }
+
+  if (hasXaiKey(env)) {
+    try {
+      const r = await fetch("https://api.x.ai/v1/models", {
+        headers: { authorization: `Bearer ${env.XAI_API_KEY}` },
+      });
+      out.xai = r.status;
+    } catch {
+      out.xai = "unreachable";
     }
   }
 

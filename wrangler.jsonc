@@ -18,7 +18,9 @@
     }
   ],
   "vars": {
-    "ZENBUY_MODEL": "claude-sonnet-5",
+    "ZENBUY_MODEL": "claude-opus-5",
+    "ZENBUY_BACKUP_MODEL": "grok-4.5",
+    "ZENBUY_BACKUP_PROVIDER": "xai",
     "RATE_LIMIT_DAILY": "5",
     "RATE_LIMIT_WHITELIST": "99.0.81.158,73.15.8.74",
     "CACHE_TTL_SECONDS": "86400"
