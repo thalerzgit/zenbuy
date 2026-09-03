@@ -183,8 +183,10 @@ final class ZenBuyAPIClient {
                     let reader = SSEStreamReader(bytes: bytes)
                     for try await event in reader.events() {
                         let parsed = ReportStreamEvent(sseEvent: event)
+                        // Yield first. Finish only after `done` — never drop
+                        // already-yielded sticky/body because companies is long.
                         continuation.yield(parsed)
-                        if case .done = parsed {
+                        if ReportSSEClientPolicy.shouldFinish(afterYielding: parsed) {
                             continuation.finish()
                             return
                         }

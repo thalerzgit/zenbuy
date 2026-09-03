@@ -618,4 +618,115 @@ final class ZenBuyTests: XCTestCase {
             "Empty finish must not pin didFinishSuccessfully so Generate again restarts"
         )
     }
+
+    func testProbeStickyBodyDonePayloadsApplyHTML() throws {
+        let stickyData = try fixture("probe-sticky.json")
+        let bodyData = try fixture("probe-body.json")
+        let doneData = try fixture("probe-done.json")
+
+        let sticky = ReportStreamEvent(sseEvent: SSEEvent(name: "sticky", data: stickyData))
+        guard case let .sticky(bottom, badges, scorecard) = sticky else {
+            return XCTFail("Probe sticky must decode, got \(sticky)")
+        }
+        XCTAssertEqual(bottom.count, 891)
+        XCTAssertEqual(scorecard?.count, 1289)
+        XCTAssertEqual(badges?.recommendation, "HOLD")
+        XCTAssertEqual(badges?.conviction, "Medium")
+        XCTAssertEqual(badges?.sentiment, "Neutral")
+
+        let body = ReportStreamEvent(sseEvent: SSEEvent(name: "body", data: bodyData))
+        guard case let .body(html) = body else {
+            return XCTFail("Probe body must decode, got \(body)")
+        }
+        XCTAssertEqual(html.count, 9140)
+        XCTAssertTrue(html.contains("FUNDAMENTALS"))
+
+        let done = ReportStreamEvent(sseEvent: SSEEvent(name: "done", data: doneData))
+        guard case let .done(doneBadges, reportId) = done else {
+            return XCTFail("Probe done must decode, got \(done)")
+        }
+        XCTAssertEqual(reportId, "report:separate:growth:h12:AAPL")
+        XCTAssertEqual(doneBadges?.recommendation, "HOLD")
+    }
+
+    func testProbeWireOrderYieldsStickyBodyBeforeDone() throws {
+        let wire = try fixture("probe-research.sse")
+        var parser = SSEEventParser()
+        let sseEvents = parser.feed(Data(wire.utf8)) + parser.finish()
+        XCTAssertEqual(sseEvents.map(\.name), ["meta", "sticky", "body", "companies", "done"])
+
+        let folded = ReportSSEClientPolicy.fold(sseEvents)
+        XCTAssertTrue(folded.finishedAfterDone)
+        XCTAssertEqual(folded.parsed.count, 5)
+        guard case .sticky = folded.parsed[1] else {
+            return XCTFail("sticky must be yielded before done")
+        }
+        guard case .body = folded.parsed[2] else {
+            return XCTFail("body must be yielded before done")
+        }
+        guard case .companies = folded.parsed[3] else {
+            return XCTFail("companies must be yielded before done")
+        }
+        guard case .done = folded.parsed[4] else {
+            return XCTFail("done must be last finish signal")
+        }
+        XCTAssertTrue(ReportSSEClientPolicy.shouldFinish(afterYielding: folded.parsed[4]))
+        XCTAssertFalse(ReportSSEClientPolicy.shouldFinish(afterYielding: folded.parsed[1]))
+    }
+
+    func testStickyBodyJSONSerializationFallbackWhenBadgesOdd() {
+        let sticky = ReportStreamEvent(
+            sseEvent: SSEEvent(
+                name: "sticky",
+                data: #"{"bottomLineHtml":"<p>Hold AAPL</p>","badges":["HOLD"],"scorecardHtml":"<div class=\"scorecard\"></div>"}"#
+            )
+        )
+        guard case let .sticky(html, badges, scorecard) = sticky else {
+            return XCTFail("Odd badges must not drop sticky, got \(sticky)")
+        }
+        XCTAssertEqual(html, "<p>Hold AAPL</p>")
+        XCTAssertNil(badges)
+        XCTAssertEqual(scorecard, #"<div class="scorecard"></div>"#)
+
+        let body = ReportStreamEvent(
+            sseEvent: SSEEvent(name: "body", data: #"{"html":"<h2>FUNDAMENTALS</h2>","streaming":true,"extra":{"x":1}}"#)
+        )
+        guard case let .body(bodyHtml) = body else {
+            return XCTFail("Extra body keys must not drop html, got \(body)")
+        }
+        XCTAssertEqual(bodyHtml, "<h2>FUNDAMENTALS</h2>")
+    }
+
+    func testEmptyDoneIsNotSuccessAndDoesNotClearHTML() {
+        XCTAssertNil(
+            ReportStreamPolicy.emptyFinishedReportMessageIfNeeded(
+                bottomLineHTML: "<p>Hold</p>",
+                bodyHTML: "<h2>FUNDAMENTALS</h2>",
+                scorecardHTML: ""
+            ),
+            "Applied HTML must survive done — consume must not reset on done"
+        )
+        XCTAssertEqual(
+            ReportStreamPolicy.emptyFinishedReportMessageIfNeeded(
+                bottomLineHTML: "",
+                bodyHTML: "",
+                scorecardHTML: ""
+            ),
+            ReportStreamPolicy.emptyFinishedReportMessage
+        )
+        let withTrace = ReportStreamPolicy.emptyFinishedReportMessage(
+            trace: ["meta", "skip:sticky:2398", "done"]
+        )
+        XCTAssertTrue(withTrace.contains("sse meta skip:sticky:2398 done"))
+        XCTAssertTrue(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 0))
+        XCTAssertFalse(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 1))
+    }
+
+    private func fixture(_ name: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures")
+            .appendingPathComponent(name)
+        return try String(contentsOf: url, encoding: .utf8)
+    }
 }

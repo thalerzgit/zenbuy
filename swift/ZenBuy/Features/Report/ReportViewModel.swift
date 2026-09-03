@@ -297,6 +297,8 @@ final class ReportViewModel {
                     )
                 case let .done(badges, reportId):
                     recordTrace("done")
+                    // Do not clear already-applied HTML. A later long
+                    // `companies` drop must not wipe sticky/body.
                     self.badges = badges ?? self.badges
                     if let reportId, !reportId.isEmpty {
                         lastReportId = reportId

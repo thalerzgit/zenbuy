@@ -68,58 +68,94 @@ enum ReportStreamEvent: Sendable {
 
         switch name {
         case "meta":
-            guard let payload: MetaPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
+            if let payload: MetaPayload = Self.decodeKnown(name, from: data, decoder: decoder) {
+                self = .meta(cached: payload.cached, asOf: payload.asOf, showAsOf: payload.showAsOf)
+            } else if let obj = Self.jsonObject(data) {
+                self = .meta(
+                    cached: obj["cached"] as? Bool ?? false,
+                    asOf: obj["asOf"] as? String,
+                    showAsOf: obj["showAsOf"] as? Bool ?? false
+                )
+            } else {
                 self = .skipped(name: name, dataLength: dataLength)
-                return
             }
-            self = .meta(cached: payload.cached, asOf: payload.asOf, showAsOf: payload.showAsOf)
         case "sticky":
-            guard let payload: StickyPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
+            if let payload: StickyPayload = Self.decodeKnown(name, from: data, decoder: decoder) {
+                self = .sticky(
+                    bottomLineHtml: payload.bottomLineHtml,
+                    badges: payload.badges,
+                    scorecardHtml: payload.scorecardHtml
+                )
+            } else if let extracted = Self.extractSticky(from: data) {
+                ReportVerboseLog.log(
+                    "sse sticky JSONSerialization fallback htmlLen=\(extracted.bottomLineHtml.count)"
+                )
+                self = .sticky(
+                    bottomLineHtml: extracted.bottomLineHtml,
+                    badges: extracted.badges,
+                    scorecardHtml: extracted.scorecardHtml
+                )
+            } else {
                 self = .skipped(name: name, dataLength: dataLength)
-                return
             }
-            self = .sticky(
-                bottomLineHtml: payload.bottomLineHtml,
-                badges: payload.badges,
-                scorecardHtml: payload.scorecardHtml
-            )
         case "body":
-            guard let payload: BodyPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
+            if let payload: BodyPayload = Self.decodeKnown(name, from: data, decoder: decoder) {
+                self = .body(html: payload.html)
+            } else if let html = Self.extractString(from: data, key: "html") {
+                ReportVerboseLog.log("sse body JSONSerialization fallback htmlLen=\(html.count)")
+                self = .body(html: html)
+            } else {
                 self = .skipped(name: name, dataLength: dataLength)
-                return
             }
-            self = .body(html: payload.html)
         case "badges":
-            guard let payload: ReportBadges = Self.decodeKnown(name, from: data, decoder: decoder) else {
+            if let payload: ReportBadges = Self.decodeKnown(name, from: data, decoder: decoder) {
+                self = .badges(payload)
+            } else if let badges = Self.extractBadges(Self.jsonObject(data)) {
+                self = .badges(badges)
+            } else {
                 self = .skipped(name: name, dataLength: dataLength)
-                return
             }
-            self = .badges(payload)
         case "companies":
-            guard let payload: CompaniesPayload = Self.decodeKnown(name, from: data, decoder: decoder),
-                  let first = payload.companies?.first(where: {
-                      !($0.bottomLineHtml ?? "").isEmpty || !($0.bodyHtml ?? "").isEmpty
-                  }) ?? payload.companies?.first
-            else {
+            if let payload: CompaniesPayload = Self.decodeKnown(name, from: data, decoder: decoder),
+               let first = payload.companies?.first(where: {
+                   !($0.bottomLineHtml ?? "").isEmpty || !($0.bodyHtml ?? "").isEmpty
+               }) ?? payload.companies?.first {
+                self = .companies(
+                    bottomLineHtml: first.bottomLineHtml ?? "",
+                    bodyHtml: first.bodyHtml ?? "",
+                    scorecardHtml: first.scorecardHtml,
+                    badges: first.badges
+                )
+            } else if let extracted = Self.extractCompanies(from: data) {
+                ReportVerboseLog.log(
+                    "sse companies JSONSerialization fallback htmlLen=\(extracted.bottomLineHtml.count)/\(extracted.bodyHtml.count)"
+                )
+                self = .companies(
+                    bottomLineHtml: extracted.bottomLineHtml,
+                    bodyHtml: extracted.bodyHtml,
+                    scorecardHtml: extracted.scorecardHtml,
+                    badges: extracted.badges
+                )
+            } else {
                 self = .skipped(name: name, dataLength: dataLength)
-                return
             }
-            self = .companies(
-                bottomLineHtml: first.bottomLineHtml ?? "",
-                bodyHtml: first.bodyHtml ?? "",
-                scorecardHtml: first.scorecardHtml,
-                badges: first.badges
-            )
         case "done":
             let payload = try? decoder.decode(DonePayload.self, from: data)
-            self = .done(badges: payload?.badges, reportId: payload?.reportId)
+            let obj = Self.jsonObject(data)
+            self = .done(
+                badges: payload?.badges ?? Self.extractBadges(obj?["badges"]),
+                reportId: payload?.reportId ?? (obj?["reportId"] as? String)
+            )
         case "error":
-            guard let payload: ErrorPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
+            if let payload: ErrorPayload = Self.decodeKnown(name, from: data, decoder: decoder) {
+                let text = payload.message ?? payload.error ?? "Research failed."
+                self = .error(message: text)
+            } else if let obj = Self.jsonObject(data) {
+                let text = (obj["message"] as? String) ?? (obj["error"] as? String) ?? "Research failed."
+                self = .error(message: text)
+            } else {
                 self = .skipped(name: name, dataLength: dataLength)
-                return
             }
-            let text = payload.message ?? payload.error ?? "Research failed."
-            self = .error(message: text)
         default:
             self = .skipped(name: name, dataLength: dataLength)
         }
@@ -138,6 +174,92 @@ enum ReportStreamEvent: Sendable {
             )
             return nil
         }
+    }
+
+    /// Worker payloads are JSON objects. `JSONSerialization` still yields the
+    /// HTML strings when Codable chokes on odd `badges` / `scorecardHtml`.
+    private static func jsonObject(_ data: Data) -> [String: Any]? {
+        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    private static func extractString(from data: Data, key: String) -> String? {
+        jsonObject(data)?[key] as? String
+    }
+
+    private static func extractSticky(from data: Data) -> (
+        bottomLineHtml: String,
+        badges: ReportBadges?,
+        scorecardHtml: String?
+    )? {
+        guard let obj = jsonObject(data) else { return nil }
+        guard obj["bottomLineHtml"] != nil || obj["scorecardHtml"] != nil else { return nil }
+        return (
+            (obj["bottomLineHtml"] as? String) ?? "",
+            extractBadges(obj["badges"]),
+            obj["scorecardHtml"] as? String
+        )
+    }
+
+    private static func extractCompanies(from data: Data) -> (
+        bottomLineHtml: String,
+        bodyHtml: String,
+        scorecardHtml: String?,
+        badges: ReportBadges?
+    )? {
+        guard let obj = jsonObject(data),
+              let companies = obj["companies"] as? [[String: Any]]
+        else { return nil }
+        for company in companies {
+            let bottom = (company["bottomLineHtml"] as? String) ?? ""
+            let body = (company["bodyHtml"] as? String) ?? ""
+            if bottom.isEmpty, body.isEmpty { continue }
+            return (
+                bottom,
+                body,
+                company["scorecardHtml"] as? String,
+                extractBadges(company["badges"])
+            )
+        }
+        return nil
+    }
+
+    private static func extractBadges(_ raw: Any?) -> ReportBadges? {
+        guard let obj = raw as? [String: Any] else { return nil }
+        let recommendation = obj["recommendation"] as? String
+        let sentiment = obj["sentiment"] as? String
+        let conviction = obj["conviction"] as? String
+        if recommendation == nil, sentiment == nil, conviction == nil { return nil }
+        return ReportBadges(
+            recommendation: recommendation,
+            sentiment: sentiment,
+            conviction: conviction
+        )
+    }
+}
+
+/// Yields parsed SSE events in order. The research client may finish the
+/// `AsyncThrowingStream` only after `done` has already been yielded — never
+/// before prior sticky/body/companies events.
+enum ReportSSEClientPolicy {
+    static func shouldFinish(afterYielding event: ReportStreamEvent) -> Bool {
+        if case .done = event { return true }
+        return false
+    }
+
+    /// Parse a recorded wire dump. Used to lock probe ordering: sticky/body
+    /// must appear before `done`, and `done` is the finish signal.
+    static func fold(_ events: [SSEEvent]) -> (parsed: [ReportStreamEvent], finishedAfterDone: Bool) {
+        var parsed: [ReportStreamEvent] = []
+        var finishedAfterDone = false
+        for event in events {
+            let next = ReportStreamEvent(sseEvent: event)
+            parsed.append(next)
+            if shouldFinish(afterYielding: next) {
+                finishedAfterDone = true
+                break
+            }
+        }
+        return (parsed, finishedAfterDone)
     }
 }
 
