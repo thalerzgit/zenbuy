@@ -329,11 +329,11 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(FlowLayoutSizing.reportedHeight(usedHeight: 24), 24)
     }
 
-    func testReportVerboseLogDeadlineIsSep3_2026_0700UTC() {
+    func testReportVerboseLogDeadlineIsSep17_2026_0700UTC() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let expected = calendar.date(
-            from: DateComponents(year: 2026, month: 9, day: 3, hour: 7, minute: 0, second: 0)
+            from: DateComponents(year: 2026, month: 9, day: 17, hour: 7, minute: 0, second: 0)
         )!
         XCTAssertEqual(ReportVerboseLog.deadlineUTC, expected)
         // Before deadline → enabled; at/after → off (zero permanent noisy prod logs).
@@ -502,5 +502,120 @@ final class ZenBuyTests: XCTestCase {
             return XCTFail("Expected body with missing html")
         }
         XCTAssertEqual(html, "")
+    }
+
+    func testReportStreamEventDoneCapturesReportId() {
+        let event = SSEEvent(
+            name: "done",
+            data: #"{"badges":{"recommendation":"HOLD"},"reportId":"report:separate:growth:h12:AAPL"}"#
+        )
+        let parsed = ReportStreamEvent(sseEvent: event)
+        guard case let .done(badges, reportId) = parsed else {
+            return XCTFail("Expected done")
+        }
+        XCTAssertEqual(badges?.recommendation, "HOLD")
+        XCTAssertEqual(reportId, "report:separate:growth:h12:AAPL")
+    }
+
+    func testReportStreamEventCompaniesFallback() {
+        let event = SSEEvent(
+            name: "companies",
+            data: #"{"companies":[{"symbol":"AAPL","bottomLineHtml":"<p>Buy</p>","bodyHtml":"<h2>FUNDAMENTALS</h2>","scorecardHtml":"","badges":{"recommendation":"Buy"}}],"mode":"separate"}"#
+        )
+        let parsed = ReportStreamEvent(sseEvent: event)
+        guard case let .companies(bottom, body, _, badges) = parsed else {
+            return XCTFail("Expected companies fallback, got \(String(describing: parsed))")
+        }
+        XCTAssertEqual(bottom, "<p>Buy</p>")
+        XCTAssertTrue(body.contains("FUNDAMENTALS"))
+        XCTAssertEqual(badges?.recommendation, "Buy")
+    }
+
+    func testReportCacheKeyMatchesWorker() {
+        XCTAssertEqual(
+            ReportCacheKey.make(
+                mode: .separate,
+                symbols: ["AAPL"],
+                directive: "growth",
+                profitHorizonYears: 12
+            ),
+            "report:separate:growth:h12:AAPL"
+        )
+        XCTAssertEqual(
+            ReportCacheKey.make(
+                mode: .comparative,
+                symbols: ["MSFT", "aapl"],
+                directive: "growth",
+                profitHorizonYears: 12
+            ),
+            "report:comparative:growth:h12:AAPL,MSFT"
+        )
+    }
+
+    func testSSEEventParserSplitsOnlyOnCRLFAndKeepsLongJSON() {
+        let html = "<p>Line\u{2028}separator and a lot of body " + String(repeating: "x", count: 8_000) + "</p>"
+        let payload = #"{"html":"\#(html)"}"#
+        let wire = "event: body\ndata: \(payload)\n\nevent: done\ndata: {\"reportId\":\"report:separate:growth:h12:AAPL\"}\n\n"
+
+        var parser = SSEEventParser()
+        let events = parser.feed(Data(wire.utf8)) + parser.finish()
+        XCTAssertEqual(events.map(\.name), ["body", "done"])
+        XCTAssertTrue(events[0].data.contains("\u{2028}"), "U+2028 must stay inside JSON, not split the event")
+        XCTAssertGreaterThan(events[0].data.count, 8_000)
+
+        let parsed = ReportStreamEvent(sseEvent: events[0])
+        guard case let .body(parsedHtml) = parsed else {
+            return XCTFail("Expected body from long SSE line")
+        }
+        XCTAssertTrue(parsedHtml.contains("\u{2028}"))
+        XCTAssertGreaterThan(parsedHtml.count, 8_000)
+    }
+
+    func testSSEEventParserHandlesCRLFCommentsAndPartialChunks() {
+        var parser = SSEEventParser()
+        var events: [SSEEvent] = []
+        events += parser.feed(Data("event: meta\r\n".utf8))
+        events += parser.feed(Data("data: {\"cached\":true}\r\n\r\n".utf8))
+        events += parser.feed(Data(": ka\n\n".utf8))
+        events += parser.feed(Data("event: sticky\ndata: {\"bottomLineHtml\":\"<p>Hi</p>\"}\n\n".utf8))
+        events += parser.finish()
+
+        XCTAssertEqual(events.map(\.name), ["meta", "sticky"])
+        let meta = ReportStreamEvent(sseEvent: events[0])
+        guard case let .meta(cached, _, _) = meta else {
+            return XCTFail("Expected meta")
+        }
+        XCTAssertTrue(cached)
+        let sticky = ReportStreamEvent(sseEvent: events[1])
+        guard case let .sticky(html, _, _) = sticky else {
+            return XCTFail("Expected sticky")
+        }
+        XCTAssertEqual(html, "<p>Hi</p>")
+    }
+
+    func testEmptyFinishedReportMessageIncludesSSETrace() {
+        let text = ReportStreamPolicy.emptyFinishedReportMessage(trace: ["meta", "done"])
+        XCTAssertTrue(text.contains(ReportStreamPolicy.emptyFinishedReportMessage))
+        XCTAssertTrue(text.contains("sse meta done"))
+        XCTAssertTrue(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 0))
+        XCTAssertFalse(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 1))
+    }
+
+    func testShouldStartNewStreamAfterEmptyFinish() {
+        let request = ReportRequest(
+            symbols: ["AAPL"],
+            mode: .separate,
+            directive: "growth",
+            profitHorizonYears: 12
+        )
+        XCTAssertTrue(
+            ReportStreamPolicy.shouldStartNewStream(
+                incoming: request,
+                active: request,
+                isStreaming: false,
+                didFinishSuccessfully: false
+            ),
+            "Empty finish must not pin didFinishSuccessfully so Generate again restarts"
+        )
     }
 }

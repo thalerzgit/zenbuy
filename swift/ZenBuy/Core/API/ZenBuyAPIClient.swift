@@ -101,6 +101,32 @@ final class ZenBuyAPIClient {
         return try await get(url)
     }
 
+    /// JSON snapshot of a cached report (`GET /api/report`). Used when SSE
+    /// finishes without sticky/body — KV is written before `done`.
+    func fetchReport(id: String) async throws -> CachedReportPayload {
+        var components = URLComponents(
+            url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/report"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "id", value: id)]
+        guard let url = components?.url else { throw ZenBuyAPIError.invalidURL }
+        return try await get(url)
+    }
+
+    func fetchReportIfAvailable(id: String) async -> CachedReportPayload? {
+        do {
+            let payload = try await fetchReport(id: id)
+            let empty =
+                (payload.bottomLineHtml ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && (payload.bodyHtml ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && (payload.scorecardHtml ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return empty ? nil : payload
+        } catch {
+            ReportVerboseLog.log("report GET failed idLen=\(id.count) \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     func discover(directive: String, limit: Int = 4) async throws -> [DiscoverPick] {
         var components = URLComponents(
             url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/discover"),
@@ -156,12 +182,11 @@ final class ZenBuyAPIClient {
 
                     let reader = SSEStreamReader(bytes: bytes)
                     for try await event in reader.events() {
-                        if let parsed = ReportStreamEvent(sseEvent: event) {
-                            continuation.yield(parsed)
-                            if case .done = parsed {
-                                continuation.finish()
-                                return
-                            }
+                        let parsed = ReportStreamEvent(sseEvent: event)
+                        continuation.yield(parsed)
+                        if case .done = parsed {
+                            continuation.finish()
+                            return
                         }
                     }
                     continuation.finish()

@@ -67,11 +67,31 @@ enum ReportStreamPolicy {
         bodyHTML: String,
         scorecardHTML: String
     ) -> String? {
-        let empty =
-            bottomLineHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isEmptyReport(
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML,
+            scorecardHTML: scorecardHTML
+        ) ? emptyFinishedReportMessage : nil
+    }
+
+    static func isEmptyReport(
+        bottomLineHTML: String,
+        bodyHTML: String,
+        scorecardHTML: String
+    ) -> Bool {
+        bottomLineHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && bodyHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && scorecardHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return empty ? emptyFinishedReportMessage : nil
+    }
+
+    static func shouldRetryEmptyStream(retryCount: Int, maxRetries: Int = 1) -> Bool {
+        retryCount < maxRetries
+    }
+
+    static func emptyFinishedReportMessage(trace: [String]) -> String {
+        guard !trace.isEmpty else { return emptyFinishedReportMessage }
+        let tail = trace.suffix(8).joined(separator: " ")
+        return "\(emptyFinishedReportMessage)\nsse \(tail)"
     }
 }
 
@@ -99,6 +119,10 @@ final class ReportViewModel {
     private var abandoned = false
     private var cachedShareKey = ""
     private var cachedShareURL: URL?
+    private var lastReportId: String?
+    private var sseTrace: [String] = []
+    private var emptyContentRetries = 0
+    private let maxEmptyContentRetries = 1
     #if canImport(UIKit)
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     #endif
@@ -186,6 +210,9 @@ final class ReportViewModel {
         lastFlush = .distantPast
         cachedShareKey = ""
         cachedShareURL = nil
+        lastReportId = nil
+        sseTrace = []
+        emptyContentRetries = 0
         processing.start(symbolCount: request.symbols.count, mode: request.mode)
         beginResearchBackgroundTask()
         ReportVerboseLog.log(
@@ -230,9 +257,11 @@ final class ReportViewModel {
                 guard generation == streamGeneration, !abandoned else { return }
                 switch event {
                 case .meta:
+                    recordTrace("meta")
                     ReportVerboseLog.log("sse meta phase=\(processing.phase.rawValue)")
                     processing.onMeta()
                 case let .sticky(bottomLineHtml, badges, scorecardHtml):
+                    recordTrace("sticky:\(bottomLineHtml.count)")
                     processing.onSticky()
                     bottomLineHTML = bottomLineHtml
                     self.badges = badges
@@ -246,6 +275,7 @@ final class ReportViewModel {
                         "sse sticky \(ReportVerboseLog.htmlPreview(bottomLineHtml)) scorecardLen=\(scorecardHTML.count) visible=\(visible) processingVisible=\(processing.isVisible)"
                     )
                 case let .body(html):
+                    recordTrace("body:\(html.count)")
                     processing.onBody()
                     // Worker re-sends the full rendered body each SSE event (web replaces).
                     pendingBody = html
@@ -254,23 +284,45 @@ final class ReportViewModel {
                         "sse body \(ReportVerboseLog.htmlPreview(html)) phase=\(processing.phase.rawValue) percent=\(Int(processing.percent))"
                     )
                 case let .badges(badges):
+                    recordTrace("badges")
                     self.badges = badges
                     ReportVerboseLog.log("sse badges")
-                case let .done(badges):
+                case let .companies(bottom, body, score, badges):
+                    recordTrace("companies:\(bottom.count)/\(body.count)")
+                    applyCompaniesFallback(
+                        bottomLineHtml: bottom,
+                        bodyHtml: body,
+                        scorecardHtml: score,
+                        badges: badges
+                    )
+                case let .done(badges, reportId):
+                    recordTrace("done")
                     self.badges = badges ?? self.badges
-                    finishSuccessfully(reason: "sse done")
+                    if let reportId, !reportId.isEmpty {
+                        lastReportId = reportId
+                    }
+                    await recoverOrFinish(request, generation: generation, reason: "sse done")
+                    return
                 case let .error(message):
+                    recordTrace("error")
                     ReportVerboseLog.log("sse error msgLen=\(message.count)")
                     errorMessage = message
                     flushBodyIfNeeded(force: true)
                     processing.fail()
                     isStreaming = false
                     endResearchBackgroundTask()
+                case let .skipped(name, dataLength):
+                    recordTrace("skip:\(name):\(dataLength)")
+                    ReportVerboseLog.log("sse skipped event=\(name) dataLen=\(dataLength)")
                 }
             }
             guard generation == streamGeneration, !abandoned else { return }
             if isStreaming {
-                finishSuccessfully(reason: "stream ended without done event")
+                await recoverOrFinish(
+                    request,
+                    generation: generation,
+                    reason: "stream ended without done event"
+                )
             } else {
                 isStreaming = false
                 endResearchBackgroundTask()
@@ -299,6 +351,125 @@ final class ReportViewModel {
         }
     }
 
+    private func recoverOrFinish(
+        _ request: ReportRequest,
+        generation: Int,
+        reason: String
+    ) async {
+        flushBodyIfNeeded(force: true)
+        guard generation == streamGeneration, !abandoned else { return }
+        if !isEmptyHTML() {
+            finishSuccessfully(reason: reason)
+            return
+        }
+
+        let key = lastReportId ?? ReportCacheKey.make(
+            mode: request.mode,
+            symbols: request.symbols,
+            directive: request.directive,
+            profitHorizonYears: request.profitHorizonYears
+        )
+        if let payload = await api.fetchReportIfAvailable(id: key) {
+            applyFetchedReport(payload)
+            if !isEmptyHTML() {
+                ReportVerboseLog.log("rest fallback filled report key=\(key)")
+                finishSuccessfully(reason: "rest fallback")
+                return
+            }
+        }
+
+        guard generation == streamGeneration, !abandoned else { return }
+        if ReportStreamPolicy.shouldRetryEmptyStream(
+            retryCount: emptyContentRetries,
+            maxRetries: maxEmptyContentRetries
+        ) {
+            retryEmptyContent(request)
+            return
+        }
+
+        finishSuccessfully(reason: reason)
+    }
+
+    private func retryEmptyContent(_ request: ReportRequest) {
+        emptyContentRetries += 1
+        streamGeneration += 1
+        let generation = streamGeneration
+        isStreaming = true
+        didFinishSuccessfully = false
+        errorMessage = nil
+        processing.markReconnecting()
+        beginResearchBackgroundTask()
+        ReportVerboseLog.log("empty-content retry gen=\(generation) attempt=\(emptyContentRetries)")
+        streamTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await self?.consume(request, generation: generation)
+        }
+    }
+
+    private func applyFetchedReport(_ payload: CachedReportPayload) {
+        if let reportId = payload.reportId, !reportId.isEmpty {
+            lastReportId = reportId
+        }
+        if let html = payload.bottomLineHtml, !html.isEmpty {
+            bottomLineHTML = html
+        }
+        if let html = payload.bodyHtml, !html.isEmpty {
+            pendingBody = html
+            bodyHTML = html
+        }
+        if let html = payload.scorecardHtml, !html.isEmpty {
+            scorecardHTML = html
+        }
+        if let badges = payload.badges {
+            self.badges = badges
+        }
+        if !bottomLineHTML.isEmpty {
+            processing.onSticky()
+        }
+        if !bodyHTML.isEmpty {
+            processing.onBody()
+        }
+    }
+
+    private func applyCompaniesFallback(
+        bottomLineHtml: String,
+        bodyHtml: String,
+        scorecardHtml: String?,
+        badges: ReportBadges?
+    ) {
+        if bottomLineHTML.isEmpty, !bottomLineHtml.isEmpty {
+            bottomLineHTML = bottomLineHtml
+            processing.onSticky()
+        }
+        if bodyHTML.isEmpty, pendingBody.isEmpty, !bodyHtml.isEmpty {
+            pendingBody = bodyHtml
+            flushBodyIfNeeded(force: true)
+            processing.onBody()
+        }
+        if scorecardHTML.isEmpty, let scorecardHtml, !scorecardHtml.isEmpty {
+            scorecardHTML = scorecardHtml
+        }
+        if self.badges == nil {
+            self.badges = badges
+        }
+    }
+
+    private func recordTrace(_ token: String) {
+        sseTrace.append(token)
+        if sseTrace.count > 24 {
+            sseTrace.removeFirst(sseTrace.count - 24)
+        }
+    }
+
+    private func isEmptyHTML() -> Bool {
+        ReportStreamPolicy.isEmptyReport(
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML,
+            scorecardHTML: scorecardHTML
+        )
+    }
+
     private func finishSuccessfully(reason: String) {
         flushBodyIfNeeded(force: true)
         let visible = ReportHTML.hasVisibleContent(
@@ -307,18 +478,21 @@ final class ReportViewModel {
             scorecardHTML: scorecardHTML
         )
         ReportVerboseLog.log(
-            "\(reason) visible=\(visible) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count) scorecardLen=\(scorecardHTML.count)"
+            "\(reason) visible=\(visible) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count) scorecardLen=\(scorecardHTML.count) trace=\(sseTrace.joined(separator: ","))"
         )
-        if let emptyMessage = ReportStreamPolicy.emptyFinishedReportMessageIfNeeded(
+        if ReportStreamPolicy.isEmptyReport(
             bottomLineHTML: bottomLineHTML,
             bodyHTML: bodyHTML,
             scorecardHTML: scorecardHTML
         ) {
-            errorMessage = emptyMessage
+            errorMessage = ReportStreamPolicy.emptyFinishedReportMessage(trace: sseTrace)
+            // Not a successful render — allow Generate / onAppear to start again.
+            didFinishSuccessfully = false
+        } else {
+            didFinishSuccessfully = true
         }
         processing.onDone()
         isStreaming = false
-        didFinishSuccessfully = true
         endResearchBackgroundTask()
     }
 

@@ -52,23 +52,31 @@ enum ReportStreamEvent: Sendable {
     case sticky(bottomLineHtml: String, badges: ReportBadges?, scorecardHtml: String?)
     case body(html: String)
     case badges(ReportBadges)
-    case done(badges: ReportBadges?)
+    case companies(bottomLineHtml: String, bodyHtml: String, scorecardHtml: String?, badges: ReportBadges?)
+    case done(badges: ReportBadges?, reportId: String?)
     case error(message: String)
+    case skipped(name: String, dataLength: Int)
 
-    init?(sseEvent: SSEEvent) {
-        guard let data = sseEvent.data.data(using: .utf8) else { return nil }
-        let decoder = JSONDecoder()
+    init(sseEvent: SSEEvent) {
         let name = sseEvent.name
+        let dataLength = sseEvent.data.utf8.count
+        guard let data = sseEvent.data.data(using: .utf8) else {
+            self = .skipped(name: name, dataLength: dataLength)
+            return
+        }
+        let decoder = JSONDecoder()
 
         switch name {
         case "meta":
             guard let payload: MetaPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
-                return nil
+                self = .skipped(name: name, dataLength: dataLength)
+                return
             }
             self = .meta(cached: payload.cached, asOf: payload.asOf, showAsOf: payload.showAsOf)
         case "sticky":
             guard let payload: StickyPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
-                return nil
+                self = .skipped(name: name, dataLength: dataLength)
+                return
             }
             self = .sticky(
                 bottomLineHtml: payload.bottomLineHtml,
@@ -77,25 +85,43 @@ enum ReportStreamEvent: Sendable {
             )
         case "body":
             guard let payload: BodyPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
-                return nil
+                self = .skipped(name: name, dataLength: dataLength)
+                return
             }
             self = .body(html: payload.html)
         case "badges":
             guard let payload: ReportBadges = Self.decodeKnown(name, from: data, decoder: decoder) else {
-                return nil
+                self = .skipped(name: name, dataLength: dataLength)
+                return
             }
             self = .badges(payload)
+        case "companies":
+            guard let payload: CompaniesPayload = Self.decodeKnown(name, from: data, decoder: decoder),
+                  let first = payload.companies?.first(where: {
+                      !($0.bottomLineHtml ?? "").isEmpty || !($0.bodyHtml ?? "").isEmpty
+                  }) ?? payload.companies?.first
+            else {
+                self = .skipped(name: name, dataLength: dataLength)
+                return
+            }
+            self = .companies(
+                bottomLineHtml: first.bottomLineHtml ?? "",
+                bodyHtml: first.bodyHtml ?? "",
+                scorecardHtml: first.scorecardHtml,
+                badges: first.badges
+            )
         case "done":
             let payload = try? decoder.decode(DonePayload.self, from: data)
-            self = .done(badges: payload?.badges)
+            self = .done(badges: payload?.badges, reportId: payload?.reportId)
         case "error":
             guard let payload: ErrorPayload = Self.decodeKnown(name, from: data, decoder: decoder) else {
-                return nil
+                self = .skipped(name: name, dataLength: dataLength)
+                return
             }
             let text = payload.message ?? payload.error ?? "Research failed."
             self = .error(message: text)
         default:
-            return nil
+            self = .skipped(name: name, dataLength: dataLength)
         }
     }
 
@@ -172,6 +198,45 @@ private struct BodyPayload: Decodable {
 
 private struct DonePayload: Codable {
     let badges: ReportBadges?
+    let reportId: String?
+}
+
+private struct CompaniesPayload: Decodable {
+    let companies: [CompanyHTMLPayload]?
+}
+
+private struct CompanyHTMLPayload: Decodable {
+    let bottomLineHtml: String?
+    let bodyHtml: String?
+    let scorecardHtml: String?
+    let badges: ReportBadges?
+}
+
+struct CachedReportPayload: Codable, Sendable {
+    let bottomLineHtml: String?
+    let bodyHtml: String?
+    let scorecardHtml: String?
+    let badges: ReportBadges?
+    let reportId: String?
+}
+
+/// Matches worker `reportCacheKey` in `src/worker/cache.ts`.
+enum ReportCacheKey {
+    static func make(
+        mode: ReportMode,
+        symbols: [String],
+        directive: String,
+        profitHorizonYears: Int?
+    ) -> String {
+        let sorted = symbols.map { $0.uppercased() }.sorted().joined(separator: ",")
+        let horizon: String
+        if let profitHorizonYears, profitHorizonYears > 0 {
+            horizon = ":h\(profitHorizonYears)"
+        } else {
+            horizon = ""
+        }
+        return "report:\(mode.rawValue):\(directive)\(horizon):\(sorted)"
+    }
 }
 
 private struct ErrorPayload: Codable {
