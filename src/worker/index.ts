@@ -52,6 +52,7 @@ import {
   streamResearchParallel,
   verifyTurnstile,
 } from "./research";
+import { legalPageResponse } from "./legal-pages";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -1168,6 +1169,9 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS });
     }
+
+    const legal = legalPageResponse(url.pathname);
+    if (legal) return legal;
 
     if (url.pathname === "/api/config") {
       return handleConfig(env);

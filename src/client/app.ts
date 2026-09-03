@@ -190,6 +190,7 @@ export function mountApp(root: HTMLElement): void {
   footer.innerHTML = `
     <p>Not financial advice. For informational purposes only. Past performance does not guarantee future results.</p>
     <p>ZenBuy.info is not a registered investment advisor. Do your own due diligence.</p>
+    <p class="footer-links"><a href="/privacy">Privacy</a> · <a href="/support">Support</a></p>
   `;
 
   main.append(searchWrap, report);
