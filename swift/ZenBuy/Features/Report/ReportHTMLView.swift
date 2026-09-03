@@ -110,7 +110,8 @@ struct ReportHTMLView: View {
         case let .scorecard(rows):
             ScorecardView(rows: rows)
         case .spacer:
-            Spacer().frame(height: 4)
+            // Non-expanding — Spacer() inside ScrollView can steal flex and collapse siblings.
+            Color.clear.frame(height: 4)
         }
     }
 
@@ -212,6 +213,7 @@ struct SourceChipRow: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

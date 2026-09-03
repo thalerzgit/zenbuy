@@ -18,14 +18,18 @@ struct ReportStreamView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    if canShare, let url = viewModel.sharePDFURL(title: title) {
+                    // Generate PDF only when streaming is done — never from body
+                    // on every sticky/body HTML tick (layout thrash on TestFlight).
+                    if canShare, !viewModel.isStreaming, let url = viewModel.sharePDFURL(title: title) {
                         ShareLink(item: url) {
                             Label("Share", systemImage: "square.and.arrow.up")
                         }
                     } else {
                         Image(systemName: "square.and.arrow.up")
                             .foregroundStyle(ZenBuyTheme.muted.opacity(0.45))
-                            .accessibilityLabel("Share unavailable")
+                            .accessibilityLabel(
+                                viewModel.isStreaming ? "Share available when report finishes" : "Share unavailable"
+                            )
                     }
                 }
             }
@@ -83,7 +87,9 @@ struct ReportStreamView: View {
                 }
             }
             .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ZenBuyTheme.background)
     }
 }

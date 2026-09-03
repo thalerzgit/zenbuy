@@ -1,5 +1,30 @@
 import SwiftUI
 
+/// Pure wrap/report sizing for FlowLayout — unit-tested without hosting views.
+enum FlowLayoutSizing {
+    /// Finite width used while placing chips. Nil / non-finite / ≤0 must not
+    /// collapse the parent (ScrollView proposes nil → infinity → ~1pt strip).
+    static func wrapWidth(proposalWidth: CGFloat?) -> CGFloat {
+        guard let width = proposalWidth, width.isFinite, width > 0 else {
+            return 10_000
+        }
+        return width
+    }
+
+    /// Width reported to parents. Prefer the finite proposal; otherwise the
+    /// actual used content width (never `.infinity`).
+    static func reportedWidth(proposalWidth: CGFloat?, usedWidth: CGFloat) -> CGFloat {
+        if let width = proposalWidth, width.isFinite, width > 0 {
+            return width
+        }
+        return max(0, usedWidth)
+    }
+
+    static func reportedHeight(usedHeight: CGFloat) -> CGFloat {
+        max(0, usedHeight)
+    }
+}
+
 /// Horizontal wrapping layout for chips and pills.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
@@ -19,7 +44,7 @@ struct FlowLayout: Layout {
     }
 
     private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
-        let maxWidth = proposal.width ?? .infinity
+        let wrapWidth = FlowLayoutSizing.wrapWidth(proposalWidth: proposal.width)
         var x: CGFloat = 0
         var y: CGFloat = 0
         var rowHeight: CGFloat = 0
@@ -27,7 +52,7 @@ struct FlowLayout: Layout {
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth, x > 0 {
+            if x + size.width > wrapWidth, x > 0 {
                 x = 0
                 y += rowHeight + spacing
                 rowHeight = 0
@@ -37,6 +62,14 @@ struct FlowLayout: Layout {
             x += size.width + spacing
         }
 
-        return (CGSize(width: maxWidth, height: y + rowHeight), frames)
+        let usedWidth = frames.map(\.maxX).max() ?? 0
+        let usedHeight = frames.isEmpty ? 0 : y + rowHeight
+        return (
+            CGSize(
+                width: FlowLayoutSizing.reportedWidth(proposalWidth: proposal.width, usedWidth: usedWidth),
+                height: FlowLayoutSizing.reportedHeight(usedHeight: usedHeight)
+            ),
+            frames
+        )
     }
 }
