@@ -51,6 +51,7 @@ const GUIDE_HTML = `
           <p><span>Don't have the app yet?</span> <a id="unlock-store-link" href="#" target="_blank" rel="noopener">Get ZenBuy on the App Store →</a><br>
           <span class="store-note">Available on the Apple App Store · Google Play &amp; card payments coming soon</span></p>
         </div>
+        <p class="u-comp">Been given complimentary access? Skip both steps — just sign in with Apple below, and the Apple&nbsp;ID you were given it on unlocks with nothing to buy.</p>
       </div>
       <div class="u-actions">
         <a class="u-signin" href="/auth/apple">${APPLE_MARK} Sign in with Apple</a>

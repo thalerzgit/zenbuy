@@ -1567,6 +1567,13 @@ body.zb-pro .unlock-status {
   font-size: 0.72rem;
 }
 
+.unlock-card .u-comp {
+  margin: 0.9rem 0 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .u-actions {
   flex: 0 0 auto;
   display: flex;

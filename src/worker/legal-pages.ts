@@ -126,10 +126,10 @@ function privacyPolicyHtml(): string {
       <p>To be straight with you about the limits of this: it is <em>abuse prevention, not surveillance</em>, and it is imperfect in both directions. Someone determined to get extra free reports can still do it by changing machines, and, rarely, two different people on very similar devices and the same network may be treated as one visitor. We tune it to keep the free tier alive, not to catch everybody.</p>
 
       <h2 id="unlocking">Unlocking with your Apple ID</h2>
-      <p>One ZenBuy App Store purchase includes the website. Linking the two is optional — the free site works without it — and it is the only part of ZenBuy that stores anything tied to you across visits.</p>
+      <p>One ZenBuy App Store purchase includes the website, and we sometimes grant the same access to an Apple ID directly, without a purchase. Either way it is optional — the free site works without it — and it is the only part of ZenBuy that stores anything tied to you across visits.</p>
       <p>When you sign in with Apple, Apple sends us a <strong>subject identifier</strong>: an opaque string that identifies you to ZenBuy only, and cannot be used to identify you anywhere else. We do not ask Apple for your name, and if you use Apple’s <em>Hide My Email</em> we never see a real address. Against that identifier we keep:</p>
       <ul>
-        <li><strong>Your unlock record</strong> — which product you bought and, for the monthly plan, when it next needs renewing. It expires on its own when a subscription lapses; a lifetime purchase is kept until you ask us to remove it.</li>
+        <li><strong>Your unlock record</strong> — which product you bought and, for the monthly plan, when it next needs renewing. It expires on its own when a subscription lapses; a lifetime purchase is kept until you ask us to remove it. If we granted you complimentary access instead of a purchase, the record says only that, and holds nothing more than a purchased one does.</li>
         <li><strong>A sign-in session (90 days)</strong> — a random identifier in a cookie on the website, and stored on your device in the app. It points at the record above and holds nothing else.</li>
         <li><strong>A daily research counter (purged within 24 hours)</strong> — once unlocked, your daily limit is counted against your Apple identifier instead of the free-tier identifiers above, so a changing network or a new browser does not cost you access you paid for.</li>
       </ul>
@@ -184,6 +184,9 @@ function supportHtml(): string {
         <li><strong>In the ZenBuy app on your iPhone:</strong> tap the globe in the top right, then <em>Sign in with Apple</em>. That ties your purchase to your Apple ID.</li>
         <li><strong>Here on the website:</strong> choose <em>Unlock this site</em> and sign in with the same Apple ID. The site unlocks on every device you sign in from.</li>
       </ol>
+
+      <h3>Complimentary access</h3>
+      <p>ZenBuy occasionally grants the unlocked site to an Apple ID directly — testers, reviewers, and people we have invited. If yours is one of them there is nothing to buy and no app step: choose <em>Unlock this site</em>, sign in with the Apple ID the access was granted on, and the site unlocks. It stays that way on every device you sign in from with that Apple ID.</p>
 
       <h3>If it does not unlock</h3>
       <ul>
