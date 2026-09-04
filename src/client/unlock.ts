@@ -25,7 +25,7 @@ let storeUrlLoaded = false;
 
 /** Header affordance. Anonymous shows the invitation; pro shows the status. */
 export const UNLOCK_HEADER_HTML = `
-  <a class="unlock-cta" href="/auth/apple" data-unlock-guide>Own it?&nbsp;<b>Unlock<span class="unlock-cta-tail"> this site</span></b></a>
+  <a class="unlock-cta" href="/auth/apple" data-unlock-guide>Own it?&nbsp;<b>Unlock this site</b></a>
   <a class="unlock-status" href="/auth/unlink" title="Unlocked on this browser — sign out">Unlocked</a>
 `;
 

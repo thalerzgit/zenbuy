@@ -1501,6 +1501,12 @@ body.zb-pro .unlock-status {
   margin-bottom: 0.85rem;
 }
 
+/* The store row stays out until /api/config supplies a real listing, and a
+   class selector would otherwise outrank the plain [hidden] attribute. */
+.u-step[hidden] {
+  display: none;
+}
+
 .u-num {
   flex: 0 0 auto;
   display: grid;
@@ -1722,9 +1728,23 @@ body.zb-pro .unlock-status {
   }
 }
 
-@media (max-width: 430px) {
-  .unlock-cta-tail {
-    display: none;
+/* The brand lockup is centred, so below roughly 700px a pill in the corner
+   runs into it. Drop the pill onto its own centred line inside the banner
+   rather than shrinking it into something hard to hit. */
+@media (max-width: 700px) {
+  .site-header {
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    width: 100%;
+    padding-bottom: 0.7rem;
+  }
+
+  .unlock-cta,
+  .unlock-status {
+    position: static;
+    margin: 0 auto 0.95rem;
   }
 }
 
