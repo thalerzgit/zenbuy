@@ -22,6 +22,7 @@
 		A1000000000000000000000D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* Assets.xcassets */; };
 		A10000000000000000000011 /* ZenBuyBrandMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* ZenBuyBrandMark.swift */; };
 		A10000000000000000000012 /* InvestmentGoalPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* InvestmentGoalPicker.swift */; };
+		A10000000000000000000023 /* ProfitWindowPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000024 /* ProfitWindowPicker.swift */; };
 		A10000000000000000000013 /* InvestmentDirectives.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* InvestmentDirectives.swift */; };
 		A10000000000000000000015 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* FlowLayout.swift */; };
 		A10000000000000000000016 /* ReportHTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* ReportHTML.swift */; };
@@ -69,6 +70,7 @@
 		B10000000000000000000009 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
 		B1000000000000000000000A /* ReportModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportModeView.swift; sourceTree = "<group>"; };
 		B10000000000000000000015 /* InvestmentGoalPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvestmentGoalPicker.swift; sourceTree = "<group>"; };
+		B10000000000000000000024 /* ProfitWindowPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfitWindowPicker.swift; sourceTree = "<group>"; };
 		B10000000000000000000016 /* InvestmentDirectives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvestmentDirectives.swift; sourceTree = "<group>"; };
 		B10000000000000000000017 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		B10000000000000000000018 /* ReportHTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportHTML.swift; sourceTree = "<group>"; };
@@ -248,6 +250,7 @@
 				B10000000000000000000008 /* SearchView.swift */,
 				B10000000000000000000009 /* SearchViewModel.swift */,
 				B10000000000000000000015 /* InvestmentGoalPicker.swift */,
+				B10000000000000000000024 /* ProfitWindowPicker.swift */,
 				B1000000000000000000001A /* DirectiveDetailView.swift */,
 			);
 			path = Search;
@@ -435,6 +438,7 @@
 				A10000000000000000000008 /* SearchView.swift in Sources */,
 				A10000000000000000000009 /* SearchViewModel.swift in Sources */,
 				A10000000000000000000012 /* InvestmentGoalPicker.swift in Sources */,
+				A10000000000000000000023 /* ProfitWindowPicker.swift in Sources */,
 				A10000000000000000000018 /* DirectiveDetailView.swift in Sources */,
 				A10000000000000000000013 /* InvestmentDirectives.swift in Sources */,
 				A1000000000000000000000A /* ReportModeView.swift in Sources */,

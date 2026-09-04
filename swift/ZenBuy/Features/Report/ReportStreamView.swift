@@ -4,6 +4,7 @@ struct ReportStreamView: View {
     let symbols: [String]
     let mode: ReportMode
     let directive: String
+    let profitHorizonYears: Int
     @Bindable var viewModel: ReportViewModel
     /// Runs the peers in this same report view — never a Safari tab.
     var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
@@ -64,7 +65,7 @@ struct ReportStreamView: View {
                     symbols: symbols,
                     mode: mode,
                     directive: directive,
-                    profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: directive)
+                    profitHorizonYears: profitHorizonYears
                 )
             }
     }
@@ -271,6 +272,7 @@ private struct BadgePill: View {
             symbols: ["AAPL"],
             mode: .separate,
             directive: "growth",
+            profitHorizonYears: 12,
             viewModel: ReportViewModel(api: ZenBuyAPIClient())
         )
     }

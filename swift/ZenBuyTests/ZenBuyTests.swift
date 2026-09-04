@@ -267,6 +267,43 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(InvestmentDirectiveInfo.defaultProfitHorizonYears(for: "conservative"), 5)
     }
 
+    func testProfitWindowOptionsMatchWeb() {
+        XCTAssertEqual(ProfitHorizonOption.bundled.map(\.years), [2, 3, 7, 12, 18])
+        XCTAssertEqual(
+            ProfitHorizonOption.bundled.map(\.label),
+            ["0–3 yrs", "3–5 yrs", "5–10 yrs", "10–15 yrs", "15–20+ yrs"]
+        )
+    }
+
+    /// Goal defaults of 10 and 5 sit between pills, so the picker highlights
+    /// the nearest window instead of leaving the row blank.
+    func testClosestProfitWindowHighlightsNearestPill() {
+        let options = ProfitHorizonOption.bundled
+        XCTAssertEqual(ProfitHorizonOption.closest(to: 12, in: options)?.years, 12)
+        XCTAssertEqual(ProfitHorizonOption.closest(to: 10, in: options)?.years, 12)
+        // Ties go to the shorter window, exactly like the web reduce.
+        XCTAssertEqual(ProfitHorizonOption.closest(to: 5, in: options)?.years, 3)
+        XCTAssertNil(ProfitHorizonOption.closest(to: 12, in: []))
+    }
+
+    @MainActor
+    func testPickingGoalResetsProfitWindowToItsDefault() {
+        let stored = ProfitHorizonOption.loadStoredYears(for: "growth")
+        defer { ProfitHorizonOption.saveStoredYears(stored) }
+
+        let vm = SearchViewModel(api: ZenBuyAPIClient())
+        vm.setProfitHorizonYears(2)
+        XCTAssertEqual(vm.profitHorizonYears, 2)
+
+        vm.selectDirective("conservative")
+        XCTAssertEqual(vm.profitHorizonYears, 5)
+
+        // A manual pick survives, and is what the report request carries.
+        vm.setProfitHorizonYears(18)
+        XCTAssertEqual(vm.profitHorizonYears, 18)
+        XCTAssertEqual(ProfitHorizonOption.loadStoredYears(for: "conservative"), 18)
+    }
+
     func testTimeoutErrorIsActionable() {
         let error = ZenBuyAPIError.transport(URLError(.timedOut))
         XCTAssertTrue(error.localizedDescription.contains("90 seconds"))
