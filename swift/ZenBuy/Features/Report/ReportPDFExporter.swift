@@ -701,7 +701,7 @@ private final class ReportPDFCanvas {
             lineSpacing: 0
         ).draw(at: CGPoint(x: inset, y: baseline))
 
-        let label = totalPages.map { "Page \(pageIndex) of \($0)" } ?? "Page \(pageIndex)"
+        let label = totalPages.map { "Page \(self.pageIndex) of \($0)" } ?? "Page \(pageIndex)"
         ReportPDFText.make(
             label,
             font: .systemFont(ofSize: 7.5),
