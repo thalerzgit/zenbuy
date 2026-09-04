@@ -11,6 +11,8 @@ import { resolvePeerSymbols } from "./peers";
 import {
   buildReportSources,
   citationWithSources,
+  withTickerCitationLabels,
+  withTickerSourceLabels,
   type ReportSources,
 } from "./sources";
 
@@ -803,6 +805,13 @@ export async function getFundamentalsCached(
     const ageMs = Date.now() - new Date(cached.asOf).getTime();
     const asOfEt = nyseDateString();
     let nextCatalysts = cached.nextCatalysts ?? emptyCatalysts();
+    const sources = withTickerSourceLabels(
+      symbol,
+      cached.sources ?? buildReportSources(symbol.toUpperCase())
+    );
+    const citation = cached._citation
+      ? withTickerCitationLabels(symbol, cached._citation)
+      : citationWithSources("Finnhub", cached.asOfEt ?? asOfEt, sources);
 
     // Earnings dates go stale overnight; refresh just the calendar when needed
     // so a warm fundamentals cache does not keep last quarter's November print.
@@ -826,6 +835,8 @@ export async function getFundamentalsCached(
           ...cached,
           asOfEt,
           nextCatalysts,
+          sources,
+          _citation: citation,
           earningsHistory: {
             ...(cached.earningsHistory ?? emptyEarningsHistory(nextCatalysts)),
             nextPrint: nextCatalysts,
@@ -845,7 +856,8 @@ export async function getFundamentalsCached(
       ...cached,
       asOfEt: cached.asOfEt ?? asOfEt,
       nextCatalysts,
-      sources: cached.sources ?? buildReportSources(symbol.toUpperCase()),
+      sources,
+      _citation: citation,
       capitalReturn: cached.capitalReturn ?? emptyCapitalReturn(),
       earningsHistory: cached.earningsHistory ?? emptyEarningsHistory(nextCatalysts),
       dataAgeHours: Math.floor(ageMs / 3_600_000),
