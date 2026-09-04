@@ -88,7 +88,7 @@ Services ID configuration.
 | `APPLE_PRO_PRODUCT_IDS` | `info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly` | Either one unlocks |
 | `APPLE_ALLOW_SANDBOX` | `1` | TestFlight buys through the sandbox. Set to `0` on App Store release day |
 | `APP_STORE_URL` | *(empty)* | Set to `https://apps.apple.com/app/id6807960678` on release day; empty hides the "get the app" row in the guide |
-| `RATE_LIMIT_PRO_DAILY` | `100` | Daily reports per unlocked Apple ID |
+| `RATE_LIMIT_PRO_DAILY` | `25` | Daily reports per unlocked Apple ID (free tier is `RATE_LIMIT_FREE_WEEKLY`, 3 per rolling week) |
 
 ---
 
