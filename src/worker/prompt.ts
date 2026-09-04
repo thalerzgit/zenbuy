@@ -2,7 +2,7 @@ import {
   getInvestmentDirective,
   type InvestmentDirective,
   type InvestmentDirectiveId,
-} from "../lib/investment-directives";
+} from "../lib/investment-directives.ts";
 
 function corePromptFor(directive: InvestmentDirective): string {
   return `ROLE
@@ -24,12 +24,12 @@ SOURCES — where appropriate, attach a clickable short-link for important claim
 Show the math behind every valuation and return figure.
 Commit to a verdict. Hold or Neutral requires a specific stated reason; "it depends" is not allowed.
 Write for a phone screen: short bullets, tables of 4 columns or fewer, no filler, one closing disclaimer line maximum.
-Weight analysis to the stated thesis: ${directive.promptThesis} — e.g. ${directive.incomeFocus.toLowerCase()} for income-oriented mandates, valuation discipline for conservative/value mandates.
+Weight analysis to the stated thesis: ${directive.promptThesis} — e.g. ${directive.incomeFocus.toLowerCase()} for income-oriented theses, valuation discipline for conservative/value theses.
 
 STRUCTURE — use these exact markdown headers:
 
 ## BOTTOM LINE
-(6 lines max: Verdict Buy/Hold/Sell with conviction High/Medium/Low; single fact that would flip the verdict; 12-month price target and probability-weighted expected return; buy zone and do-not-chase-above price; position size % of ${directive.portfolioLabel})
+(6 lines max, opening with the verdict itself — no caption or restatement of the investor profile first: Verdict Buy/Hold/Sell with conviction High/Medium/Low; single fact that would flip the verdict; 12-month price target and probability-weighted expected return; buy zone and do-not-chase-above price; position size % of ${directive.portfolioLabel})
 
 ## FUNDAMENTALS
 (Revenue CAGR, margins, FCF, quality of earnings, unit economics, valuation vs 3-5 peers, reverse DCF, insider/institutional activity from institutional13F (13F lag ~45d), earningsHistory beats/misses, capital return: dividend yield/payout + buyback or share-count trend from capitalReturn — say explicitly if the company returns little/no cash via dividends or buybacks)
@@ -112,18 +112,24 @@ export function buildUserPrompt(
 
   const dataPolicy = `Injected data (cite using each entry's _citation):\n${JSON.stringify(payloads, null, 2)}${degradedNote}`;
 
-  const thesisNote = `\nInvestor mandate: ${directive.promptThesis}. ${directive.promptGoal} Typical horizon: ${directive.horizon}.`;
+  const hasProfitWindow =
+    profitHorizonYears != null && Number.isFinite(profitHorizonYears);
 
-  const profitNote =
-    profitHorizonYears != null && Number.isFinite(profitHorizonYears)
-      ? `\nProfit window overlay: frame RETURN SCENARIOS, price targets, and SUMMARY around ~${profitHorizonYears}-year outcomes the user cares about (this may refine but not contradict the mandate).`
-      : "";
+  const thesisNote = `\nAnalyst framing (guidance for you — never restate it as a caption or heading in the report): ${directive.promptThesis} thesis. ${directive.promptGoal} Typical horizon: ${directive.horizon}.`;
+
+  const profitNote = hasProfitWindow
+    ? `\nProfit window overlay: frame RETURN SCENARIOS, price targets, and SUMMARY around ~${profitHorizonYears}-year outcomes the user cares about (this may refine but not contradict the thesis).`
+    : "";
 
   if (mode === "comparative") {
+    const rankingHorizonYears = hasProfitWindow
+      ? profitHorizonYears
+      : directive.promptHorizonYears;
     return `${dataPolicy}${thesisNote}${profitNote}
 
 Write ONE comparative decision report covering ALL companies above.
-Start with ## BOTTOM LINE ranking which name to own first for this ${directive.promptThesis.toLowerCase()} mandate over ~${directive.promptHorizonYears} years, with relative Buy/Hold/Sell for each ticker.
+Open with ## BOTTOM LINE and go straight into the verdict: which name to own first and why, then relative Buy/Hold/Sell with conviction for every other ticker, judged over ~${rankingHorizonYears} years.
+The first words under that heading are the verdict itself — no caption, label, or restatement of the investor profile ahead of it.
 Then for each company use subsections under shared headers (## FUNDAMENTALS, ## THESIS VALIDATION, etc.) with clear ### TICKER headings.
 End with ## SUMMARY scorecards per ticker plus one Overall portfolio recommendation.
 Hard cap 2200 words total.`;

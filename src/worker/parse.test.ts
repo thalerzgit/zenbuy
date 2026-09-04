@@ -80,6 +80,35 @@ describe("isParseableBottomLine", () => {
   });
 });
 
+describe("splitReport rank-caption strip", () => {
+  it("drops a leading 'Rank for an N-year … mandate:' caption", () => {
+    const md = [
+      "## BOTTOM LINE",
+      "",
+      "**Rank for an 18-year aggressive-growth mandate:**",
+      "",
+      "1. **PANW — Buy.** Platform consolidation at 15% growth.",
+    ].join("\n");
+    const { bottomLine } = splitReport(md);
+    assert.doesNotMatch(bottomLine, /Rank for/i);
+    assert.match(bottomLine, /^## BOTTOM LINE\n\n1\. \*\*PANW/);
+  });
+
+  it("drops the caption when it prefixes the ranking on one line", () => {
+    const md =
+      "## BOTTOM LINE\n\nRank for a 7-year value / income mandate: CSCO first, then AAPL.";
+    assert.equal(
+      splitReport(md).bottomLine,
+      "## BOTTOM LINE\n\nCSCO first, then AAPL."
+    );
+  });
+
+  it("leaves normal bottom lines untouched", () => {
+    const md = "## BOTTOM LINE\n\n- **Verdict: BUY — High conviction.**";
+    assert.equal(splitReport(md).bottomLine, md);
+  });
+});
+
 describe("assessReportCompleteness", () => {
   it("accepts a finished report", () => {
     const result = assessReportCompleteness(fullReport());
