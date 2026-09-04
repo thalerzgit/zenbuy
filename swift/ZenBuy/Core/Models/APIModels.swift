@@ -28,6 +28,11 @@ struct DiscoverResponse: Codable, Sendable {
     let picks: [DiscoverPick]
 }
 
+struct SimilarResponse: Codable, Sendable {
+    let symbols: [String]
+    let source: String?
+}
+
 struct APIErrorResponse: Codable, Sendable {
     let error: String?
     let code: String?

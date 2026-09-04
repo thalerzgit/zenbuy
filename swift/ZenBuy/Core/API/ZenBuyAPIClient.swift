@@ -151,6 +151,33 @@ final class ZenBuyAPIClient {
         return payload.picks
     }
 
+    /// Peers ranked against this report's score profile. `scores` may be empty —
+    /// the Worker then ranks against a neutral profile.
+    func similar(
+        symbol: String,
+        scores: [String: Int],
+        exclude: [String],
+        limit: Int = 3
+    ) async throws -> [String] {
+        var components = URLComponents(
+            url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/similar"),
+            resolvingAgainstBaseURL: false
+        )
+        var items = [URLQueryItem(name: "symbol", value: symbol)]
+        if !scores.isEmpty,
+           let json = try? encoder.encode(scores),
+           let text = String(data: json, encoding: .utf8) {
+            items.append(URLQueryItem(name: "scores", value: text))
+        }
+        if !exclude.isEmpty {
+            items.append(URLQueryItem(name: "exclude", value: exclude.joined(separator: ",")))
+        }
+        components?.queryItems = items
+        guard let url = components?.url else { throw ZenBuyAPIError.invalidURL }
+        let payload: SimilarResponse = try await get(url)
+        return Array(payload.symbols.prefix(limit))
+    }
+
     func streamResearch(
         symbols: [String],
         mode: ReportMode,

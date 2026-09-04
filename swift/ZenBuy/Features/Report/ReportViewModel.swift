@@ -121,6 +121,11 @@ final class ReportViewModel {
     var errorMessage: String?
     var warningMessage: String?
     var didFinishSuccessfully = false
+    /// Successor reports hide "Show more like this" to avoid rabbit holes.
+    private(set) var allowSimilar = true
+    private(set) var similarSymbols: [String] = []
+    private(set) var isFindingSimilar = false
+    private(set) var similarError: String?
     private(set) var activeRequest: ReportRequest?
     let processing = ProcessingProgress()
 
@@ -184,6 +189,54 @@ final class ReportViewModel {
         )
     }
 
+    /// "Run Report on these?" — one hop only, so the successor offers no peers.
+    func startSimilar(
+        symbols: [String],
+        mode: ReportMode,
+        directive: String,
+        profitHorizonYears: Int? = nil
+    ) {
+        start(
+            symbols: symbols,
+            mode: mode,
+            directive: directive,
+            profitHorizonYears: profitHorizonYears
+        )
+        allowSimilar = false
+    }
+
+    var canOfferSimilar: Bool {
+        allowSimilar
+            && didFinishSuccessfully
+            && !isStreaming
+            && activeRequest?.mode == .separate
+    }
+
+    func findSimilar() {
+        guard let request = activeRequest, let symbol = request.symbols.first else { return }
+        guard !isFindingSimilar, similarSymbols.isEmpty else { return }
+        isFindingSimilar = true
+        similarError = nil
+
+        Task {
+            do {
+                let found = try await api.similar(
+                    symbol: symbol,
+                    scores: ReportHTML.scoreProfile(from: scorecardHTML),
+                    exclude: request.symbols
+                )
+                similarSymbols = found
+                if found.isEmpty {
+                    similarError = "No similar names found right now. Try again later."
+                }
+            } catch {
+                similarError = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+            }
+            isFindingSimilar = false
+        }
+    }
+
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
@@ -230,6 +283,10 @@ final class ReportViewModel {
         lastReportId = nil
         sseTrace = []
         emptyContentRetries = 0
+        allowSimilar = true
+        similarSymbols = []
+        isFindingSimilar = false
+        similarError = nil
         processing.start(symbolCount: request.symbols.count, mode: request.mode)
         beginResearchBackgroundTask()
         ReportVerboseLog.log(
