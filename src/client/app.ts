@@ -19,6 +19,7 @@ import {
   PROCESSING_PANEL_HTML,
   createProcessingController,
 } from "./processing-progress";
+import { deviceSignal } from "./device-signals";
 import {
   UNLOCK_HEADER_HTML,
   isUnlocked,
@@ -489,8 +490,8 @@ export function mountApp(root: HTMLElement): void {
   }
 
   /**
-   * `unlockable` marks the free daily cap — the one error the visitor can
-   * clear today, by using a purchase they may already own.
+   * `unlockable` marks the free weekly cap — the one error the visitor can
+   * clear right now, by using a purchase they may already own.
    */
   function showError(msg: string, retry = true, unlockable = false): void {
     formError.textContent = retry ? `${msg} Retry?` : msg;
@@ -728,6 +729,7 @@ export function mountApp(root: HTMLElement): void {
   });
 
   initTurnstile();
+  void deviceSignal();
 
   setTurnstileInteractiveHandler((interactive) => {
     if (!state.loading) return;
@@ -1051,6 +1053,9 @@ export function mountApp(root: HTMLElement): void {
           directive: state.directive,
           profitHorizonYears: state.profitHorizonYears,
           turnstileToken,
+          // Warmed at mount, so this resolves instantly and never delays the
+          // Turnstile gesture above.
+          deviceSignal: await deviceSignal(),
         }),
       });
 

@@ -36,7 +36,7 @@ const GUIDE_HTML = `
       <div class="unlock-scroll">
         <p class="u-sub">Your ZenBuy purchase includes the full research desk on the web. Here is what unlocks:</p>
         <ul class="u-feats">
-          <li><b>100 reports a day</b><span class="u-feat-why"> — instead of the five per network that everyone shares for free.</span></li>
+          <li><b>25 reports a day</b><span class="u-feat-why"> — instead of the three a week that everyone gets for free.</span></li>
           <li><b>No human check</b><span class="u-feat-why"> — signed in, the Turnstile challenge stops interrupting you before every report.</span></li>
           <li><b>Every device you use</b><span class="u-feat-why"> — one Apple ID covers the iPhone app and this website together.</span></li>
         </ul>

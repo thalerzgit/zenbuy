@@ -82,7 +82,7 @@ Manual local archive:
 1. **Product → Archive** (Release configuration).
 2. **Distribute App → App Store Connect**.
 
-Native iOS requests send `X-ZenBuy-Client: ios`; the Worker skips Turnstile for that header (web clients still require it). Daily rate limits apply to all clients.
+Native iOS requests send `X-ZenBuy-Client: ios`; the Worker skips Turnstile for that header (web clients still require it). Report limits apply to all clients: they also send `X-ZenBuy-Device`, a random Keychain UUID (`ZenBuyDeviceIdentity`) so the free weekly allowance is counted per device instead of per IP. An unlocked purchase is counted per Apple subject and the device header is ignored.
 
 ## Tests
 

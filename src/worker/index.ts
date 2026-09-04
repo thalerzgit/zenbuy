@@ -46,15 +46,14 @@ import { discoverPicksForGoal } from "./discover";
 import { findSimilarSymbols } from "./similar";
 import {
   backupModel,
-  checkRateLimit,
   hasXaiKey,
-  incrementRateLimit,
   primaryModel,
   streamLayman,
   streamResearch,
   streamResearchParallel,
   verifyTurnstile,
 } from "./research";
+import { openQuotaGate } from "./quota";
 import { legalPageResponse } from "./legal-pages";
 import {
   handleAppleCallback,
@@ -71,8 +70,12 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status, headers: CORS });
+function json(
+  data: unknown,
+  status = 200,
+  extra?: Record<string, string>
+): Response {
+  return Response.json(data, { status, headers: { ...CORS, ...extra } });
 }
 
 function sseLine(event: string, data: unknown): string {
@@ -756,6 +759,8 @@ async function handleResearch(
     directive?: string;
     profitHorizonYears?: number;
     turnstileToken?: string;
+    /** Device-signal hash for the free weekly allowance (see quota.ts). */
+    deviceSignal?: string;
   };
 
   try {
@@ -790,7 +795,7 @@ async function handleResearch(
   }
 
   // A verified purchase is a stronger signal than a bot check, and it earns a
-  // quota of its own instead of sharing the free per-IP allowance.
+  // daily quota of its own instead of the free weekly allowance.
   const unlock = await resolveUnlock(request, env);
   const subject = unlock.unlocked ? unlock.sub : null;
 
@@ -809,17 +814,21 @@ async function handleResearch(
     }
   }
 
-  const allowed = await checkRateLimit(env, ip, subject);
-  if (!allowed) {
+  const gate = await openQuotaGate(
+    request,
+    env,
+    ip,
+    subject,
+    body.deviceSignal ?? ""
+  );
+  // A minted visitor id has to reach the browser even on a refusal, or the
+  // next attempt looks like a brand new visitor.
+  const gateCookie = gate.setCookie ? { "Set-Cookie": gate.setCookie } : undefined;
+  if (!gate.allowed) {
     return json(
-      {
-        error: subject
-          ? "Daily research limit reached, even on the unlocked plan. The zen garden reopens tomorrow."
-          : "Daily research limit reached. The zen garden is closed until tomorrow.",
-        retry: false,
-        code: subject ? "pro_limit" : "free_limit",
-      },
-      429
+      { error: gate.message, retry: false, code: gate.code },
+      429,
+      gateCookie
     );
   }
 
@@ -1033,7 +1042,7 @@ async function handleResearch(
           );
           await cacheSet(env.CACHE, doneKey, report, ttl);
 
-          ctx.waitUntil(incrementRateLimit(env, ip, subject).catch(console.error));
+          ctx.waitUntil(gate.consume().catch(console.error));
           send("companies", { companies, mode: effectiveMode });
           send("done", {
             badges: report.badges,
@@ -1092,7 +1101,7 @@ async function handleResearch(
     },
   });
 
-  return new Response(stream, { headers: SSE_HEADERS });
+  return new Response(stream, { headers: { ...SSE_HEADERS, ...gateCookie } });
 }
 
 function isLinkPreviewBot(request: Request): boolean {

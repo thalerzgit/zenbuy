@@ -11,7 +11,7 @@ import os
 ///
 /// The session token the Worker returns is kept in the Keychain and sent as a
 /// bearer token, so the app's own requests get the unlocked daily allowance
-/// too rather than sharing the free per-IP limit.
+/// too rather than spending the free weekly one.
 @Observable
 @MainActor
 final class WebUnlockService {

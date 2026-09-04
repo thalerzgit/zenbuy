@@ -70,7 +70,7 @@ struct UnlockWebView: View {
                 .foregroundStyle(ZenBuyTheme.muted)
 
             VStack(alignment: .leading, spacing: 6) {
-                benefit("100 reports a day, not the shared free five")
+                benefit("25 reports a day, not the free three a week")
                 benefit("No human check before every report")
                 benefit("Unlocked on every device you sign in from")
             }

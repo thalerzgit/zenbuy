@@ -1,4 +1,55 @@
 import Foundation
+import Security
+
+/// Stable per-install identifier for the free weekly report allowance.
+///
+/// Sent as `X-ZenBuy-Device` so a free report costs the *device* one of its
+/// three weekly reports rather than costing everyone on the same IP address.
+/// It is a random UUID minted here — never an Apple identifier, never sent
+/// anywhere but zenbuy.info, and used for nothing but that counter. Kept in
+/// the Keychain rather than `UserDefaults` so reinstalling the app is not a
+/// way to reset the allowance.
+enum ZenBuyDeviceIdentity {
+    private static let service = "info.zenbuy.app.device"
+    private static let account = "free-allowance-device-id"
+
+    static let current: String = load() ?? mint()
+
+    private static func query() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+
+    private static func load() -> String? {
+        var request = query()
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8),
+              !value.isEmpty
+        else { return nil }
+        return value
+    }
+
+    private static func mint() -> String {
+        let value = UUID().uuidString
+        var request = query()
+        request[kSecValueData as String] = Data(value.utf8)
+        // This device only: the allowance is per device, and syncing it to
+        // iCloud Keychain would leak it off the phone for no benefit.
+        request[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(request as CFDictionary, nil)
+        // A failed write is not worth surfacing: the request still carries a
+        // signal, it just will not survive this launch.
+        return value
+    }
+}
 
 enum ZenBuyAPIError: LocalizedError {
     case invalidURL
@@ -29,6 +80,7 @@ enum ZenBuyAPIError: LocalizedError {
 final class ZenBuyAPIClient {
     private static let clientHeader = "X-ZenBuy-Client"
     private static let clientValue = "ios"
+    private static let deviceHeader = "X-ZenBuy-Device"
 
     private let session: URLSession
     private let researchSession: URLSession
@@ -77,6 +129,7 @@ final class ZenBuyAPIClient {
 
     private func applyClientHeaders(to request: inout URLRequest) {
         request.setValue(Self.clientValue, forHTTPHeaderField: Self.clientHeader)
+        request.setValue(ZenBuyDeviceIdentity.current, forHTTPHeaderField: Self.deviceHeader)
         if let token = sessionToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
