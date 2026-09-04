@@ -2,7 +2,9 @@
  * Report allowances.
  *
  * An unlocked buyer is counted per Apple subject, per day. A verified purchase
- * is a strong identity, so nothing else is needed there.
+ * is a strong identity, so nothing else is needed there. Two allowances sit
+ * outside all of this and are never counted: an IP on `RATE_LIMIT_WHITELIST`,
+ * and an Apple ID on `APPLE_ID_WHITELIST`.
  *
  * A free visitor gets a rolling weekly allowance instead, and the hard part is
  * deciding *who* they are. A per-IP counter is reset by a hotspot or a VPN and
@@ -297,8 +299,16 @@ export async function openQuotaGate(
   env: Env,
   ip: string,
   subject: string | null,
-  clientSignal: string
+  clientSignal: string,
+  /**
+   * Apple ID on `APPLE_ID_WHITELIST`. Complimentary access is Justin's own
+   * grant, so it is never counted at all — the same total bypass an IP on
+   * `RATE_LIMIT_WHITELIST` gets, rather than the buyer's daily allowance.
+   */
+  complimentary = false
 ): Promise<QuotaGate> {
+  if (complimentary || isRateLimitExempt(env, ip)) return { allowed: true, consume: noop };
+
   if (subject) {
     const limit = proDailyLimit(env);
     const key = proKey(subject);
@@ -321,8 +331,6 @@ export async function openQuotaGate(
       },
     };
   }
-
-  if (isRateLimitExempt(env, ip)) return { allowed: true, consume: noop };
 
   const limit = freeWeeklyLimit(env);
   const identity = await resolveFreeIdentity(request, env, ip, clientSignal);

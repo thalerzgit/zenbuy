@@ -226,6 +226,22 @@ test("whitelisted IPs are never counted", async () => {
   );
 });
 
+test("a complimentary Apple ID is never counted either", async () => {
+  const env = envWith(fakeKv(), { RATE_LIMIT_PRO_DAILY: "25" });
+  for (let i = 0; i < 40; i++) {
+    const gate = await openQuotaGate(
+      request(),
+      env,
+      "203.0.113.7",
+      "apple-sub-1",
+      SIGNAL,
+      true
+    );
+    assert.equal(gate.allowed, true, `report ${i + 1} should be allowed`);
+    await gate.consume();
+  }
+});
+
 test("networkKey coarsens to /24 and /48", () => {
   assert.equal(networkKey("203.0.113.7"), "203.0.113.0/24");
   assert.equal(networkKey("2001:db8:1234:5678::1"), "2001:db8:1234::/48");

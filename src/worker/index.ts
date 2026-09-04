@@ -819,7 +819,8 @@ async function handleResearch(
     env,
     ip,
     subject,
-    body.deviceSignal ?? ""
+    body.deviceSignal ?? "",
+    unlock.complimentary
   );
   // A minted visitor id has to reach the browser even on a refusal, or the
   // next attempt looks like a brand new visitor.
