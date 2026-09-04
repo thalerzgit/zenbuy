@@ -307,8 +307,8 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
 async function handleConfig(env: Env): Promise<Response> {
   return json({
     turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? "",
-    // Empty until the app is actually on sale, so the unlock guide never
-    // points at a store page that does not exist yet.
+    // One wrangler knob: TestFlight now, App Store listing on release day.
+    // Empty hides the header pill and the unlock-guide store row.
     appStoreUrl: env.APP_STORE_URL ?? "",
     investmentDirectives: directivesForClient(),
     defaultDirectiveId: DEFAULT_DIRECTIVE_ID,

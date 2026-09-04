@@ -42,7 +42,11 @@ interface Env {
    * `sub:<apple subject id>`. Never counted against any report limit.
    */
   APPLE_ID_WHITELIST?: string;
-  /** App Store listing. Empty while the app is TestFlight-only. */
+  /**
+   * Public download URL (header "Get the App" + unlock-guide store row).
+   * TestFlight until release; then https://apps.apple.com/app/id6807960678.
+   * Empty hides both surfaces.
+   */
   APP_STORE_URL?: string;
   /** Body of Apple's domain-association file, served under /.well-known/. */
   APPLE_DOMAIN_ASSOCIATION?: string;
