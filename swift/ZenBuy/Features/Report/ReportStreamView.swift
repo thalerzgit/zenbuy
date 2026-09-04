@@ -5,6 +5,8 @@ struct ReportStreamView: View {
     let mode: ReportMode
     let directive: String
     @Bindable var viewModel: ReportViewModel
+    /// Runs the peers in this same report view — never a Safari tab.
+    var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
 
     private var title: String { symbols.joined(separator: ", ") }
     private var hasScorecard: Bool { !viewModel.scorecardHTML.isEmpty }
@@ -113,6 +115,10 @@ struct ReportStreamView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                if viewModel.canOfferSimilar {
+                    SimilarPeersView(viewModel: viewModel, onRun: onRunSimilar)
+                }
+
                 // Guarantee non-zero content height while waiting (nav chrome alone = white void).
                 if !shouldShowProcessingPanel,
                    !hasVisibleReportContent,
@@ -151,6 +157,77 @@ struct ReportStreamView: View {
                     ScorecardView(rows: rows)
                 }
             }
+        }
+    }
+}
+
+/// "Show more like this" trades itself in for the peers it found: one label per
+/// suggested ticker plus the button that runs them. Labels are not toggles —
+/// every suggestion rides along.
+private struct SimilarPeersView: View {
+    let viewModel: ReportViewModel
+    let onRun: ([String], ReportMode) -> Void
+
+    @State private var askingMode = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if viewModel.similarSymbols.isEmpty {
+                Button {
+                    viewModel.findSimilar()
+                } label: {
+                    HStack(spacing: 8) {
+                        if viewModel.isFindingSimilar {
+                            ProgressView()
+                        }
+                        Text(viewModel.isFindingSimilar ? "Finding peers…" : "Show more like this")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(ZenBuyTheme.sage)
+                .disabled(viewModel.isFindingSimilar)
+            } else {
+                FlowLayout(spacing: 8) {
+                    ForEach(viewModel.similarSymbols, id: \.self) { symbol in
+                        Text(symbol)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(ZenBuyTheme.ink)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(ZenBuyTheme.card)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(ZenBuyTheme.border, lineWidth: 1))
+                    }
+
+                    Button("Run Report on these?") {
+                        if viewModel.similarSymbols.count > 1 {
+                            askingMode = true
+                        } else {
+                            onRun(viewModel.similarSymbols, .separate)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ZenBuyTheme.sage)
+                }
+            }
+
+            if let similarError = viewModel.similarError {
+                Text(similarError)
+                    .font(.footnote)
+                    .foregroundStyle(ZenBuyTheme.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .confirmationDialog(
+            "How should we analyze these?",
+            isPresented: $askingMode,
+            titleVisibility: .visible
+        ) {
+            Button("Separate reports") { onRun(viewModel.similarSymbols, .separate) }
+            Button("Comparative report") { onRun(viewModel.similarSymbols, .comparative) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("One full report per company, or rank them and pick the best fit.")
         }
     }
 }

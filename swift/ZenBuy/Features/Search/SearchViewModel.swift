@@ -181,6 +181,20 @@ final class SearchViewModel {
         }
     }
 
+    /// Swap the ticker selection for the peers and re-run in the same report
+    /// view, keeping the current goal and profit window.
+    func startSimilarReport(symbols: [String], mode: ReportMode) {
+        guard !symbols.isEmpty else { return }
+        picks = symbols.prefix(4).map { SymbolResult(symbol: $0, name: $0) }
+        selectedMode = picks.count > 1 ? mode : .separate
+        report.startSimilar(
+            symbols: picks.map(\.symbol),
+            mode: selectedMode,
+            directive: selectedDirectiveId,
+            profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: selectedDirectiveId)
+        )
+    }
+
     func handleScenePhase(_ phase: ScenePhase) {
         report.handleScenePhase(phase)
     }

@@ -194,6 +194,33 @@ enum ReportHTML {
         unescape(stripTags(html)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Worker `scorecardHtml` labels mapped back onto the `Scorecard` keys that
+    /// `/api/similar` ranks peers against.
+    private static let scoreKeysByLabel = [
+        "growth": "growth",
+        "moat": "moat",
+        "mgmt": "management",
+        "value": "valuation",
+        "balance": "balanceSheet",
+        "catalysts": "catalysts",
+        "overall": "overall",
+    ]
+
+    static func scoreProfile(from scorecardHTML: String) -> [String: Int] {
+        var profile: [String: Int] = [:]
+        for node in parse(scorecardHTML) {
+            guard case let .scorecard(rows) = node else { continue }
+            for row in rows {
+                guard let key = scoreKeysByLabel[row.label.lowercased()] else { continue }
+                let digits = row.value.prefix { $0.isNumber }
+                if let value = Int(digits) {
+                    profile[key] = value
+                }
+            }
+        }
+        return profile
+    }
+
     /// True when sticky/body/scorecard HTML yields something a user can see.
     static func hasVisibleContent(
         bottomLineHTML: String,

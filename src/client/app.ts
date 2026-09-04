@@ -151,7 +151,7 @@ export function mountApp(root: HTMLElement): void {
   modal.innerHTML = `
     <div class="modal-card" role="dialog" aria-labelledby="modal-title">
       <h2 id="modal-title">How should we analyze these?</h2>
-      <p class="modal-sub">You selected multiple tickers. Choose a report style.</p>
+      <p class="modal-sub" id="modal-sub">You selected multiple tickers. Choose a report style.</p>
       <div class="mode-options">
         <label class="mode-option">
           <input type="radio" name="mode" value="separate" checked />
@@ -241,6 +241,7 @@ export function mountApp(root: HTMLElement): void {
   const shareBtn = searchWrap.querySelector("#share-btn") as HTMLButtonElement;
   const shareMenu = searchWrap.querySelector("#share-menu") as HTMLDivElement;
   const formError = searchWrap.querySelector("#form-error") as HTMLParagraphElement;
+  const modalSub = modal.querySelector("#modal-sub") as HTMLParagraphElement;
   const reportPanel = report;
   const processing = createProcessingController(report);
   const titleWrap = report.querySelector("#report-title-wrap") as HTMLDivElement;
@@ -265,10 +266,10 @@ export function mountApp(root: HTMLElement): void {
   let showingLayman = false;
   /** Immutable share snapshot id (24-hour TTL) created when the user shares. */
   let activeShareId = "";
-  /** One-time pass for autostart tabs opened from Show more like this. */
-  let pendingLaunchId = "";
-  /** Successor / autostart reports hide "Show more like this" to avoid rabbit holes. */
+  /** Successor reports hide "Show more like this" to avoid rabbit holes. */
   let allowSimilar = true;
+  /** Pending answer to the separate-vs-comparative modal. */
+  let modeChoice: ((mode: ReportMode) => void) | null = null;
   let reportSymbols: string[] = [];
   let reportMode: ReportMode = "separate";
   let lastCompanies: CompanyProfile[] = [];
@@ -814,7 +815,22 @@ export function mountApp(root: HTMLElement): void {
     return scores.overall != null || scores.growth != null;
   }
 
-  async function openSimilarReport(
+  /** Separate vs comparative, shared by Generate Report and the peer flow. */
+  function askReportMode(
+    symbols: string[],
+    onChoose: (mode: ReportMode) => void
+  ): void {
+    modeChoice = onChoose;
+    modalSub.textContent = `Choose a report style for ${symbols.join(", ")}.`;
+    modal.classList.remove("hidden");
+  }
+
+  /**
+   * "Show more like this" trades itself in for the peers it found: one label
+   * per suggested ticker plus the button that runs them. All suggestions ride
+   * along — the labels are not toggles.
+   */
+  async function revealSimilarPicks(
     symbol: string,
     scores: Scorecard,
     btn: HTMLButtonElement
@@ -834,47 +850,59 @@ export function mountApp(root: HTMLElement): void {
         throw new Error(data.error || "Couldn't find similar companies.");
       }
 
-      // Turnstile must run in this click gesture; the new tab cannot solve it
-      // on its own during autostart.
-      btn.textContent = "Verifying…";
-      const turnstileToken = await obtainTurnstileToken();
-
-      const launchRes = await fetch("/api/launch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbols: data.symbols.slice(0, 3),
-          mode: "separate",
-          directive: state.directive,
-          profitHorizonYears: state.profitHorizonYears,
-          turnstileToken,
-        }),
+      const symbols = data.symbols.slice(0, 3);
+      btn.replaceWith(similarPicksRow(symbols));
+      symbols.forEach((s) => {
+        void fetch(`/api/prefetch?symbol=${encodeURIComponent(s)}`).catch(
+          () => {}
+        );
       });
-      resetTurnstile();
-
-      const launch = (await launchRes.json()) as {
-        launchId?: string;
-        error?: string;
-      };
-      if (!launchRes.ok || !launch.launchId) {
-        throw new Error(launch.error || "Couldn't open the similar report.");
-      }
-
-      const url = new URL(window.location.origin + "/");
-      url.searchParams.set("launch", launch.launchId);
-      url.searchParams.set("autostart", "1");
-      url.searchParams.set("noSimilar", "1");
-      window.open(url.toString(), "_blank", "noopener,noreferrer");
+      warmTurnstileToken();
     } catch (e) {
-      resetTurnstile();
+      btn.disabled = false;
+      btn.textContent = prev || "Show more like this";
       showError(
         e instanceof Error ? e.message : "Couldn't find similar companies.",
         true
       );
-    } finally {
-      btn.disabled = false;
-      btn.textContent = prev || "Show more like this";
     }
+  }
+
+  function similarPicksRow(symbols: string[]): HTMLDivElement {
+    const row = el("div", "similar-picks");
+    symbols.forEach((symbol) => row.append(el("span", "similar-pick", symbol)));
+
+    const run = el("button", "btn primary similar-run");
+    run.type = "button";
+    run.textContent = "Run Report on these?";
+    run.onclick = () => {
+      if (symbols.length < 2) {
+        runSimilarReport(symbols, "separate");
+        return;
+      }
+      askReportMode(symbols, (mode) => runSimilarReport(symbols, mode));
+    };
+    row.append(run);
+    return row;
+  }
+
+  /**
+   * Same tab, same goal and profit window: swap the ticker selection for the
+   * peers and re-run. One hop only — the successor cannot offer peers again.
+   */
+  function runSimilarReport(symbols: string[], mode: ReportMode): void {
+    setInputMode("manual");
+    state.picks = symbols.slice(0, 4).map((symbol) => ({
+      symbol,
+      name: symbol,
+    }));
+    state.mode = mode;
+    allowSimilar = false;
+    activeShareId = "";
+    clearShareUrlInAddressBar();
+    renderChips();
+    reportPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    void runResearch();
   }
 
   function renderCompanyProfiles(
@@ -899,7 +927,7 @@ export function mountApp(root: HTMLElement): void {
         const btn = el("button", "btn ghost similar-btn");
         btn.type = "button";
         btn.textContent = "Show more like this";
-        btn.onclick = () => void openSimilarReport(profile.symbol, profile.scores, btn);
+        btn.onclick = () => void revealSimilarPicks(profile.symbol, profile.scores, btn);
         head.append(badges, btn);
       } else {
         head.append(badges);
@@ -1005,11 +1033,10 @@ export function mountApp(root: HTMLElement): void {
     processing.start(state.picks.length, mode);
 
     let turnstileToken = "";
-    const launchId = pendingLaunchId;
     try {
       // A verified purchase already answers the question Turnstile asks, and
       // the Worker skips the check for unlocked sessions too.
-      if (!launchId && !isUnlocked()) {
+      if (!isUnlocked()) {
         // Must run inside the click gesture on iOS Safari.
         turnstileToken = await obtainTurnstileToken();
       }
@@ -1024,12 +1051,11 @@ export function mountApp(root: HTMLElement): void {
           directive: state.directive,
           profitHorizonYears: state.profitHorizonYears,
           turnstileToken,
-          launchId: launchId || undefined,
         }),
       });
 
       // Tokens are single-use — always refresh for the next attempt.
-      if (!launchId) resetTurnstile();
+      resetTurnstile();
 
       if (!res.ok) {
         const err = (await res.json()) as {
@@ -1037,8 +1063,6 @@ export function mountApp(root: HTMLElement): void {
           retry?: boolean;
           code?: string;
         };
-        if (launchId) pendingLaunchId = launchId;
-        if (err.code === "launch_expired") pendingLaunchId = "";
         processing.fail();
         showError(
           err.error || "Something went wrong.",
@@ -1047,8 +1071,6 @@ export function mountApp(root: HTMLElement): void {
         );
         return;
       }
-
-      pendingLaunchId = "";
 
       await consumeStream(res, (event, payload) => {
         {
@@ -1186,7 +1208,7 @@ export function mountApp(root: HTMLElement): void {
     setInputMode("manual");
     reportId = "";
     activeShareId = "";
-    pendingLaunchId = "";
+    allowSimilar = true;
     hasReport = false;
     fullView = null;
     showingLayman = false;
@@ -1224,7 +1246,10 @@ export function mountApp(root: HTMLElement): void {
       return;
     }
     if (state.picks.length > 1) {
-      modal.classList.remove("hidden");
+      askReportMode(state.picks.map((p) => p.symbol), (mode) => {
+        state.mode = mode;
+        void runResearch();
+      });
       return;
     }
     state.mode = "separate";
@@ -1232,6 +1257,7 @@ export function mountApp(root: HTMLElement): void {
   };
 
   modal.querySelector("#modal-cancel")!.addEventListener("click", () => {
+    modeChoice = null;
     modal.classList.add("hidden");
   });
 
@@ -1239,9 +1265,10 @@ export function mountApp(root: HTMLElement): void {
     const selected = modal.querySelector(
       'input[name="mode"]:checked'
     ) as HTMLInputElement;
-    state.mode = selected.value as ReportMode;
+    const choice = modeChoice;
+    modeChoice = null;
     modal.classList.add("hidden");
-    runResearch();
+    choice?.(selected.value as ReportMode);
   });
 
   function saveAsPdf(): void {
@@ -1517,12 +1544,11 @@ export function mountApp(root: HTMLElement): void {
   ) {
     void loadSharedReport(sharedId);
   } else {
-    void maybeAutostartFromUrl();
+    maybeAutostartFromUrl();
   }
 
-  async function maybeAutostartFromUrl(): Promise<void> {
+  function maybeAutostartFromUrl(): void {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("noSimilar") === "1") allowSimilar = false;
 
     const directiveParam = params.get("directive");
     if (directiveParam && isInvestmentDirectiveId(directiveParam)) {
@@ -1539,58 +1565,6 @@ export function mountApp(root: HTMLElement): void {
           state.profitHorizonYears = years;
         }
       );
-    }
-
-    const launchId = params.get("launch")?.trim();
-    if (params.get("autostart") === "1" && launchId) {
-      try {
-        const res = await fetch(
-          `/api/launch?id=${encodeURIComponent(launchId)}`
-        );
-        const data = (await res.json()) as {
-          symbols?: string[];
-          mode?: ReportMode;
-          directive?: string;
-          profitHorizonYears?: number;
-          error?: string;
-        };
-        if (!res.ok || !data.symbols?.length) {
-          throw new Error(data.error || "Launch link expired.");
-        }
-
-        if (data.directive && isInvestmentDirectiveId(data.directive)) {
-          state.directive = data.directive;
-        }
-        if (data.profitHorizonYears != null) {
-          state.profitHorizonYears = data.profitHorizonYears;
-        }
-
-        state.picks = data.symbols.slice(0, 4).map((symbol) => ({
-          symbol,
-          name: symbol,
-        }));
-        state.mode = data.mode ?? "separate";
-        pendingLaunchId = launchId;
-        renderChips();
-
-        if (window.history.replaceState) {
-          const clean = new URL(window.location.href);
-          clean.searchParams.delete("launch");
-          clean.searchParams.delete("autostart");
-          clean.searchParams.delete("noSimilar");
-          window.history.replaceState({}, "", clean.toString());
-        }
-
-        void runResearch();
-      } catch (e) {
-        showError(
-          e instanceof Error
-            ? e.message
-            : "This link expired. Use Show more like this again.",
-          true
-        );
-      }
-      return;
     }
 
     // Legacy ?symbols=&autostart= links: prefill only — Turnstile needs a tap.
