@@ -2,9 +2,9 @@
  * Report allowances.
  *
  * An unlocked buyer is counted per Apple subject, per day. A verified purchase
- * is a strong identity, so nothing else is needed there. Two allowances sit
- * outside all of this and are never counted: an IP on `RATE_LIMIT_WHITELIST`,
- * and an Apple ID on `APPLE_ID_WHITELIST`.
+ * is a strong identity, so nothing else is needed there. One allowance sits
+ * outside all of this and is never counted: an Apple ID on
+ * `APPLE_ID_WHITELIST`.
  *
  * A free visitor gets a rolling weekly allowance instead, and the hard part is
  * deciding *who* they are. A per-IP counter is reset by a hotspot or a VPN and
@@ -60,17 +60,6 @@ function freeWeeklyLimit(env: Env): number {
 
 function proDailyLimit(env: Env): number {
   return Math.max(1, Number(env.RATE_LIMIT_PRO_DAILY || DEFAULT_PRO_DAILY_LIMIT));
-}
-
-/** Justin's own networks, so testing does not burn the public allowance. */
-function isRateLimitExempt(env: Env, ip: string): boolean {
-  const raw = env.RATE_LIMIT_WHITELIST?.trim();
-  if (!raw) return false;
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .includes(ip);
 }
 
 function readCookie(request: Request, name: string): string | null {
@@ -301,13 +290,12 @@ export async function openQuotaGate(
   subject: string | null,
   clientSignal: string,
   /**
-   * Apple ID on `APPLE_ID_WHITELIST`. Complimentary access is Justin's own
-   * grant, so it is never counted at all — the same total bypass an IP on
-   * `RATE_LIMIT_WHITELIST` gets, rather than the buyer's daily allowance.
+   * Apple ID on `APPLE_ID_WHITELIST`. A complimentary grant is never counted
+   * at all, rather than getting the buyer's daily allowance.
    */
   complimentary = false
 ): Promise<QuotaGate> {
-  if (complimentary || isRateLimitExempt(env, ip)) return { allowed: true, consume: noop };
+  if (complimentary) return { allowed: true, consume: noop };
 
   if (subject) {
     const limit = proDailyLimit(env);

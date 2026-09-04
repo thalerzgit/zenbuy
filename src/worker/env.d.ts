@@ -21,8 +21,6 @@ interface Env {
   RATE_LIMIT_FREE_WEEKLY?: string;
   /** Daily reports for a signed-in buyer, counted per Apple subject. */
   RATE_LIMIT_PRO_DAILY?: string;
-  /** Comma-separated IPs exempt from report limits. */
-  RATE_LIMIT_WHITELIST?: string;
   CACHE_TTL_SECONDS?: string;
 
   /** Services ID for Sign in with Apple on the web (the OAuth client id). */

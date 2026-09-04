@@ -55,10 +55,11 @@ async function spend(
   env: Env,
   times: number,
   req: Request,
-  signal: string
+  signal: string,
+  ip = "203.0.113.7"
 ): Promise<void> {
   for (let i = 0; i < times; i++) {
-    const gate = await openQuotaGate(req, env, "203.0.113.7", null, signal);
+    const gate = await openQuotaGate(req, env, ip, null, signal);
     assert.equal(gate.allowed, true, `report ${i + 1} should be allowed`);
     await gate.consume();
   }
@@ -213,20 +214,19 @@ test("unlocked buyers get the daily pro allowance, counted per Apple subject", a
   assert.equal(otherBuyer.allowed, true);
 });
 
-test("whitelisted IPs are never counted", async () => {
-  const env = envWith(fakeKv(), { RATE_LIMIT_WHITELIST: "203.0.113.7, 198.51.100.1" });
-  for (let i = 0; i < 10; i++) {
-    const gate = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
-    assert.equal(gate.allowed, true);
-    await gate.consume();
-  }
-  assert.equal(
-    (await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL)).allowed,
-    true
-  );
+test("no IP is exempt: the weekly limit applies to every free visitor", async () => {
+  const env = envWith(fakeKv());
+  const seed = await openQuotaGate(request(), env, "99.0.81.158", null, SIGNAL);
+  await seed.consume();
+  const req = request({ cookie: mintedCookie(seed.setCookie) });
+  await spend(env, 2, req, SIGNAL, "99.0.81.158");
+
+  const denied = await openQuotaGate(req, env, "99.0.81.158", null, SIGNAL);
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.code, "free_limit");
 });
 
-test("a complimentary Apple ID is never counted either", async () => {
+test("a complimentary Apple ID is never counted", async () => {
   const env = envWith(fakeKv(), { RATE_LIMIT_PRO_DAILY: "25" });
   for (let i = 0; i < 40; i++) {
     const gate = await openQuotaGate(
