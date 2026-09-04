@@ -202,6 +202,31 @@ body {
   white-space: nowrap;
 }
 
+.similar-picks {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.similar-pick {
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.similar-run {
+  font-size: 0.88rem;
+  padding: 0.5rem 0.9rem;
+  white-space: nowrap;
+}
+
 .company-profile--follow {
   margin-top: 1.75rem;
   padding-top: 1.5rem;

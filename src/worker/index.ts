@@ -10,10 +10,7 @@ import {
   SEARCH_EMPTY_TTL_SECONDS,
   RATE_LIMIT_TTL_SECONDS,
   SHARE_TTL_SECONDS,
-  LAUNCH_TTL_SECONDS,
-  launchCacheKey,
   type CachedReport,
-  type LaunchSession,
   type SharedReportSnapshot,
 } from "./cache";
 import {
@@ -615,113 +612,6 @@ async function handleSimilar(request: Request, env: Env): Promise<Response> {
   }
 }
 
-/** Issue a one-time launch pass after Turnstile on "Show more like this". */
-async function handleCreateLaunch(request: Request, env: Env): Promise<Response> {
-  const ip = clientIp(request);
-  let body: {
-    symbols?: string[];
-    mode?: "separate" | "comparative";
-    directive?: string;
-    profitHorizonYears?: number;
-    turnstileToken?: string;
-  };
-
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: randomError(), retry: true }, 400);
-  }
-
-  if (!isNativeIOSClient(request)) {
-    const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
-    if (!turnstileOk) {
-      return json(
-        {
-          error:
-            "Human check didn't clear. Tap retry — on iPhone, wait for the check to finish first.",
-          retry: true,
-          code: "turnstile_failed",
-        },
-        403
-      );
-    }
-  }
-
-  const symbols = (body.symbols ?? [])
-    .map((s) => s.toUpperCase().trim())
-    .filter((s) => /^[A-Z0-9.\-]{1,12}$/.test(s));
-  if (symbols.length < 1 || symbols.length > 4) {
-    return json({ error: "Select 1 to 4 tickers.", retry: true }, 400);
-  }
-
-  const directive: InvestmentDirectiveId = isInvestmentDirectiveId(body.directive ?? "")
-    ? (body.directive as InvestmentDirectiveId)
-    : DEFAULT_DIRECTIVE_ID;
-  const profitHorizonYears = Math.min(
-    25,
-    Math.max(
-      2,
-      Number(body.profitHorizonYears) ||
-        getInvestmentDirective(directive).promptHorizonYears
-    )
-  );
-  const mode = body.mode === "comparative" ? "comparative" : "separate";
-
-  const launchId = crypto.randomUUID();
-  const session: LaunchSession = {
-    symbols,
-    mode,
-    directive,
-    profitHorizonYears,
-  };
-  await cacheSet(env.CACHE, launchCacheKey(launchId), session, LAUNCH_TTL_SECONDS);
-  return json({ launchId, symbols, mode, directive, profitHorizonYears });
-}
-
-/** Read a launch pass for autostart UI (does not consume it). */
-async function handleGetLaunch(request: Request, env: Env): Promise<Response> {
-  const id = new URL(request.url).searchParams.get("id")?.trim();
-  if (!id || id.length > 64) {
-    return json({ error: "Launch link invalid.", code: "bad_request" }, 400);
-  }
-
-  const session = await cacheGet<LaunchSession>(env.CACHE, launchCacheKey(id));
-  if (!session) {
-    return json(
-      {
-        error: "This link expired. Use Show more like this again from a report.",
-        retry: true,
-        code: "launch_expired",
-      },
-      404
-    );
-  }
-
-  return json({
-    symbols: session.symbols,
-    mode: session.mode,
-    directive: session.directive,
-    profitHorizonYears: session.profitHorizonYears,
-  });
-}
-
-async function consumeLaunchSession(
-  env: Env,
-  launchId: string,
-  symbols: string[]
-): Promise<LaunchSession | null> {
-  const key = launchCacheKey(launchId);
-  const session = await cacheGet<LaunchSession>(env.CACHE, key);
-  if (!session) return null;
-
-  const requested = [...symbols].map((s) => s.toUpperCase()).sort();
-  const allowed = [...session.symbols].map((s) => s.toUpperCase()).sort();
-  if (requested.join(",") !== allowed.join(",")) return null;
-
-  await env.CACHE.delete(key);
-  return session;
-}
-
 async function handleSimplify(request: Request, env: Env): Promise<Response> {
   if (!env.ANTHROPIC_API_KEY) {
     return json({ error: "Research service not configured" }, 503);
@@ -866,7 +756,6 @@ async function handleResearch(
     directive?: string;
     profitHorizonYears?: number;
     turnstileToken?: string;
-    launchId?: string;
   };
 
   try {
@@ -875,16 +764,16 @@ async function handleResearch(
     return json({ error: randomError(), retry: true }, 400);
   }
 
-  let symbols = (body.symbols ?? [])
+  const symbols = (body.symbols ?? [])
     .map((s) => s.toUpperCase().trim())
     .filter(Boolean);
-  let mode = body.mode ?? "separate";
-  let directive: InvestmentDirectiveId = isInvestmentDirectiveId(
+  const mode = body.mode ?? "separate";
+  const directive: InvestmentDirectiveId = isInvestmentDirectiveId(
     body.directive ?? ""
   )
     ? (body.directive as InvestmentDirectiveId)
     : DEFAULT_DIRECTIVE_ID;
-  let profitHorizonYears = Math.min(
+  const profitHorizonYears = Math.min(
     25,
     Math.max(
       2,
@@ -892,28 +781,6 @@ async function handleResearch(
         getInvestmentDirective(directive).promptHorizonYears
     )
   );
-
-  const launchId = (body.launchId ?? "").trim();
-  let usedLaunch = false;
-  if (launchId) {
-    const session = await consumeLaunchSession(env, launchId, symbols);
-    if (!session) {
-      return json(
-        {
-          error:
-            "This auto-start link expired. Use Show more like this again from the prior report.",
-          retry: true,
-          code: "launch_expired",
-        },
-        403
-      );
-    }
-    symbols = session.symbols;
-    mode = session.mode;
-    directive = session.directive;
-    profitHorizonYears = session.profitHorizonYears;
-    usedLaunch = true;
-  }
 
   if (symbols.length < 1 || symbols.length > 4) {
     return json({ error: "Select 1 to 4 tickers.", retry: true }, 400);
@@ -927,7 +794,7 @@ async function handleResearch(
   const unlock = await resolveUnlock(request, env);
   const subject = unlock.unlocked ? unlock.sub : null;
 
-  if (!isNativeIOSClient(request) && !usedLaunch && !unlock.unlocked) {
+  if (!isNativeIOSClient(request) && !unlock.unlocked) {
     const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
     if (!turnstileOk) {
       return json(
@@ -1306,13 +1173,6 @@ export default {
 
     if (url.pathname === "/api/similar" && request.method === "GET") {
       return handleSimilar(request, env);
-    }
-
-    if (url.pathname === "/api/launch" && request.method === "POST") {
-      return handleCreateLaunch(request, env);
-    }
-    if (url.pathname === "/api/launch" && request.method === "GET") {
-      return handleGetLaunch(request, env);
     }
 
     if (url.pathname === "/api/share" && request.method === "POST") {
