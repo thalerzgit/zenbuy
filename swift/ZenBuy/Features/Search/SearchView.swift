@@ -31,9 +31,18 @@ struct SearchView: View {
                         ))
 
                         InvestmentGoalPicker(
-                            selectedId: $viewModel.selectedDirectiveId,
+                            selectedId: Binding(
+                                get: { viewModel.selectedDirectiveId },
+                                set: { viewModel.selectDirective($0) }
+                            ),
                             directives: viewModel.directives,
                             onInfo: { viewModel.showDirectiveDetail($0.id) }
+                        )
+
+                        ProfitWindowPicker(
+                            selectedYears: viewModel.profitHorizonYears,
+                            options: viewModel.profitHorizonOptions,
+                            onSelect: { viewModel.setProfitHorizonYears($0) }
                         )
 
                         if viewModel.inputMode == .enter {

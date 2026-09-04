@@ -19,6 +19,7 @@ struct ContentView: View {
                             symbols: viewModel.picks.map(\.symbol),
                             mode: viewModel.selectedMode,
                             directive: viewModel.selectedDirectiveId,
+                            profitHorizonYears: viewModel.profitHorizonYears,
                             viewModel: viewModel.report,
                             onRunSimilar: { symbols, mode in
                                 viewModel.startSimilarReport(symbols: symbols, mode: mode)

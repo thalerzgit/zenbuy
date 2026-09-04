@@ -30,8 +30,12 @@ final class SearchViewModel {
     var errorMessage: String?
     var path: [SearchRoute] = []
     var selectedMode: ReportMode = .separate
-    var selectedDirectiveId: String = "growth"
+    var selectedDirectiveId: String = InvestmentDirectiveInfo.defaultDirectiveId
     var directives: [InvestmentDirectiveInfo] = InvestmentDirectiveInfo.bundled
+    var profitHorizonYears: Int = ProfitHorizonOption.loadStoredYears(
+        for: InvestmentDirectiveInfo.defaultDirectiveId
+    )
+    var profitHorizonOptions: [ProfitHorizonOption] = ProfitHorizonOption.bundled
     var inputMode: SearchInputMode = .enter
     var discoverResults: [DiscoverPick] = []
     var isDiscovering = false
@@ -48,13 +52,17 @@ final class SearchViewModel {
     }
 
     private func loadConfig() async {
-        if let config = try? await api.fetchConfig(),
-           let list = config.investmentDirectives,
-           !list.isEmpty {
+        guard let config = try? await api.fetchConfig() else { return }
+        if let list = config.investmentDirectives, !list.isEmpty {
             directives = list
             if let defaultId = config.defaultDirectiveId {
                 selectedDirectiveId = defaultId
+                // A stored pick still wins; this only re-derives the default.
+                profitHorizonYears = ProfitHorizonOption.loadStoredYears(for: defaultId)
             }
+        }
+        if let windows = config.profitHorizonOptions, !windows.isEmpty {
+            profitHorizonOptions = windows
         }
     }
 
@@ -105,14 +113,32 @@ final class SearchViewModel {
         picks.removeAll { $0 == result }
     }
 
+    /// Web parity: choosing a goal resets the profit window to that goal's
+    /// default, and either change invalidates the current discover matches.
+    func selectDirective(_ id: String) {
+        guard selectedDirectiveId != id else { return }
+        selectedDirectiveId = id
+        setProfitHorizonYears(InvestmentDirectiveInfo.defaultProfitHorizonYears(for: id))
+    }
+
+    func setProfitHorizonYears(_ years: Int) {
+        profitHorizonYears = years
+        ProfitHorizonOption.saveStoredYears(years)
+        clearDiscoverResults()
+    }
+
+    private func clearDiscoverResults() {
+        discoverTask?.cancel()
+        isDiscovering = false
+        discoverResults = []
+    }
+
     func setInputMode(_ mode: SearchInputMode) {
         guard inputMode != mode else { return }
         inputMode = mode
         errorMessage = nil
         if mode == .enter {
-            discoverResults = []
-            discoverTask?.cancel()
-            isDiscovering = false
+            clearDiscoverResults()
         } else {
             query = ""
             suggestions = []
@@ -127,7 +153,10 @@ final class SearchViewModel {
         errorMessage = nil
         discoverTask = Task {
             do {
-                let results = try await api.discover(directive: selectedDirectiveId)
+                let results = try await api.discover(
+                    directive: selectedDirectiveId,
+                    profitHorizonYears: profitHorizonYears
+                )
                 guard !Task.isCancelled else { return }
                 discoverResults = results
                 picks = results.map { SymbolResult(symbol: $0.symbol, name: $0.name) }
@@ -191,7 +220,7 @@ final class SearchViewModel {
             symbols: picks.map(\.symbol),
             mode: selectedMode,
             directive: selectedDirectiveId,
-            profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: selectedDirectiveId)
+            profitHorizonYears: profitHorizonYears
         )
     }
 
@@ -204,7 +233,7 @@ final class SearchViewModel {
             symbols: picks.map(\.symbol),
             mode: selectedMode,
             directive: selectedDirectiveId,
-            profitHorizonYears: InvestmentDirectiveInfo.defaultProfitHorizonYears(for: selectedDirectiveId)
+            profitHorizonYears: profitHorizonYears
         )
     }
 

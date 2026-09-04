@@ -190,13 +190,18 @@ final class ZenBuyAPIClient {
         }
     }
 
-    func discover(directive: String, limit: Int = 4) async throws -> [DiscoverPick] {
+    func discover(
+        directive: String,
+        profitHorizonYears: Int,
+        limit: Int = 4
+    ) async throws -> [DiscoverPick] {
         var components = URLComponents(
             url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/discover"),
             resolvingAgainstBaseURL: false
         )
         components?.queryItems = [
             URLQueryItem(name: "directive", value: directive),
+            URLQueryItem(name: "horizon", value: String(profitHorizonYears)),
             URLQueryItem(name: "limit", value: String(limit)),
         ]
         guard let url = components?.url else { throw ZenBuyAPIError.invalidURL }
