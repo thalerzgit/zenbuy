@@ -112,6 +112,48 @@ SwiftUI app in `swift/` (not a WebView). Pushes to `main` that touch `swift/**` 
 
 **Blockers before first upload:** (1) stamp `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` on this repo from Mini; (2) Justin creates Bundle ID + ASC app for `info.zenbuy.app` in Apple Developer / App Store Connect UI (API key cannot CREATE apps — CI never tries). Then `workflow_dispatch` TestFlight to invite `thalerz@me.com`. See `swift/README.md`.
 
+## Report allowances
+
+| Who | Allowance | Counted against |
+|-----|-----------|-----------------|
+| Unlocked buyer | `RATE_LIMIT_PRO_DAILY` (25) per day | Apple `sub` |
+| Free visitor | `RATE_LIMIT_FREE_WEEKLY` (3) per rolling 7×24h | Identity cluster |
+| `RATE_LIMIT_WHITELIST` IPs | unlimited | — |
+
+A free allowance is only worth as much as the identity behind it, and both
+obvious identities are trivially reset: an IP counter dies to a hotspot, a
+cookie dies to incognito. So `src/worker/quota.ts` takes up to three signals
+per request and files it under **every** cluster any of them already resolves
+to, denying it if **any** of those clusters is out of allowance:
+
+- **`zb_vid` cookie** — random id, `HttpOnly` so only the Worker can set or
+  read it. Strongest signal: unique per browser profile, survives IP changes.
+- **Device signal** — `src/client/device-signals.ts` hashes user-agent,
+  language, time zone/locale, screen size, and CPU/memory class at generate
+  time (SHA-256, truncated to 32 hex). Native iOS sends a random Keychain
+  UUID as `X-ZenBuy-Device` instead. This is what catches a cleared cookie
+  **and** a new IP at the same time. Every property is picked for stability
+  over entropy: no canvas or WebGL readback (Safari Private Browsing and
+  Firefox RFP add per-session noise, so the hash would reset on every private
+  window) and no `devicePixelRatio` (browser zoom moves it). The resulting
+  hash is low-entropy and stock phones share it, which is why a hash seen
+  from more than 6 distinct networks is demoted to a device class and from
+  then on only links within one network.
+- **Network** — `/24` (IPv4) or `/48` (IPv6). Never an identity on its own
+  (carrier NAT would bucket a whole city); it qualifies a device signal, and
+  is the only bucket for a client that sends no signals at all.
+
+Rolling window, not calendar week: each cluster stores the timestamps of its
+last few reports, and the oldest frees its slot exactly 7×24h later, so the
+error can say when the next report opens. Every key carries a ~1 week TTL.
+
+**Residual risk, honestly:** a visitor who changes network *and* device
+signals together (different browser on a different machine) is a new free
+identity, and KV's eventual consistency leaves a small burst window. Perfect
+detection is not available without accounts. Conversely, two people on very
+similar devices behind one network can be treated as one visitor — the
+6-network demotion exists to keep that rare.
+
 ## Rate limits and resilience
 
 The Finnhub free tier allows roughly 60 requests/minute, and a single
@@ -182,4 +224,5 @@ ANTHROPIC_API_KEY=... node tools/smoke-test.mjs --llm comparative AAPL CSCO PANW
 - Soft cap report length, section streaming, sage green UI
 - KV 1h shared report cache + AI Gateway cache on the analysis providers
 - Print-to-PDF with logo watermark
-- 5 reports / IP / day (configurable via `RATE_LIMIT_DAILY`; exempt IPs via `RATE_LIMIT_WHITELIST`)
+- 3 free reports / visitor / rolling week (`RATE_LIMIT_FREE_WEEKLY`), 25 / day
+  unlocked (`RATE_LIMIT_PRO_DAILY`); exempt IPs via `RATE_LIMIT_WHITELIST`
