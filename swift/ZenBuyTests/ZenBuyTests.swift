@@ -45,6 +45,44 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(items.count, 2)
     }
 
+    /// Locks the Worker `scorecardHtml` labels onto the `Scorecard` keys that
+    /// `/api/similar` ranks peers against.
+    func testReportHTMLScoreProfileMapsWorkerLabels() {
+        let rows: [(String, Int)] = [
+            ("Growth", 6),
+            ("Moat", 9),
+            ("Mgmt", 7),
+            ("Value", 4),
+            ("Balance", 8),
+            ("Catalysts", 5),
+            ("Overall", 7),
+        ]
+        let html = "<div class=\"scorecard\">" + rows.map { label, value in
+            """
+            <div class="score-row"><span class="score-label">\(label)</span>\
+            <div class="score-bar"><div class="score-fill" style="width:\(value * 10)%"></div></div>\
+            <span class="score-num">\(value)/10</span></div>
+            """
+        }.joined() + "</div>"
+
+        XCTAssertEqual(
+            ReportHTML.scoreProfile(from: html),
+            [
+                "growth": 6,
+                "moat": 9,
+                "management": 7,
+                "valuation": 4,
+                "balanceSheet": 8,
+                "catalysts": 5,
+                "overall": 7,
+            ]
+        )
+    }
+
+    func testReportHTMLScoreProfileIsEmptyWithoutAScorecard() {
+        XCTAssertTrue(ReportHTML.scoreProfile(from: "<h2>BOTTOM LINE</h2>").isEmpty)
+    }
+
     func testReportHTMLUnescapeNamedAndNumericEntities() {
         XCTAssertEqual(ReportHTML.unescape("A &amp; B &#183; C &middot; D"), "A & B · C · D")
         XCTAssertEqual(ReportHTML.unescape("arrow &#x2192; here"), "arrow → here")
