@@ -19,6 +19,12 @@ import {
   PROCESSING_PANEL_HTML,
   createProcessingController,
 } from "./processing-progress";
+import {
+  UNLOCK_HEADER_HTML,
+  isUnlocked,
+  mountUnlock,
+  openUnlockGuide,
+} from "./unlock";
 
 export interface SymbolPick {
   symbol: string;
@@ -101,6 +107,7 @@ export function mountApp(root: HTMLElement): void {
         <span class="brand-tag">Know before you trade</span>
       </span>
     </a>
+    ${UNLOCK_HEADER_HTML}
   `;
 
   const main = el("main", "site-main");
@@ -196,6 +203,7 @@ export function mountApp(root: HTMLElement): void {
 
   main.append(searchWrap, report);
   root.append(header, main, modal, footer);
+  mountUnlock(root);
 
   const input = searchWrap.querySelector("#symbol-input") as HTMLInputElement;
   const dropdown = searchWrap.querySelector("#dropdown") as HTMLDivElement;
@@ -479,9 +487,25 @@ export function mountApp(root: HTMLElement): void {
     syncPrimaryBtn();
   }
 
-  function showError(msg: string, retry = true): void {
+  /**
+   * `unlockable` marks the free daily cap — the one error the visitor can
+   * clear today, by using a purchase they may already own.
+   */
+  function showError(msg: string, retry = true, unlockable = false): void {
     formError.textContent = retry ? `${msg} Retry?` : msg;
     formError.classList.remove("hidden");
+
+    if (unlockable && !isUnlocked()) {
+      const cta = el("button", "form-error-unlock");
+      cta.type = "button";
+      cta.textContent = "Own the app? Unlock this site →";
+      cta.onclick = (e) => {
+        e.stopPropagation();
+        openUnlockGuide();
+      };
+      formError.append(cta);
+    }
+
     formError.onclick = retry ? () => runResearch() : null;
     formError.style.cursor = retry ? "pointer" : "default";
   }
@@ -983,7 +1007,9 @@ export function mountApp(root: HTMLElement): void {
     let turnstileToken = "";
     const launchId = pendingLaunchId;
     try {
-      if (!launchId) {
+      // A verified purchase already answers the question Turnstile asks, and
+      // the Worker skips the check for unlocked sessions too.
+      if (!launchId && !isUnlocked()) {
         // Must run inside the click gesture on iOS Safari.
         turnstileToken = await obtainTurnstileToken();
       }
@@ -1014,7 +1040,11 @@ export function mountApp(root: HTMLElement): void {
         if (launchId) pendingLaunchId = launchId;
         if (err.code === "launch_expired") pendingLaunchId = "";
         processing.fail();
-        showError(err.error || "Something went wrong.", err.retry !== false);
+        showError(
+          err.error || "Something went wrong.",
+          err.retry !== false,
+          err.code === "free_limit"
+        );
         return;
       }
 

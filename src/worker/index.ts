@@ -59,6 +59,14 @@ import {
   verifyTurnstile,
 } from "./research";
 import { legalPageResponse } from "./legal-pages";
+import {
+  handleAppleCallback,
+  handleAppleSignIn,
+  handleMe,
+  handleUnlink,
+  handleUnlockWeb,
+  resolveUnlock,
+} from "./unlock";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -299,6 +307,9 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
 async function handleConfig(env: Env): Promise<Response> {
   return json({
     turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? "",
+    // Empty until the app is actually on sale, so the unlock guide never
+    // points at a store page that does not exist yet.
+    appStoreUrl: env.APP_STORE_URL ?? "",
     investmentDirectives: directivesForClient(),
     defaultDirectiveId: DEFAULT_DIRECTIVE_ID,
     profitHorizonOptions: PROFIT_HORIZON_OPTIONS,
@@ -911,7 +922,12 @@ async function handleResearch(
     return json({ error: "Choose separate or comparative mode.", retry: true }, 400);
   }
 
-  if (!isNativeIOSClient(request) && !usedLaunch) {
+  // A verified purchase is a stronger signal than a bot check, and it earns a
+  // quota of its own instead of sharing the free per-IP allowance.
+  const unlock = await resolveUnlock(request, env);
+  const subject = unlock.unlocked ? unlock.sub : null;
+
+  if (!isNativeIOSClient(request) && !usedLaunch && !unlock.unlocked) {
     const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
     if (!turnstileOk) {
       return json(
@@ -926,13 +942,15 @@ async function handleResearch(
     }
   }
 
-  const allowed = await checkRateLimit(env, ip);
+  const allowed = await checkRateLimit(env, ip, subject);
   if (!allowed) {
     return json(
       {
-        error:
-          "Daily research limit reached. The zen garden is closed until tomorrow.",
+        error: subject
+          ? "Daily research limit reached, even on the unlocked plan. The zen garden reopens tomorrow."
+          : "Daily research limit reached. The zen garden is closed until tomorrow.",
         retry: false,
+        code: subject ? "pro_limit" : "free_limit",
       },
       429
     );
@@ -1148,7 +1166,7 @@ async function handleResearch(
           );
           await cacheSet(env.CACHE, doneKey, report, ttl);
 
-          ctx.waitUntil(incrementRateLimit(env, ip).catch(console.error));
+          ctx.waitUntil(incrementRateLimit(env, ip, subject).catch(console.error));
           send("companies", { companies, mode: effectiveMode });
           send("done", {
             badges: report.badges,
@@ -1236,6 +1254,26 @@ export default {
 
     const legal = legalPageResponse(url.pathname);
     if (legal) return legal;
+
+    // Web unlock. Sign-in is a browser navigation, so these are GETs; only
+    // the app's proof of purchase is a POST.
+    if (url.pathname === "/auth/apple" && request.method === "GET") {
+      return handleAppleSignIn(request, env);
+    }
+    if (url.pathname === "/auth/apple/callback" && request.method === "GET") {
+      return handleAppleCallback(request, env);
+    }
+    if (url.pathname === "/auth/unlink" && request.method === "GET") {
+      return handleUnlink(request, env);
+    }
+    if (url.pathname === "/api/me" && request.method === "GET") {
+      return handleMe(request, env);
+    }
+    if (url.pathname === "/api/unlock-web") {
+      return request.method === "POST"
+        ? handleUnlockWeb(request, env)
+        : json({ error: "method not allowed" }, 405);
+    }
 
     if (url.pathname === "/api/config") {
       return handleConfig(env);

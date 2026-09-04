@@ -15,7 +15,25 @@ interface Env {
   ZENBUY_BACKUP_MODEL?: string;
   ZENBUY_BACKUP_PROVIDER?: string;
   RATE_LIMIT_DAILY?: string;
+  /** Daily reports for a signed-in buyer, counted per Apple subject. */
+  RATE_LIMIT_PRO_DAILY?: string;
   /** Comma-separated IPs exempt from daily report limits. */
   RATE_LIMIT_WHITELIST?: string;
   CACHE_TTL_SECONDS?: string;
+
+  /** Services ID for Sign in with Apple on the web (the OAuth client id). */
+  APPLE_SERVICES_ID?: string;
+  APPLE_TEAM_ID?: string;
+  /** Key id of the Sign in with Apple `.p8`. */
+  APPLE_KEY_ID?: string;
+  /** The `.p8` itself, PKCS#8 PEM. Worker secret — never a var. */
+  APPLE_PRIVATE_KEY?: string;
+  /** Audience for identity tokens the iOS app sends. */
+  APPLE_BUNDLE_ID?: string;
+  /** Comma-separated in-app purchase ids that unlock the website. */
+  APPLE_PRO_PRODUCT_IDS?: string;
+  /** "0" rejects sandbox (TestFlight) purchases once the app is on sale. */
+  APPLE_ALLOW_SANDBOX?: string;
+  /** App Store listing. Empty while the app is TestFlight-only. */
+  APP_STORE_URL?: string;
 }

@@ -22,8 +22,22 @@
     "ZENBUY_BACKUP_MODEL": "grok-4.5",
     "ZENBUY_BACKUP_PROVIDER": "xai",
     "RATE_LIMIT_DAILY": "5",
+    "RATE_LIMIT_PRO_DAILY": "100",
     "RATE_LIMIT_WHITELIST": "99.0.81.158,73.15.8.74",
-    "CACHE_TTL_SECONDS": "3600"
+    "CACHE_TTL_SECONDS": "3600",
+    // Sign in with Apple. APPLE_KEY_ID and APPLE_PRIVATE_KEY are Worker
+    // secrets; everything here is public by design (the Services ID travels
+    // in the redirect to Apple, the team id ships in the iOS build).
+    "APPLE_SERVICES_ID": "info.zenbuy.web",
+    "APPLE_TEAM_ID": "XQP4QUVJYY",
+    "APPLE_BUNDLE_ID": "info.zenbuy.app",
+    "APPLE_PRO_PRODUCT_IDS": "info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly",
+    // TestFlight purchases run through Apple's sandbox. Set to "0" once the
+    // app is selling on the App Store.
+    "APPLE_ALLOW_SANDBOX": "1",
+    // Set to https://apps.apple.com/app/id6807960678 on release day; while it
+    // is empty the unlock guide hides its "get the app" row.
+    "APP_STORE_URL": ""
   },
   "routes": [
     {
