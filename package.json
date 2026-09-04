@@ -12,7 +12,8 @@
     "typecheck": "wrangler types && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "check": "wrangler check",
     "smoke": "node tools/smoke-test.mjs",
-    "test:parse": "node --experimental-strip-types --test src/worker/parse.test.ts src/client/processing-progress.test.ts"
+    "test": "node --experimental-strip-types --test src/worker/parse.test.ts src/client/processing-progress.test.ts src/worker/apple-jws.test.ts",
+    "test:parse": "npm test"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.12.0",
