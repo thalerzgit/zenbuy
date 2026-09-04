@@ -93,10 +93,10 @@ Services ID configuration.
 
 ### Complimentary unlock — `APPLE_ID_WHITELIST`
 
-The Apple ID equivalent of `RATE_LIMIT_WHITELIST`, which exempts your own IPs
-from report limits. Anyone listed here is unlocked by signing in with Apple
-alone: no App Store purchase, and — like a whitelisted IP — **no report limit
-at all**, rather than the buyer's 25 a day.
+The only way past the App Store, and the only exemption of any kind — no IP
+address is ever exempt from report limits. Anyone listed here is unlocked by
+signing in with Apple alone: no App Store purchase, and **no report limit at
+all**, rather than the buyer's 25 a day.
 
 Comma-separated. Each entry is one of two forms:
 

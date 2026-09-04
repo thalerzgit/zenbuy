@@ -118,11 +118,12 @@ SwiftUI app in `swift/` (not a WebView). Pushes to `main` that touch `swift/**` 
 |-----|-----------|-----------------|
 | Unlocked buyer | `RATE_LIMIT_PRO_DAILY` (25) per day | Apple `sub` |
 | Free visitor | `RATE_LIMIT_FREE_WEEKLY` (3) per rolling 7×24h | Identity cluster |
-| `RATE_LIMIT_WHITELIST` IPs | unlimited | — |
 | `APPLE_ID_WHITELIST` Apple IDs | unlimited | — |
 
-`APPLE_ID_WHITELIST` is complimentary unlock: signing in with Apple is enough,
-no App Store purchase. Entries are emails or `sub:<subject id>` — see
+No IP address is exempt: an unlimited allowance is granted only by Apple ID,
+never by network. `APPLE_ID_WHITELIST` is complimentary unlock — signing in
+with Apple is enough, no App Store purchase. Entries are emails or
+`sub:<subject id>`, see
 [docs/APPLE_UNLOCK_SETUP.md](docs/APPLE_UNLOCK_SETUP.md#complimentary-unlock--apple_id_whitelist).
 
 A free allowance is only worth as much as the identity behind it, and both
@@ -230,5 +231,5 @@ ANTHROPIC_API_KEY=... node tools/smoke-test.mjs --llm comparative AAPL CSCO PANW
 - KV 1h shared report cache + AI Gateway cache on the analysis providers
 - Print-to-PDF with logo watermark
 - 3 free reports / visitor / rolling week (`RATE_LIMIT_FREE_WEEKLY`), 25 / day
-  unlocked (`RATE_LIMIT_PRO_DAILY`); exempt IPs via `RATE_LIMIT_WHITELIST`,
-  exempt Apple IDs via `APPLE_ID_WHITELIST`
+  unlocked (`RATE_LIMIT_PRO_DAILY`); exempt Apple IDs via `APPLE_ID_WHITELIST`
+  (no IP-based exemption)

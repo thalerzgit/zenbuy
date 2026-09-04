@@ -26,7 +26,6 @@
     // per IP. Unlocked buyers are counted per Apple subject, per day.
     "RATE_LIMIT_FREE_WEEKLY": "3",
     "RATE_LIMIT_PRO_DAILY": "25",
-    "RATE_LIMIT_WHITELIST": "99.0.81.158,73.15.8.74",
     "CACHE_TTL_SECONDS": "3600",
     // Sign in with Apple. APPLE_KEY_ID and APPLE_PRIVATE_KEY are Worker
     // secrets; everything here is public by design (the Services ID travels
@@ -38,10 +37,10 @@
     // TestFlight purchases run through Apple's sandbox. Set to "0" once the
     // app is selling on the App Store.
     "APPLE_ALLOW_SANDBOX": "1",
-    // Complimentary unlock, no App Store purchase: the Apple ID equivalent of
-    // RATE_LIMIT_WHITELIST, and equally uncounted. Comma-separated; each entry
-    // is either an email address (matched case-insensitively against the claim
-    // Apple sends) or "sub:<apple subject id>" for when the address is hidden.
+    // Complimentary unlock, no App Store purchase, and never counted against
+    // any report limit. Comma-separated; each entry is either an email address
+    // (matched case-insensitively against the claim Apple sends) or
+    // "sub:<apple subject id>" for when the address is hidden.
     //   "someone@example.com,sub:001234.abc...def.5678"
     "APPLE_ID_WHITELIST": "",
     // Set to https://apps.apple.com/app/id6807960678 on release day; while it
