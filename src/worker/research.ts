@@ -1,4 +1,3 @@
-import { RATE_LIMIT_TTL_SECONDS } from "./cache";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
 import {
   isUsablePartialReport,
@@ -706,61 +705,3 @@ export async function verifyTurnstile(
   }
 }
 
-export function isRateLimitExempt(env: Env, ip: string): boolean {
-  const raw = env.RATE_LIMIT_WHITELIST?.trim();
-  if (!raw) return false;
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .includes(ip);
-}
-
-const DEFAULT_PRO_DAILY_LIMIT = 100;
-
-/**
- * Which counter a request spends from.
- *
- * An unlocked buyer is counted against their Apple subject and a far higher
- * ceiling, so a shared or rotating IP cannot cost them the access they paid
- * for. Everyone else stays on the free per-IP allowance.
- */
-function rateLimitBucket(
-  env: Env,
-  ip: string,
-  subject?: string | null
-): { key: string; limit: number } | null {
-  const day = new Date().toISOString().slice(0, 10);
-  if (subject) {
-    return {
-      key: `rl:sub:${subject}:${day}`,
-      limit: Number(env.RATE_LIMIT_PRO_DAILY || DEFAULT_PRO_DAILY_LIMIT),
-    };
-  }
-  if (isRateLimitExempt(env, ip)) return null;
-  return { key: `rl:${ip}:${day}`, limit: Number(env.RATE_LIMIT_DAILY || 5) };
-}
-
-export async function checkRateLimit(
-  env: Env,
-  ip: string,
-  subject?: string | null
-): Promise<boolean> {
-  const bucket = rateLimitBucket(env, ip, subject);
-  if (!bucket) return true;
-  const current = Number((await env.CACHE.get(bucket.key)) || 0);
-  return current < bucket.limit;
-}
-
-export async function incrementRateLimit(
-  env: Env,
-  ip: string,
-  subject?: string | null
-): Promise<void> {
-  const bucket = rateLimitBucket(env, ip, subject);
-  if (!bucket) return;
-  const current = Number((await env.CACHE.get(bucket.key)) || 0);
-  await env.CACHE.put(bucket.key, String(current + 1), {
-    expirationTtl: RATE_LIMIT_TTL_SECONDS,
-  });
-}

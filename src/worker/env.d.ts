@@ -14,10 +14,14 @@ interface Env {
   ZENBUY_MODEL?: string;
   ZENBUY_BACKUP_MODEL?: string;
   ZENBUY_BACKUP_PROVIDER?: string;
-  RATE_LIMIT_DAILY?: string;
+  /**
+   * Reports per free visitor per rolling week, counted per identity cluster
+   * (visitor cookie + device signal + network). Defaults to 3.
+   */
+  RATE_LIMIT_FREE_WEEKLY?: string;
   /** Daily reports for a signed-in buyer, counted per Apple subject. */
   RATE_LIMIT_PRO_DAILY?: string;
-  /** Comma-separated IPs exempt from daily report limits. */
+  /** Comma-separated IPs exempt from report limits. */
   RATE_LIMIT_WHITELIST?: string;
   CACHE_TTL_SECONDS?: string;
 

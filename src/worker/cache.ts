@@ -92,10 +92,6 @@ export const SEARCH_EMPTY_TTL_SECONDS = 900;
 export const DISCOVER_CACHE_TTL_SECONDS = 3_600;
 export const RATE_LIMIT_TTL_SECONDS = 86_400;
 
-export function rateLimitKey(ip: string): string {
-  return `rl:${ip}:${new Date().toISOString().slice(0, 10)}`;
-}
-
 export interface CachedReport {
   markdown: string;
   badges: Badges;

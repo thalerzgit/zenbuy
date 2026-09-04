@@ -21,8 +21,11 @@
     "ZENBUY_MODEL": "claude-opus-5",
     "ZENBUY_BACKUP_MODEL": "grok-4.5",
     "ZENBUY_BACKUP_PROVIDER": "xai",
-    "RATE_LIMIT_DAILY": "5",
-    "RATE_LIMIT_PRO_DAILY": "100",
+    // Free web/app allowance: reports per visitor per rolling 7 days, counted
+    // per identity cluster (zb_vid cookie + device signal + network), not
+    // per IP. Unlocked buyers are counted per Apple subject, per day.
+    "RATE_LIMIT_FREE_WEEKLY": "3",
+    "RATE_LIMIT_PRO_DAILY": "25",
     "RATE_LIMIT_WHITELIST": "99.0.81.158,73.15.8.74",
     "CACHE_TTL_SECONDS": "3600",
     // Sign in with Apple. APPLE_KEY_ID and APPLE_PRIVATE_KEY are Worker
