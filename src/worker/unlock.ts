@@ -14,10 +14,16 @@
  * The app step has to come first — a browser sign-in alone proves identity,
  * not purchase — which is why the website leads with a guide rather than a
  * bare sign-in button.
+ *
+ * `APPLE_ID_WHITELIST` is the one way past the App Store: an Apple ID listed
+ * there is granted the same entitlement complimentarily, no purchase involved.
  */
 
-import { AppleAuthError, exchangeAuthorizationCode, verifyAppleIdToken } from "./apple-id";
-import { AppleJwsError, verifyAppleJws } from "./apple-jws";
+// Extension-qualified so `node --experimental-strip-types` can load this
+// chain directly from the unit tests; the bundler is happy either way.
+import type { AppleIdentity } from "./apple-id.ts";
+import { AppleAuthError, exchangeAuthorizationCode, verifyAppleIdToken } from "./apple-id.ts";
+import { AppleJwsError, verifyAppleJws } from "./apple-jws.ts";
 
 const SESSION_COOKIE = "zb_session";
 const STATE_COOKIE = "zb_state";
@@ -55,7 +61,12 @@ export interface UnlockState {
   signedIn: boolean;
   unlocked: boolean;
   sub: string | null;
+  /** Unlocked by `APPLE_ID_WHITELIST` rather than by an App Store purchase. */
+  complimentary: boolean;
 }
+
+/** Product id recorded for a complimentary grant, in place of a real one. */
+export const COMPLIMENTARY_PRODUCT_ID = "whitelist";
 
 function proProductIds(env: Env): string[] {
   return (env.APPLE_PRO_PRODUCT_IDS || DEFAULT_PRO_PRODUCT_IDS)
@@ -132,6 +143,61 @@ export async function readEntitlement(env: Env, sub: string): Promise<Entitlemen
 }
 
 /**
+ * Is this Apple ID on the complimentary whitelist?
+ *
+ * `APPLE_ID_WHITELIST` is comma-separated, and each entry is either an email
+ * address — matched case-insensitively against the claim Apple sends, real or
+ * private-relay — or `sub:<subject id>`, which keeps working when Apple sends
+ * no address at all.
+ */
+export function isWhitelisted(env: Env, identity: AppleIdentity): boolean {
+  const email = identity.email?.trim().toLowerCase();
+  return (env.APPLE_ID_WHITELIST ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .some((entry) =>
+      /^sub:/i.test(entry)
+        ? entry.slice(4).trim() === identity.sub
+        : Boolean(email) && entry.toLowerCase() === email
+    );
+}
+
+function complimentaryEntitlement(now: number): Entitlement {
+  return {
+    productId: COMPLIMENTARY_PRODUCT_ID,
+    originalTransactionId: "",
+    expiresAt: null,
+    environment: "Complimentary",
+    updatedAt: now,
+  };
+}
+
+/**
+ * Give a whitelisted Apple ID the entitlement a purchase would have earned.
+ *
+ * Stored under the `sub`, so someone first matched by email stays unlocked on
+ * every later sign-in — including after they switch on Hide My Email, when
+ * there is no address left to match. A real purchase is never overwritten.
+ *
+ * @returns whether this Apple ID is whitelisted at all.
+ */
+export async function applyWhitelistGrant(
+  env: Env,
+  identity: AppleIdentity
+): Promise<boolean> {
+  if (!isWhitelisted(env, identity)) return false;
+  if (isLive(await readEntitlement(env, identity.sub))) return true;
+
+  await env.CACHE.put(
+    entitlementKey(identity.sub),
+    JSON.stringify(complimentaryEntitlement(Date.now())),
+    { expirationTtl: LIFETIME_TTL_SECONDS }
+  ).catch(() => {});
+  return true;
+}
+
+/**
  * Who is this request, and have they unlocked?
  *
  * Browsers present a session cookie; the iOS app presents the same session id
@@ -140,12 +206,19 @@ export async function readEntitlement(env: Env, sub: string): Promise<Entitlemen
 export async function resolveUnlock(request: Request, env: Env): Promise<UnlockState> {
   const bearer = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
   const sessionId = bearer ?? readCookie(request, SESSION_COOKIE);
-  if (!sessionId) return { signedIn: false, unlocked: false, sub: null };
+  const empty = { signedIn: false, unlocked: false, sub: null, complimentary: false };
+  if (!sessionId) return empty;
 
   const sub = await env.CACHE.get(sessionKey(sessionId)).catch(() => null);
-  if (!sub) return { signedIn: false, unlocked: false, sub: null };
+  if (!sub) return empty;
 
-  return { signedIn: true, unlocked: isLive(await readEntitlement(env, sub)), sub };
+  const entitlement = await readEntitlement(env, sub);
+  const purchased = isLive(entitlement) && entitlement!.productId !== COMPLIMENTARY_PRODUCT_ID;
+  // A `sub:` entry added after this session was created applies immediately;
+  // an email entry cannot, because the address is never stored.
+  const complimentary = (isLive(entitlement) && !purchased) || isWhitelisted(env, { sub });
+
+  return { signedIn: true, unlocked: purchased || complimentary, sub, complimentary };
 }
 
 async function createSession(env: Env, sub: string): Promise<string> {
@@ -204,8 +277,9 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
       code,
       `${url.origin}/auth/apple/callback`
     );
+    const complimentary = await applyWhitelistGrant(env, identity);
     const sessionId = await createSession(env, identity.sub);
-    const unlocked = isLive(await readEntitlement(env, identity.sub));
+    const unlocked = complimentary || isLive(await readEntitlement(env, identity.sub));
 
     return redirect(unlocked ? "/?unlocked=1" : "/?signin=ok", [
       ["set-cookie", clearState],
@@ -291,8 +365,11 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     return json({ error: "bad token" }, 401);
   }
 
+  // A whitelisted Apple ID has nothing to prove, so an empty list is fine;
+  // anyone else sending one simply has no purchase to find, which is the 402
+  // below rather than a malformed request.
+  const whitelisted = isWhitelisted(env, identity);
   const submitted = Array.isArray(body.transactions) ? body.transactions.slice(0, 20) : [];
-  if (!submitted.length) return json({ error: "no transactions" }, 400);
 
   const now = Date.now();
   const candidates: Entitlement[] = [];
@@ -314,7 +391,8 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     }
   }
 
-  const entitlement = bestEntitlement(candidates);
+  const entitlement =
+    bestEntitlement(candidates) ?? (whitelisted ? complimentaryEntitlement(now) : null);
   if (!entitlement) return json({ error: "no active purchase" }, 402);
 
   const ttl =

@@ -10,7 +10,9 @@
  * what ties an App Store purchase to a browser session.
  */
 
-import { base64ToBytes } from "./apple-jws";
+// Extension-qualified so `node --experimental-strip-types` can load this
+// chain directly from the unit tests; the bundler is happy either way.
+import { base64ToBytes } from "./apple-jws.ts";
 
 const APPLE_ISSUER = "https://appleid.apple.com";
 const JWKS_URL = `${APPLE_ISSUER}/auth/keys`;

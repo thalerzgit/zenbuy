@@ -89,6 +89,40 @@ Services ID configuration.
 | `APPLE_ALLOW_SANDBOX` | `1` | TestFlight buys through the sandbox. Set to `0` on App Store release day |
 | `APP_STORE_URL` | *(empty)* | Set to `https://apps.apple.com/app/id6807960678` on release day; empty hides the "get the app" row in the guide |
 | `RATE_LIMIT_PRO_DAILY` | `25` | Daily reports per unlocked Apple ID (free tier is `RATE_LIMIT_FREE_WEEKLY`, 3 per rolling week) |
+| `APPLE_ID_WHITELIST` | *(empty)* | Complimentary unlock with no purchase — see below |
+
+### Complimentary unlock — `APPLE_ID_WHITELIST`
+
+The Apple ID equivalent of `RATE_LIMIT_WHITELIST`, which exempts your own IPs
+from report limits. Anyone listed here is unlocked by signing in with Apple
+alone: no App Store purchase, and — like a whitelisted IP — **no report limit
+at all**, rather than the buyer's 25 a day.
+
+Comma-separated. Each entry is one of two forms:
+
+| Form | Example | Matches |
+|------|---------|---------|
+| Email address | `friend@example.com` | The email claim Apple sends at sign-in, case-insensitively. Works for a real address *or* an `@privaterelay.appleid.com` one — use whichever Apple actually sends |
+| `sub:` + subject id | `sub:001234.9f8e7d6c5b4a.1234` | The opaque Apple subject id. Always works, including when the person has chosen **Hide My Email** and no address is sent |
+
+```jsonc
+"APPLE_ID_WHITELIST": "friend@example.com,someone@privaterelay.appleid.com,sub:001234.9f8e7d6c5b4a.1234"
+```
+
+Edit it in `wrangler.jsonc` and deploy, or set it straight on the live Worker
+(**Workers → zenbuy → Settings → Variables and Secrets**) for an immediate
+change with no code push. Adding someone needs no release of any kind.
+
+On the first sign-in that matches, the Worker stores a complimentary
+entitlement (`productId: "whitelist"`, no expiry) against that person's Apple
+subject. From then on they stay unlocked from the stored record, so turning on
+Hide My Email later does not lock them back out — and removing the entry stops
+new grants but leaves theirs in place. To revoke one, delete the KV key
+`apple:entitlement:<sub>` in the `CACHE` namespace.
+
+Finding someone's `sub` when the email is hidden: have them sign in once, then
+look for the newest `apple:entitlement:*` key, or read it from the
+`apple:session:*` value tied to their sign-in.
 
 ---
 

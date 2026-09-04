@@ -38,6 +38,12 @@ interface Env {
   APPLE_PRO_PRODUCT_IDS?: string;
   /** "0" rejects sandbox (TestFlight) purchases once the app is on sale. */
   APPLE_ALLOW_SANDBOX?: string;
+  /**
+   * Comma-separated Apple IDs granted complimentary access with no purchase.
+   * Each entry is either an email address (case-insensitive) or
+   * `sub:<apple subject id>`. Never counted against any report limit.
+   */
+  APPLE_ID_WHITELIST?: string;
   /** App Store listing. Empty while the app is TestFlight-only. */
   APP_STORE_URL?: string;
   /** Body of Apple's domain-association file, served under /.well-known/. */
