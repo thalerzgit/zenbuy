@@ -41,4 +41,6 @@ struct ContentView: View {
     let api = ZenBuyAPIClient()
     ContentView(viewModel: SearchViewModel(api: api))
         .environment(api)
+        .environment(ZenBuyStore())
+        .environment(WebUnlockService())
 }

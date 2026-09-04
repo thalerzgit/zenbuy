@@ -210,6 +210,23 @@ jobs:
           echo "Build ${BUILD} = GITHUB_RUN_NUMBER ${GITHUB_RUN_NUMBER} + offset ${OFFSET}"
           echo "Marketing version comes from Config/Shared.xcconfig (not stamped)."
 
+      # Sign in with Apple needs the capability on the App ID *and* on the
+      # fixed Dist profile this workflow signs against. Turning it on before
+      # the profile is regenerated fails the archive, so it is opt-in.
+      - name: Resolve Sign in with Apple entitlement
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if [ "${{ vars.IOS_SIGN_IN_WITH_APPLE }}" = "1" ]; then
+            echo "IOS_ENTITLEMENTS=ZenBuy/ZenBuy.entitlements" >> "${GITHUB_ENV}"
+            echo "Sign in with Apple ON — '${IOS_PROFILE_NAME}' must carry the capability."
+          else
+            echo "IOS_ENTITLEMENTS=" >> "${GITHUB_ENV}"
+            echo "Sign in with Apple OFF. Enable it on App ID ${IOS_BUNDLE_ID}, regenerate"
+            echo "'${IOS_PROFILE_NAME}', refresh ASC_PROFILE_APP_BASE64, then set the"
+            echo "repository variable IOS_SIGN_IN_WITH_APPLE=1."
+          fi
+
       # READ-ONLY check — never creates Bundle ID or ASC app via API.
       - name: Check App Store Connect app exists
         working-directory: ${{ github.workspace }}
@@ -306,6 +323,7 @@ jobs:
             DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
             PROVISIONING_PROFILE_SPECIFIER="${IOS_PROFILE_NAME}" \
             CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER}" \
+            CODE_SIGN_ENTITLEMENTS="${IOS_ENTITLEMENTS}" \
             archive | beautify
 
       - name: Export and upload to App Store Connect

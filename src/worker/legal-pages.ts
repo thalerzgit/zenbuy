@@ -61,8 +61,10 @@ function shell(page: "privacy" | "support", title: string, description: string, 
       h1 { font-size: 1.65rem; margin: 0 0 0.35rem; }
       .updated { color: var(--muted); font-size: 0.85rem; margin: 0 0 1.5rem; }
       h2 { font-size: 1.05rem; margin: 1.6rem 0 0.45rem; }
+      h3 { font-size: 0.95rem; margin: 1.1rem 0 0.35rem; }
       p, li { font-size: 0.95rem; }
-      ul { padding-left: 1.2rem; }
+      ul, ol { padding-left: 1.2rem; }
+      li { margin-bottom: 0.3rem; }
       a { color: var(--green); }
       footer {
         max-width: 40rem;
@@ -98,7 +100,8 @@ function privacyPolicyHtml(): string {
       <h1>Privacy Policy</h1>
       <p class="updated">Last updated September 3, 2026</p>
       <p>ZenBuy (the website at zenbuy.info and the ZenBuy iOS app) is a <strong>research tool</strong>. We help you read equity research before you decide anything. We are <strong>not a broker</strong>, bank, or registered investment advisor. We do not open accounts, hold money, or place trades.</p>
-      <p>There are <strong>no logins, user accounts, or personal profiles</strong>. We do <strong>not</strong> keep a personal research history. We do not run an ads or product-analytics suite. We do not sell personal information.</p>
+      <p>There are <strong>no passwords, no email sign-ups, and no personal profiles</strong>. We do <strong>not</strong> keep a personal research history. We do not run an ads or product-analytics suite. We do not sell personal information.</p>
+      <p>The one optional exception is <strong>unlocking</strong>. If you bought ZenBuy on the App Store, you can sign in with Apple — in the app and again here — so the website recognizes the purchase. That is described under <a href="#unlocking">Unlocking with your Apple ID</a>. Everything else on this page applies whether or not you ever unlock.</p>
 
       <h2>What we store (operational only)</h2>
       <p>A research request is processed in the moment to produce a report. We do not attach that request to an identity or keep a per-person dossier. What remains on our side is short-lived operational data, stored in Cloudflare KV and deleted automatically when its TTL expires:</p>
@@ -111,6 +114,16 @@ function privacyPolicyHtml(): string {
       </ul>
       <p>Market-data caches (company fundamentals, 13F context, and macro series) are operational copies of public market feeds, not user records. They expire within 24 hours (macro snapshot within 12 hours).</p>
 
+      <h2 id="unlocking">Unlocking with your Apple ID</h2>
+      <p>One ZenBuy App Store purchase includes the website. Linking the two is optional — the free site works without it — and it is the only part of ZenBuy that stores anything tied to you across visits.</p>
+      <p>When you sign in with Apple, Apple sends us a <strong>subject identifier</strong>: an opaque string that identifies you to ZenBuy only, and cannot be used to identify you anywhere else. We do not ask Apple for your name, and if you use Apple’s <em>Hide My Email</em> we never see a real address. Against that identifier we keep:</p>
+      <ul>
+        <li><strong>Your unlock record</strong> — which product you bought and, for the monthly plan, when it next needs renewing. It expires on its own when a subscription lapses; a lifetime purchase is kept until you ask us to remove it.</li>
+        <li><strong>A sign-in session (90 days)</strong> — a random identifier in a cookie on the website, and stored on your device in the app. It points at the record above and holds nothing else.</li>
+        <li><strong>A daily research counter (purged within 24 hours)</strong> — once unlocked, your daily limit is counted against your Apple identifier instead of your IP address, so a changing network does not cost you access you paid for.</li>
+      </ul>
+      <p>Your purchase itself stays with Apple. We verify the signed receipt Apple issues and never see your payment details. Signing out with <strong>Unlink</strong> deletes the session immediately; your purchase is untouched and you can sign in again at any time.</p>
+
       <h2>In transit and at rest</h2>
       <p>Traffic uses TLS. At rest, the keys above live only in Cloudflare KV and auto-expire via TTL. We do not keep a year-long verdict archive or any other personal research history.</p>
 
@@ -120,11 +133,12 @@ function privacyPolicyHtml(): string {
         <li><strong>Finnhub</strong> — market data for ticker search and company fundamentals.</li>
         <li><strong>Anthropic (Claude)</strong> — writes research reports from the tickers and settings in that request.</li>
         <li><strong>xAI (Grok)</strong> — used only if the primary model is unavailable, for the same one-off report job.</li>
+        <li><strong>Apple</strong> — only if you choose to unlock. Apple handles the sign-in and the purchase, and tells us the subject identifier described above.</li>
       </ul>
       <p>We send these providers what they need to do that job — not a customer profile. Cloudflare may set a short-lived bot-management cookie on the website.</p>
 
       <h2>Your choices (California, GDPR, and similar)</h2>
-      <p>Because there are no accounts and no personal research history, there is usually nothing durable to export or delete. Operational keys expire on the windows above. If you still need help, use the <a href="/support">Support page</a> — we do not publish a personal email or phone number.</p>
+      <p>Because there are no passwords and no personal research history, there is usually nothing durable to export or delete. Operational keys expire on the windows above. If you unlocked, the only lasting record is the unlock described above: <strong>Unlink</strong> ends the session at once, and you can ask us to delete the unlock record itself through the <a href="/support">Support page</a>. We do not publish a personal email or phone number.</p>
       <p>California: we do not sell personal information, and we do not “share” it for cross-context advertising.</p>
       <p>EEA/UK: we process the operational data above to provide the report you asked for and to keep the service secure and fairly rate-limited.</p>
 
@@ -151,6 +165,23 @@ function supportHtml(): string {
       <p>Questions about the website or the iOS app? We do not publish a personal email address or phone number, and we do not collect contact details on this page.</p>
       <p>If you have the iOS app (TestFlight or the App Store), send feedback through Apple’s TestFlight or App Store feedback for ZenBuy. Mention whether you were on the web or iOS app. Do not send brokerage passwords or account numbers — we cannot access trading accounts, and we do not need them.</p>
 
+      <h2>Unlocking the website with your app purchase</h2>
+      <p>One ZenBuy App Store purchase — lifetime or monthly — includes the full research desk on this website. Unlocked, you get a much higher daily report limit than the free allowance everyone on your network shares, and the human check stops interrupting you.</p>
+      <p>It takes two steps, once, and <strong>the app step has to come first</strong>. Signing in on the website by itself proves who you are, not what you bought.</p>
+      <ol>
+        <li><strong>In the ZenBuy app on your iPhone:</strong> tap the globe in the top right, then <em>Sign in with Apple</em>. That ties your purchase to your Apple ID.</li>
+        <li><strong>Here on the website:</strong> choose <em>Unlock this site</em> and sign in with the same Apple ID. The site unlocks on every device you sign in from.</li>
+      </ol>
+
+      <h3>If it does not unlock</h3>
+      <ul>
+        <li><strong>You signed in here but nothing changed.</strong> Step 1 has not been done, or it was done with a different Apple ID. The banner at the bottom of the site says which step is outstanding.</li>
+        <li><strong>You have two Apple IDs.</strong> Use <em>Unlink</em> in that banner to sign out, then sign in again with the Apple ID that made the purchase.</li>
+        <li><strong>New iPhone, or the app forgot the purchase.</strong> Use <em>Restore purchases</em> on the app’s unlock screen. Apple restores it at no charge, and the website follows.</li>
+        <li><strong>Refunds, receipts, and cancelling the monthly plan</strong> are handled by Apple, not by us — use Settings → your name → Subscriptions, or reportaproblem.apple.com.</li>
+      </ul>
+      <p>Payment happens through the App Store only. Google Play and card payments are not available yet.</p>
+
       <h2>What ZenBuy is (and is not)</h2>
       <ul>
         <li>Independent equity research to help you think before you trade.</li>
@@ -159,7 +190,7 @@ function supportHtml(): string {
       </ul>
 
       <h2>Privacy</h2>
-      <p>We do not have logins or a personal research history. Operational caches and daily abuse counters expire on their own. See the <a href="/privacy">Privacy Policy</a> for the exact windows and who helps us run the service (Cloudflare, Finnhub, Anthropic, and xAI as a failover).</p>
+      <p>We do not have passwords or a personal research history. Operational caches and daily abuse counters expire on their own. If you unlock, we store an opaque Apple subject identifier and your unlock record — see <a href="/privacy#unlocking">Unlocking with your Apple ID</a> for exactly what that covers, and the <a href="/privacy">Privacy Policy</a> for the retention windows and who helps us run the service (Cloudflare, Finnhub, Anthropic, and xAI as a failover).</p>
     `
   );
 }

@@ -32,6 +32,9 @@
 		A1000000000000000000001B /* ProcessingPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* ProcessingPanelView.swift */; };
 		A1000000000000000000001C /* ReportPDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001E /* ReportPDFExporter.swift */; };
 		A1000000000000000000001F /* ReportVerboseLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ReportVerboseLog.swift */; };
+		A10000000000000000000020 /* ZenBuyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ZenBuyStore.swift */; };
+		A10000000000000000000021 /* WebUnlockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* WebUnlockService.swift */; };
+		A10000000000000000000022 /* UnlockWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* UnlockWebView.swift */; };
 		A1000000000000000000000E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000000F /* ZenBuyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* ZenBuyTests.swift */; };
 		A10000000000000000000010 /* ZenBuyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* ZenBuyUITests.swift */; };
@@ -86,6 +89,10 @@
 		B10000000000000000000012 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		B10000000000000000000013 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		B10000000000000000000014 /* ZenBuyBrandMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyBrandMark.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* ZenBuyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyStore.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* WebUnlockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUnlockService.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* UnlockWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockWebView.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* ZenBuy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZenBuy.entitlements; sourceTree = "<group>"; };
 		F10000000000000000000001 /* ZenBuy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZenBuy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000000000000000000002 /* ZenBuyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZenBuyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000000000000000000003 /* ZenBuyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZenBuyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -142,6 +149,7 @@
 			children = (
 				B10000000000000000000001 /* ZenBuyApp.swift */,
 				B10000000000000000000002 /* ContentView.swift */,
+				B10000000000000000000023 /* ZenBuy.entitlements */,
 				H10000000000000000000007 /* Core */,
 				H10000000000000000000008 /* Features */,
 				H1000000000000000000000F /* Components */,
@@ -182,6 +190,7 @@
 				H1000000000000000000000A /* API */,
 				H1000000000000000000000B /* Models */,
 				H1000000000000000000000C /* Theme */,
+				H10000000000000000000010 /* Purchases */,
 				B1000000000000000000001F /* ReportVerboseLog.swift */,
 			);
 			path = Core;
@@ -192,6 +201,7 @@
 			children = (
 				H1000000000000000000000D /* Search */,
 				H1000000000000000000000E /* Report */,
+				H10000000000000000000011 /* Unlock */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -266,6 +276,23 @@
 				B1000000000000000000001B /* InputModeTabs.swift */,
 			);
 			path = Components;
+			sourceTree = "<group>";
+		};
+		H10000000000000000000010 /* Purchases */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000020 /* ZenBuyStore.swift */,
+				B10000000000000000000021 /* WebUnlockService.swift */,
+			);
+			path = Purchases;
+			sourceTree = "<group>";
+		};
+		H10000000000000000000011 /* Unlock */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000022 /* UnlockWebView.swift */,
+			);
+			path = Unlock;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -422,6 +449,9 @@
 				A1000000000000000000001B /* ProcessingPanelView.swift in Sources */,
 				A1000000000000000000001C /* ReportPDFExporter.swift in Sources */,
 				A1000000000000000000001F /* ReportVerboseLog.swift in Sources */,
+				A10000000000000000000020 /* ZenBuyStore.swift in Sources */,
+				A10000000000000000000021 /* WebUnlockService.swift in Sources */,
+				A10000000000000000000022 /* UnlockWebView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

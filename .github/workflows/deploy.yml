@@ -33,6 +33,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Covers the Apple signed-transaction verifier, which grants
+      # entitlements and so must never ship unverified.
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
         # Turnstile site key comes from Worker secret TURNSTILE_SITE_KEY

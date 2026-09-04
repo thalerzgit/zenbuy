@@ -34,11 +34,17 @@ final class ZenBuyAPIClient {
     private let researchSession: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
+    /// Web-unlock session token, when the purchase has been linked.
+    private let sessionToken: @MainActor () -> String?
 
     /// Search / config stay snappy. Research SSE uses a long-lived session because
     /// a single-ticker full report is ~85s; BOTTOM LINE sticky is streamed as soon
     /// as it is parseable (well before FUNDAMENTALS / done).
-    init(session: URLSession? = nil) {
+    init(
+        session: URLSession? = nil,
+        sessionToken: @escaping @MainActor () -> String? = { nil }
+    ) {
+        self.sessionToken = sessionToken
         if let session {
             self.session = session
             self.researchSession = session
@@ -71,6 +77,9 @@ final class ZenBuyAPIClient {
 
     private func applyClientHeaders(to request: inout URLRequest) {
         request.setValue(Self.clientValue, forHTTPHeaderField: Self.clientHeader)
+        if let token = sessionToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
     }
 
     func search(query: String) async throws -> [SymbolResult] {
