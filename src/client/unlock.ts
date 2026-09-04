@@ -21,12 +21,18 @@
 const APPLE_MARK = `<svg viewBox="0 0 16 20" width="14" height="17" aria-hidden="true" focusable="false"><path fill="currentColor" d="M13.3 10.6c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.3.8-.7 0-1.7-.8-2.8-.8-1.5 0-2.8.8-3.6 2.1-1.5 2.7-.4 6.6 1.1 8.8.7 1 1.6 2.2 2.7 2.2 1.1 0 1.5-.7 2.8-.7s1.7.7 2.8.7c1.2 0 1.9-1.1 2.6-2.1.8-1.2 1.2-2.4 1.2-2.5-.1 0-2.2-.9-2.2-3.4zM11.1 3.6c.6-.7 1-1.7.9-2.7-.9 0-2 .6-2.6 1.3-.6.6-1.1 1.7-.9 2.6 1 .1 2-.5 2.6-1.2z"/></svg>`;
 
 let pro = false;
-let storeUrlLoaded = false;
+let appUrlLoaded = false;
 
-/** Header affordance. Anonymous shows the invitation; pro shows the status. */
+/**
+ * Header affordances. "Get the App" stays hidden until `/api/config` supplies
+ * a URL; anonymous shows the unlock invitation, pro shows the status.
+ */
 export const UNLOCK_HEADER_HTML = `
-  <a class="unlock-cta" href="/auth/apple" data-unlock-guide>Own it?&nbsp;<b>Unlock this site</b></a>
-  <a class="unlock-status" href="/auth/unlink" title="Unlocked on this browser — sign out">Unlocked</a>
+  <div class="header-pills">
+    <a class="get-app" id="get-app" href="#" target="_blank" rel="noopener" hidden>Get the App</a>
+    <a class="unlock-cta" href="/auth/apple" data-unlock-guide>Own it?&nbsp;<b>Unlock this site</b></a>
+    <a class="unlock-status" href="/auth/unlink" title="Unlocked on this browser — sign out">Unlocked</a>
+  </div>
 `;
 
 const GUIDE_HTML = `
@@ -48,8 +54,8 @@ const GUIDE_HTML = `
           <p><b>Here on the website:</b> Sign in with Apple. <span>Everything unlocks, on every device you sign in from.</span></p>
         </div>
         <div class="u-step u-step-store" id="unlock-store" hidden><span class="u-num"></span>
-          <p><span>Don't have the app yet?</span> <a id="unlock-store-link" href="#" target="_blank" rel="noopener">Get ZenBuy on the App Store →</a><br>
-          <span class="store-note">Available on the Apple App Store · Google Play &amp; card payments coming soon</span></p>
+          <p><span>Don't have the app yet?</span> <a id="unlock-store-link" href="#" target="_blank" rel="noopener">Get the ZenBuy app →</a><br>
+          <span class="store-note" id="unlock-store-note"></span></p>
         </div>
         <p class="u-comp">Been given complimentary access? Skip both steps — sign in with Apple below using the Apple&nbsp;ID it was granted on, and the site unlocks with nothing to buy.</p>
       </div>
@@ -86,19 +92,52 @@ export function toast(message: string, ms = 4200): void {
 }
 
 /**
- * The App Store row is filled from `/api/config` the first time the guide
- * opens, so a link is only ever shown once the app is actually purchasable.
+ * Guide copy for whichever download the single URL knob points at. A
+ * TestFlight link must not be sold as an App Store listing, so the wording
+ * follows the host instead of needing a second var.
  */
-async function loadStoreLink(): Promise<void> {
-  if (storeUrlLoaded) return;
-  storeUrlLoaded = true;
+export function appLinkCopy(url: string): { link: string; note: string } {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    /* nothing to read: fall through to the store wording */
+  }
+  return /(^|\.)testflight\.apple\.com$/i.test(host)
+    ? {
+        link: "Join the ZenBuy beta on TestFlight →",
+        note: "Free public beta for iPhone · App Store release and card payments coming soon",
+      }
+    : {
+        link: "Get ZenBuy on the App Store →",
+        note: "Available on the Apple App Store · Google Play & card payments coming soon",
+      };
+}
+
+/**
+ * One `/api/config` read fills both "get the app" affordances — the header
+ * pill and the guide row — so neither is ever shown pointing nowhere.
+ */
+async function loadAppLink(): Promise<void> {
+  if (appUrlLoaded) return;
+  appUrlLoaded = true;
   try {
     const res = await fetch("/api/config");
     if (!res.ok) return;
     const { appStoreUrl } = (await res.json()) as { appStoreUrl?: string };
     if (!appStoreUrl) return;
+
+    const pill = document.getElementById("get-app") as HTMLAnchorElement | null;
+    if (pill) {
+      pill.href = appStoreUrl;
+      pill.hidden = false;
+    }
+
+    const copy = appLinkCopy(appStoreUrl);
     const link = byId<HTMLAnchorElement>("unlock-store-link");
     link.href = appStoreUrl;
+    link.textContent = copy.link;
+    byId("unlock-store-note").textContent = copy.note;
     byId("unlock-store").hidden = false;
   } catch {
     /* the two steps still read fine without the store row */
@@ -107,7 +146,6 @@ async function loadStoreLink(): Promise<void> {
 
 export function openUnlockGuide(): void {
   byId("unlock-overlay").classList.add("show");
-  void loadStoreLink();
 }
 
 function closeUnlockGuide(): void {
@@ -165,6 +203,7 @@ export function mountUnlock(root: HTMLElement): void {
   });
 
   announceRedirectState();
+  void loadAppLink();
 
   fetch("/api/me")
     .then((r) => r.json())

@@ -87,7 +87,7 @@ Services ID configuration.
 | `APPLE_BUNDLE_ID` | `info.zenbuy.app` | Audience for the app's identity token |
 | `APPLE_PRO_PRODUCT_IDS` | `info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly` | Either one unlocks |
 | `APPLE_ALLOW_SANDBOX` | `1` | TestFlight buys through the sandbox. Set to `0` on App Store release day |
-| `APP_STORE_URL` | *(empty)* | Set to `https://apps.apple.com/app/id6807960678` on release day; empty hides the "get the app" row in the guide |
+| `APP_STORE_URL` | `https://testflight.apple.com/join/kMJsdtWY` | The single "get the iOS app" knob: the header **Get the App** pill and the guide's download row. Swap to `https://apps.apple.com/app/id6807960678` on release day — a `testflight.apple.com` host makes the guide say "beta" instead of claiming an App Store listing. Empty hides both |
 | `RATE_LIMIT_PRO_DAILY` | `25` | Daily reports per unlocked Apple ID (free tier is `RATE_LIMIT_FREE_WEEKLY`, 3 per rolling week) |
 | `APPLE_ID_WHITELIST` | *(empty)* | Complimentary unlock with no purchase — see below |
 

@@ -43,9 +43,11 @@
     // "sub:<apple subject id>" for when the address is hidden.
     //   "someone@example.com,sub:001234.abc...def.5678"
     "APPLE_ID_WHITELIST": "",
-    // Set to https://apps.apple.com/app/id6807960678 on release day; while it
-    // is empty the unlock guide hides its "get the app" row.
-    "APP_STORE_URL": ""
+    // The one "get the iOS app" knob: header pill + unlock-guide row. Swap to
+    // https://apps.apple.com/app/id6807960678 on release day — a testflight.apple.com
+    // host makes both surfaces say "beta" instead of claiming an App Store listing.
+    // Empty hides the pill and the row.
+    "APP_STORE_URL": "https://testflight.apple.com/join/kMJsdtWY"
   },
   "routes": [
     {

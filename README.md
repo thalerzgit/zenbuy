@@ -76,6 +76,7 @@ Optional Worker vars (also in `wrangler.jsonc`; `ZENBUY_MODEL` **must** stay `cl
 | `ZENBUY_MODEL` | `claude-opus-5` | Primary Anthropic model |
 | `ZENBUY_BACKUP_MODEL` | `grok-4.5` | Cross-provider backup when Anthropic is down |
 | `ZENBUY_BACKUP_PROVIDER` | `xai` | Backup provider id |
+| `APP_STORE_URL` | `https://testflight.apple.com/join/kMJsdtWY` | Where the header **Get the App** pill and the unlock guide's download row point. Swap for `https://apps.apple.com/app/id6807960678` on release day (the guide's wording follows the host, so TestFlight is never called an App Store listing); empty hides both |
 
 `XAI_API_KEY` is optional at runtime. Without it, reports stay Anthropic-only and failover is skipped.
 

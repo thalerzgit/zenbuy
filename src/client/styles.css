@@ -1382,17 +1382,42 @@ input[type="text"]:focus {
    the way forward, because that is the one state the app cannot heal on its
    own. Pro chrome is swapped in by body.zb-pro, so the free view is the
    default and unlocking is purely additive. */
-.unlock-cta,
-.unlock-status {
+.header-pills {
   position: absolute;
   top: 0.85rem;
   right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.get-app,
+.unlock-cta,
+.unlock-status {
   font-size: 0.74rem;
   font-weight: 500;
   text-decoration: none;
   border-radius: 999px;
   padding: 0.3rem 0.7rem;
   white-space: nowrap;
+}
+
+/* The one pill that leads off the site, so it is filled rather than outlined.
+   Stays out until /api/config supplies a download URL. */
+.get-app {
+  color: var(--forest);
+  font-weight: 700;
+  border: 1px solid var(--insight-gold-bright);
+  background: var(--insight-gold-bright);
+}
+
+.get-app:hover {
+  background: #fff;
+  border-color: #fff;
+}
+
+.get-app[hidden] {
+  display: none;
 }
 
 .unlock-cta {
@@ -1760,9 +1785,9 @@ body.zb-pro .unlock-status {
   }
 }
 
-/* The brand lockup is centred, so below roughly 700px a pill in the corner
-   runs into it. Drop the pill onto its own centred line inside the banner
-   rather than shrinking it into something hard to hit. */
+/* The brand lockup is centred, so below roughly 700px pills in the corner run
+   into it. Drop them onto their own centred line inside the banner rather than
+   shrinking them into something hard to hit. */
 @media (max-width: 700px) {
   .site-header {
     flex-wrap: wrap;
@@ -1773,9 +1798,10 @@ body.zb-pro .unlock-status {
     padding-bottom: 0.7rem;
   }
 
-  .unlock-cta,
-  .unlock-status {
+  .header-pills {
     position: static;
+    flex-wrap: wrap;
+    justify-content: center;
     margin: 0 auto 0.95rem;
   }
 }
