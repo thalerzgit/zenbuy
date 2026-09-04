@@ -90,6 +90,25 @@ export function parseScorecard(markdown: string): Scorecard {
   return scores;
 }
 
+/**
+ * Older prompts made the model caption BOTTOM LINE with e.g.
+ * "Rank for an 18-year aggressive-growth mandate:". The prompt no longer asks
+ * for it; this keeps cached and stray outputs clean.
+ */
+const RANK_CAPTION_RE =
+  /^[*_>\s-]*rank(?:ing)? for (?:an?|the) [^\n:]{0,80}mandate[^\n:]{0,20}:[*_]*[ \t]*/i;
+
+function stripRankCaption(bottomLine: string): string {
+  const headingMatch = bottomLine.match(/^##[^\n]*\n?/);
+  const heading = headingMatch?.[0] ?? "";
+  const rest = bottomLine.slice(heading.length);
+  const replaced = rest.replace(RANK_CAPTION_RE, "");
+  if (replaced === rest) return bottomLine;
+  const stripped = replaced.trimStart();
+  if (!heading) return stripped;
+  return stripped ? `${heading.trimEnd()}\n\n${stripped}` : heading.trim();
+}
+
 export function splitReport(markdown: string): { bottomLine: string; body: string } {
   const bottomIdx = markdown.search(BOTTOM_RE);
   if (bottomIdx < 0) {
@@ -97,7 +116,7 @@ export function splitReport(markdown: string): { bottomLine: string; body: strin
   }
   const fundIdx = markdown.search(FUNDAMENTALS_RE);
   const bottomEnd = fundIdx > bottomIdx ? fundIdx : markdown.length;
-  const bottomLine = markdown.slice(bottomIdx, bottomEnd).trim();
+  const bottomLine = stripRankCaption(markdown.slice(bottomIdx, bottomEnd).trim());
   const body = fundIdx > bottomIdx ? markdown.slice(fundIdx).trim() : "";
   return { bottomLine, body };
 }
