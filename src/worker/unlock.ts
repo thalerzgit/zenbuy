@@ -163,7 +163,11 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
 /** `GET /auth/apple` — hand off to Apple with a single-use state value. */
 export async function handleAppleSignIn(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  if (!env.APPLE_SERVICES_ID) return redirect("/?signin=failed");
+  // The callback cannot mint a client secret without the key, so fail here
+  // rather than walking someone through Apple's sign-in for nothing.
+  if (!env.APPLE_SERVICES_ID || !env.APPLE_KEY_ID || !env.APPLE_PRIVATE_KEY) {
+    return redirect("/?signin=failed");
+  }
 
   const state = randomToken();
   const authorize = new URL("https://appleid.apple.com/auth/authorize");
