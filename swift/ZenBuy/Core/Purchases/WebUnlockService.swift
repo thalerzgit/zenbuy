@@ -75,11 +75,10 @@ final class WebUnlockService {
         errorMessage = nil
         defer { isWorking = false }
 
+        // Sent even when there is nothing to prove: an Apple ID on the
+        // Worker's complimentary whitelist unlocks without a purchase, and
+        // only the Worker knows which ones those are.
         let transactions = await store.entitlementJWS()
-        guard !transactions.isEmpty else {
-            errorMessage = "No active ZenBuy purchase on this device yet. Buy or restore first, then link."
-            return
-        }
 
         var request = URLRequest(
             url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/unlock-web")
@@ -119,7 +118,7 @@ final class WebUnlockService {
         case 401:
             return "Apple couldn't verify that sign-in. Try again."
         case 402:
-            return "We couldn't find an active ZenBuy purchase on this Apple ID. Try Restore purchases first."
+            return "No active ZenBuy purchase on this Apple ID, and it has no complimentary access. Buy or restore first, then link."
         default:
             return "Linking failed (HTTP \(status)). Try again in a moment."
         }

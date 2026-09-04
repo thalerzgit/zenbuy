@@ -365,10 +365,11 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     return json({ error: "bad token" }, 401);
   }
 
-  // A whitelisted Apple ID has nothing to prove, so an empty body is fine.
+  // A whitelisted Apple ID has nothing to prove, so an empty list is fine;
+  // anyone else sending one simply has no purchase to find, which is the 402
+  // below rather than a malformed request.
   const whitelisted = isWhitelisted(env, identity);
   const submitted = Array.isArray(body.transactions) ? body.transactions.slice(0, 20) : [];
-  if (!submitted.length && !whitelisted) return json({ error: "no transactions" }, 400);
 
   const now = Date.now();
   const candidates: Entitlement[] = [];

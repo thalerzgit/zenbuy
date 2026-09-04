@@ -7,8 +7,9 @@ import SwiftUI
 ///
 /// It is deliberately one screen. Splitting the purchase from the linking is
 /// what leaves people signed in on the website with nothing unlocked, so the
-/// order is spelled out here and the link button stays visibly unavailable
-/// until there is a purchase to link.
+/// order is spelled out here. Linking is always offered rather than gated on a
+/// purchase, because an Apple ID can also hold complimentary access, which
+/// only the Worker can recognize.
 struct UnlockWebView: View {
     @Environment(\.dismiss) private var dismiss
     let store: ZenBuyStore
@@ -168,12 +169,10 @@ struct UnlockWebView: View {
                 }
                 .signInWithAppleButtonStyle(.black)
                 .frame(height: 46)
-                .disabled(!store.hasPurchase)
-                .opacity(store.hasPurchase ? 1 : 0.4)
             }
 
             if !store.hasPurchase {
-                Text("Available once you own ZenBuy.")
+                Text("Buy or restore ZenBuy first — unless you were given complimentary access, in which case signing in is all it takes.")
                     .font(.caption)
                     .foregroundStyle(ZenBuyTheme.muted)
             }
