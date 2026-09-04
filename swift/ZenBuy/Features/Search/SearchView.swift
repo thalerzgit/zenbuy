@@ -8,7 +8,10 @@ private enum SearchScrollID: Hashable {
 
 struct SearchView: View {
     @Bindable var viewModel: SearchViewModel
+    @Environment(ZenBuyStore.self) private var store
+    @Environment(WebUnlockService.self) private var unlock
     @FocusState private var tickerFieldFocused: Bool
+    @State private var showUnlock = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -19,6 +22,7 @@ struct SearchView: View {
                         .padding(.vertical, 14)
                         .padding(.horizontal, 20)
                         .background(ZenBuyTheme.greenDark)
+                        .overlay(alignment: .topTrailing) { unlockButton }
 
                     VStack(alignment: .leading, spacing: 20) {
                         InputModeTabs(selection: Binding(
@@ -91,6 +95,27 @@ struct SearchView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             bottomChrome
         }
+        .sheet(isPresented: $showUnlock) {
+            UnlockWebView(store: store, unlock: unlock)
+        }
+    }
+
+    /// The globe: buy, restore, and link the purchase so zenbuy.info unlocks.
+    /// The website's guide names this button by its icon, so it stays a globe.
+    private var unlockButton: some View {
+        Button {
+            showUnlock = true
+        } label: {
+            Image(systemName: "globe")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(
+                    unlock.status == .unlocked ? ZenBuyTheme.insightGold : .white
+                )
+                .padding(12)
+        }
+        .accessibilityLabel(
+            unlock.status == .unlocked ? "Web unlocked" : "Unlock the website"
+        )
     }
 
     @ViewBuilder
@@ -282,5 +307,7 @@ struct SearchView: View {
 #Preview {
     NavigationStack {
         SearchView(viewModel: SearchViewModel(api: ZenBuyAPIClient()))
+            .environment(ZenBuyStore())
+            .environment(WebUnlockService())
     }
 }

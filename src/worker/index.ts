@@ -1255,6 +1255,18 @@ export default {
     const legal = legalPageResponse(url.pathname);
     if (legal) return legal;
 
+    // Apple verifies domain ownership before it will accept the Services ID's
+    // return URLs, by fetching this file. Served from a var rather than a
+    // static asset so it cannot be lost to an assets-ignore rule for dotted
+    // paths. Paste the file Apple hands you into APPLE_DOMAIN_ASSOCIATION.
+    if (url.pathname === "/.well-known/apple-developer-domain-association.txt") {
+      const association = env.APPLE_DOMAIN_ASSOCIATION ?? "";
+      return new Response(association, {
+        status: association ? 200 : 404,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+
     // Web unlock. Sign-in is a browser navigation, so these are GETs; only
     // the app's proof of purchase is a POST.
     if (url.pathname === "/auth/apple" && request.method === "GET") {

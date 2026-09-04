@@ -36,4 +36,6 @@ interface Env {
   APPLE_ALLOW_SANDBOX?: string;
   /** App Store listing. Empty while the app is TestFlight-only. */
   APP_STORE_URL?: string;
+  /** Body of Apple's domain-association file, served under /.well-known/. */
+  APPLE_DOMAIN_ASSOCIATION?: string;
 }

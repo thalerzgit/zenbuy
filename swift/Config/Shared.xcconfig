@@ -15,3 +15,14 @@ SWIFT_STRICT_CONCURRENCY = complete
 
 // Production API (override in Debug for local Worker if needed)
 ZENBUY_API_BASE_URL = https:/$()/zenbuy.info
+
+// Sign in with Apple (Unlock Web) rides on an entitlement, and TestFlight
+// archives are signed manually against a fixed provisioning profile — so the
+// archive fails unless that profile also carries the capability. It stays off
+// here until the App ID and the CI profile have both been updated; see
+// docs/APPLE_UNLOCK_SETUP.md. Then set:
+//   ZENBUY_ENTITLEMENTS = ZenBuy/ZenBuy.entitlements
+// CI does the same thing without a code change via the repository variable
+// IOS_SIGN_IN_WITH_APPLE=1.
+ZENBUY_ENTITLEMENTS =
+CODE_SIGN_ENTITLEMENTS = $(ZENBUY_ENTITLEMENTS)
