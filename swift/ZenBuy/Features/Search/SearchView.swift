@@ -25,54 +25,39 @@ struct SearchView: View {
                         .overlay(alignment: .topTrailing) { unlockButton }
 
                     VStack(alignment: .leading, spacing: 20) {
-                        InputModeTabs(selection: Binding(
-                            get: { viewModel.inputMode },
-                            set: { viewModel.setInputMode($0) }
-                        ))
-
-                        InvestmentGoalPicker(
-                            selectedId: Binding(
-                                get: { viewModel.selectedDirectiveId },
-                                set: { viewModel.selectDirective($0) }
-                            ),
-                            directives: viewModel.directives,
-                            onInfo: { viewModel.showDirectiveDetail($0.id) }
-                        )
-
-                        ProfitWindowPicker(
-                            selectedYears: viewModel.profitHorizonYears,
-                            options: viewModel.profitHorizonOptions,
-                            onSelect: { viewModel.setProfitHorizonYears($0) }
-                        )
-
-                        if viewModel.inputMode == .enter {
-                            enterTickersBlock
+                        if viewModel.wizardStep != .unlocked {
+                            wizardProgress
                         } else {
-                            findTickersBlock
+                            wizardSummary
                         }
 
-                        if !viewModel.picks.isEmpty {
-                            FlowLayout(spacing: 8) {
-                                ForEach(viewModel.picks) { pick in
-                                    HStack(spacing: 6) {
-                                        Text(pick.symbol)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(ZenBuyTheme.ink)
-                                        Button {
-                                            viewModel.removePick(pick)
-                                        } label: {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.caption)
-                                                .foregroundStyle(ZenBuyTheme.ink)
-                                        }
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(ZenBuyTheme.sageLight)
-                                    .clipShape(Capsule())
-                                }
-                            }
-                            .id(SearchScrollID.picks)
+                        switch viewModel.wizardStep {
+                        case .pathIntent:
+                            PathIntentCards(
+                                selected: viewModel.pathIntentChosen ? viewModel.inputMode : nil,
+                                onSelect: { viewModel.choosePathIntent($0) }
+                            )
+                        case .investmentGoal:
+                            InvestmentGoalPicker(
+                                selectedId: Binding(
+                                    get: { viewModel.selectedDirectiveId },
+                                    set: { viewModel.selectDirective($0) }
+                                ),
+                                directives: viewModel.directives,
+                                onInfo: { viewModel.showDirectiveDetail($0.id) }
+                            )
+                        case .profitWindow:
+                            ProfitWindowPicker(
+                                selectedYears: viewModel.profitHorizonYears,
+                                options: viewModel.profitHorizonOptions,
+                                onSelect: { viewModel.setProfitHorizonYears($0) }
+                            )
+                        case .unlocked:
+                            unlockedPath
+                        }
+
+                        if viewModel.wizardStep != .unlocked {
+                            wizardNav
                         }
 
                         if let errorMessage = viewModel.errorMessage {
@@ -80,14 +65,11 @@ struct SearchView: View {
                                 .font(.footnote)
                                 .foregroundStyle(ZenBuyTheme.bear)
                         }
-
-                        Text(viewModel.inputMode == .enter
-                             ? "Select 1–4 tickers. Reports stream from the ZenBuy API."
-                             : "We'll suggest up to 4 names that match your goal.")
-                            .font(.footnote)
-                            .foregroundStyle(ZenBuyTheme.muted)
                     }
                     .padding(20)
+                    .onAppear {
+                        viewModel.onUnlockedPathAppeared()
+                    }
                 }
             }
             .scrollDismissesKeyboard(.interactively)
@@ -136,7 +118,7 @@ struct SearchView: View {
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(ZenBuyTheme.background)
-        } else if viewModel.canGenerate {
+        } else if viewModel.wizardStep == .unlocked && viewModel.canGenerate {
             generateBar
         }
     }
@@ -154,6 +136,111 @@ struct SearchView: View {
         .padding(.top, 10)
         .padding(.bottom, 12)
         .background(ZenBuyTheme.background)
+    }
+
+    private var wizardProgress: some View {
+        HStack {
+            Text(viewModel.wizardStep.progressLabel ?? "")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(ZenBuyTheme.muted)
+            Spacer()
+            HStack(spacing: 6) {
+                ForEach(1...3, id: \.self) { step in
+                    Circle()
+                        .fill(dotColor(for: step))
+                        .frame(width: 8, height: 8)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(viewModel.wizardStep.progressLabel ?? "")
+    }
+
+    private func dotColor(for step: Int) -> Color {
+        if step == viewModel.wizardStep.rawValue { return ZenBuyTheme.sage }
+        if step < viewModel.wizardStep.rawValue { return ZenBuyTheme.sage.opacity(0.45) }
+        return ZenBuyTheme.border
+    }
+
+    private var wizardSummary: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text(viewModel.wizardSummary)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(ZenBuyTheme.sageDark)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Change") {
+                viewModel.reopenWizard()
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(ZenBuyTheme.sageDark)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ZenBuyTheme.sageLight)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var wizardNav: some View {
+        HStack(spacing: 10) {
+            if viewModel.wizardStep != .pathIntent {
+                Button("Back") {
+                    viewModel.goBackWizard()
+                }
+                .buttonStyle(.bordered)
+                .tint(ZenBuyTheme.sage)
+                .controlSize(.large)
+            }
+            Button("Continue") {
+                viewModel.continueWizard()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(ZenBuyTheme.sage)
+            .controlSize(.large)
+            .disabled(!viewModel.canContinueWizard)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var unlockedPath: some View {
+        if viewModel.inputMode == .enter {
+            enterTickersBlock
+        } else {
+            findTickersBlock
+        }
+
+        if !viewModel.picks.isEmpty {
+            FlowLayout(spacing: 8) {
+                ForEach(viewModel.picks) { pick in
+                    HStack(spacing: 6) {
+                        Text(pick.symbol)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(ZenBuyTheme.ink)
+                        Button {
+                            viewModel.removePick(pick)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(ZenBuyTheme.ink)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(ZenBuyTheme.sageLight)
+                    .clipShape(Capsule())
+                }
+            }
+            .id(SearchScrollID.picks)
+        }
+
+        Text(viewModel.inputMode == .enter
+             ? "Select 1–4 tickers. Reports stream from the ZenBuy API."
+             : "We'll suggest up to 4 names that match your goal.")
+            .font(.footnote)
+            .foregroundStyle(ZenBuyTheme.muted)
     }
 
     @ViewBuilder

@@ -12,6 +12,46 @@ enum SearchInputMode: String, CaseIterable, Identifiable, Sendable {
         case .find: return "Find Tickers"
         }
     }
+
+    var summaryLabel: String {
+        switch self {
+        case .enter: return "Analyze"
+        case .find: return "Find"
+        }
+    }
+
+    private static let storageKey = "zenbuy:input-mode:v1"
+
+    static func loadStored() -> SearchInputMode? {
+        guard let raw = UserDefaults.standard.string(forKey: storageKey) else { return nil }
+        return SearchInputMode(rawValue: raw)
+    }
+
+    static func save(_ mode: SearchInputMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: storageKey)
+    }
+}
+
+enum SearchWizardStep: Int, CaseIterable, Sendable {
+    case pathIntent = 1
+    case investmentGoal = 2
+    case profitWindow = 3
+    case unlocked = 4
+
+    var progressLabel: String? {
+        guard rawValue <= 3 else { return nil }
+        return "Step \(rawValue) of 3"
+    }
+
+    private static let completeKey = "zenbuy:wizard-complete:v1"
+
+    static func isComplete() -> Bool {
+        UserDefaults.standard.bool(forKey: completeKey)
+    }
+
+    static func saveComplete() {
+        UserDefaults.standard.set(true, forKey: completeKey)
+    }
 }
 
 enum SearchRoute: Hashable {
@@ -30,13 +70,20 @@ final class SearchViewModel {
     var errorMessage: String?
     var path: [SearchRoute] = []
     var selectedMode: ReportMode = .separate
-    var selectedDirectiveId: String = InvestmentDirectiveInfo.defaultDirectiveId
+    var selectedDirectiveId: String = InvestmentDirectiveInfo.loadStoredId()
     var directives: [InvestmentDirectiveInfo] = InvestmentDirectiveInfo.bundled
     var profitHorizonYears: Int = ProfitHorizonOption.loadStoredYears(
-        for: InvestmentDirectiveInfo.defaultDirectiveId
+        for: InvestmentDirectiveInfo.loadStoredId()
     )
     var profitHorizonOptions: [ProfitHorizonOption] = ProfitHorizonOption.bundled
-    var inputMode: SearchInputMode = .enter
+    var inputMode: SearchInputMode = SearchInputMode.loadStored() ?? .enter
+    var pathIntentChosen = SearchInputMode.loadStored() != nil
+    var wizardStep: SearchWizardStep = {
+        if SearchWizardStep.isComplete(), SearchInputMode.loadStored() != nil {
+            return .unlocked
+        }
+        return .pathIntent
+    }()
     var discoverResults: [DiscoverPick] = []
     var isDiscovering = false
     let report: ReportViewModel
@@ -55,9 +102,9 @@ final class SearchViewModel {
         guard let config = try? await api.fetchConfig() else { return }
         if let list = config.investmentDirectives, !list.isEmpty {
             directives = list
-            if let defaultId = config.defaultDirectiveId {
+            if UserDefaults.standard.string(forKey: "zenbuy:directive:v1") == nil,
+               let defaultId = config.defaultDirectiveId {
                 selectedDirectiveId = defaultId
-                // A stored pick still wins; this only re-derives the default.
                 profitHorizonYears = ProfitHorizonOption.loadStoredYears(for: defaultId)
             }
         }
@@ -68,6 +115,22 @@ final class SearchViewModel {
 
     var canGenerate: Bool {
         !picks.isEmpty && picks.count <= 4
+    }
+
+    var canContinueWizard: Bool {
+        switch wizardStep {
+        case .pathIntent: return pathIntentChosen
+        case .investmentGoal: return !selectedDirectiveId.isEmpty
+        case .profitWindow: return profitHorizonYears >= 2
+        case .unlocked: return false
+        }
+    }
+
+    var wizardSummary: String {
+        let goal = directives.first { $0.id == selectedDirectiveId }?.label ?? selectedDirectiveId
+        let window = ProfitHorizonOption.closest(to: profitHorizonYears, in: profitHorizonOptions)?.label
+            ?? "\(profitHorizonYears) yrs"
+        return "\(inputMode.summaryLabel) · \(goal) · \(window)"
     }
 
     func onQueryChanged() {
@@ -118,6 +181,7 @@ final class SearchViewModel {
     func selectDirective(_ id: String) {
         guard selectedDirectiveId != id else { return }
         selectedDirectiveId = id
+        InvestmentDirectiveInfo.saveStoredId(id)
         setProfitHorizonYears(InvestmentDirectiveInfo.defaultProfitHorizonYears(for: id))
     }
 
@@ -134,9 +198,11 @@ final class SearchViewModel {
     }
 
     func setInputMode(_ mode: SearchInputMode) {
-        guard inputMode != mode else { return }
+        let changed = inputMode != mode
         inputMode = mode
+        SearchInputMode.save(mode)
         errorMessage = nil
+        guard changed else { return }
         if mode == .enter {
             clearDiscoverResults()
         } else {
@@ -145,6 +211,59 @@ final class SearchViewModel {
             searchTask?.cancel()
             isSearching = false
         }
+    }
+
+    func choosePathIntent(_ mode: SearchInputMode) {
+        pathIntentChosen = true
+        setInputMode(mode)
+    }
+
+    func continueWizard() {
+        guard canContinueWizard else { return }
+        switch wizardStep {
+        case .pathIntent:
+            wizardStep = .investmentGoal
+        case .investmentGoal:
+            InvestmentDirectiveInfo.saveStoredId(selectedDirectiveId)
+            wizardStep = .profitWindow
+        case .profitWindow:
+            unlockPath()
+        case .unlocked:
+            break
+        }
+    }
+
+    func goBackWizard() {
+        switch wizardStep {
+        case .pathIntent:
+            break
+        case .investmentGoal:
+            wizardStep = .pathIntent
+        case .profitWindow:
+            wizardStep = .investmentGoal
+        case .unlocked:
+            wizardStep = .profitWindow
+        }
+    }
+
+    func reopenWizard() {
+        wizardStep = .pathIntent
+    }
+
+    func unlockPath() {
+        SearchInputMode.save(inputMode)
+        SearchWizardStep.saveComplete()
+        wizardStep = .unlocked
+        if inputMode == .find, discoverResults.isEmpty, !isDiscovering {
+            runDiscover()
+        }
+    }
+
+    func onUnlockedPathAppeared() {
+        guard wizardStep == .unlocked, inputMode == .find, discoverResults.isEmpty, !isDiscovering else {
+            return
+        }
+        runDiscover()
     }
 
     func runDiscover() {

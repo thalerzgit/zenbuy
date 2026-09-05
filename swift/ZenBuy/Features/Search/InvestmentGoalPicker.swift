@@ -7,9 +7,10 @@ struct InvestmentGoalPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("What's your goal?")
-                .font(.headline)
+            Text("What's your investment goal?")
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(ZenBuyTheme.ink)
+                .accessibilityAddTraits(.isHeader)
 
             Text("Tap a strategy — i for details.")
                 .font(.footnote)

@@ -103,6 +103,21 @@ extension InvestmentDirectiveInfo {
         ),
     ]
 
+    private static let storageKey = "zenbuy:directive:v1"
+
+    /// Mirrors web `loadStoredDirective`: a stored pick wins, else Growth.
+    static func loadStoredId() -> String {
+        if let raw = UserDefaults.standard.string(forKey: storageKey),
+           bundled.contains(where: { $0.id == raw }) {
+            return raw
+        }
+        return defaultDirectiveId
+    }
+
+    static func saveStoredId(_ id: String) {
+        UserDefaults.standard.set(id, forKey: storageKey)
+    }
+
     /// Matches `promptHorizonYears` on the web directives (API overlay).
     static func defaultProfitHorizonYears(for directiveId: String) -> Int {
         switch directiveId {

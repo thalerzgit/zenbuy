@@ -2,8 +2,13 @@ import { BRAND_MARK_SVG } from "./brand-mark";
 import {
   directiveLabel,
   loadStoredDirective,
+  loadStoredInputMode,
   loadStoredProfitHorizon,
-  mountDirectivePanel,
+  loadWizardComplete,
+  mountInvestmentGoalPanel,
+  mountProfitHorizonPanel,
+  saveStoredInputMode,
+  saveWizardComplete,
 } from "./directive-ui";
 import { profitHorizonLabel } from "../lib/profit-horizons";
 import type { InvestmentDirectiveId } from "../lib/investment-directives";
@@ -34,6 +39,7 @@ export interface SymbolPick {
 
 type ReportMode = "separate" | "comparative";
 type InputMode = "manual" | "discover";
+type WizardStep = 1 | 2 | 3 | "path";
 
 interface DiscoverPick {
   symbol: string;
@@ -87,10 +93,15 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 export function mountApp(root: HTMLElement): void {
   root.innerHTML = "";
+  const storedInputMode = loadStoredInputMode();
   const state = {
     picks: [] as SymbolPick[],
     mode: "separate" as ReportMode,
-    inputMode: "manual" as InputMode,
+    inputMode: (storedInputMode ?? "manual") as InputMode,
+    wizardStep: (loadWizardComplete() && storedInputMode
+      ? "path"
+      : 1) as WizardStep,
+    pathIntentChosen: storedInputMode != null,
     directive: loadStoredDirective() as InvestmentDirectiveId,
     profitHorizonYears: loadStoredProfitHorizon(loadStoredDirective()),
     discoverResults: [] as DiscoverPick[],
@@ -114,25 +125,61 @@ export function mountApp(root: HTMLElement): void {
   const main = el("main", "site-main");
   const searchWrap = el("section", "search-panel");
   searchWrap.innerHTML = `
-    <div class="input-mode-tabs" role="tablist" aria-label="How to pick stocks">
-      <button type="button" class="input-mode-tab is-active" data-mode="manual" role="tab" aria-selected="true">Enter Tickers</button>
-      <button type="button" class="input-mode-tab" data-mode="discover" role="tab" aria-selected="false">Find Tickers</button>
-    </div>
-    <div id="manual-input-block">
-      <label class="search-label" for="symbol-input">Ticker(s) or Corp. Name</label>
-      <div class="search-row">
-        <input id="symbol-input" type="text" autocomplete="off" placeholder="AAPL, NVDA, Apple…" maxlength="96" />
-        <div id="dropdown" class="dropdown hidden" role="listbox"></div>
+    <div class="search-wizard" aria-label="Search setup">
+      <div id="wizard-progress" class="wizard-progress">
+        <p class="wizard-progress-label" id="wizard-progress-label">Step 1 of 3</p>
+        <div class="wizard-dots" aria-hidden="true">
+          <span class="wizard-dot is-active" data-dot="1"></span>
+          <span class="wizard-dot" data-dot="2"></span>
+          <span class="wizard-dot" data-dot="3"></span>
+        </div>
       </div>
-      <div id="chips" class="chips"></div>
+      <div id="wizard-step-1" class="wizard-step">
+        <h2 class="wizard-heading" id="wizard-step1-heading" tabindex="-1">What's your goal?</h2>
+        <div class="wizard-goal-cards" role="radiogroup" aria-labelledby="wizard-step1-heading">
+          <label class="wizard-goal-card">
+            <input type="radio" name="wizard-path" value="discover" />
+            <span class="wizard-goal-title">Find stocks</span>
+            <span class="wizard-goal-sub">We'll suggest names that match your style and time window.</span>
+          </label>
+          <label class="wizard-goal-card">
+            <input type="radio" name="wizard-path" value="manual" />
+            <span class="wizard-goal-title">Analyze stocks you have in mind</span>
+            <span class="wizard-goal-sub">Enter tickers or company names you already know.</span>
+          </label>
+        </div>
+      </div>
+      <div id="wizard-step-2" class="wizard-step hidden">
+        <div id="directive-panel-mount"></div>
+      </div>
+      <div id="wizard-step-3" class="wizard-step hidden">
+        <div id="horizon-panel-mount"></div>
+      </div>
+      <div id="wizard-nav" class="wizard-nav">
+        <button type="button" id="wizard-back" class="btn ghost hidden">Back</button>
+        <button type="button" id="wizard-continue" class="btn primary" disabled>Continue</button>
+      </div>
+      <div id="wizard-summary" class="wizard-summary hidden">
+        <p class="wizard-summary-chips" id="wizard-summary-chips" role="status"></p>
+        <button type="button" id="wizard-change" class="btn ghost">Change</button>
+      </div>
+      <div id="path-panel" class="path-panel hidden">
+        <div id="manual-input-block" class="hidden">
+          <label class="search-label" for="symbol-input">Ticker(s) or Corp. Name</label>
+          <div class="search-row">
+            <input id="symbol-input" type="text" autocomplete="off" placeholder="AAPL, NVDA, Apple…" maxlength="96" />
+            <div id="dropdown" class="dropdown hidden" role="listbox"></div>
+          </div>
+          <div id="chips" class="chips"></div>
+        </div>
+        <div id="discover-block" class="discover-block hidden">
+          <p class="discover-lead">We'll suggest up to 4 names that match your goal and profit window.</p>
+          <button type="button" id="discover-btn" class="btn ghost discover-btn">Find stocks for my goal</button>
+          <div id="discover-results" class="discover-results hidden"></div>
+        </div>
+      </div>
     </div>
-    <div id="discover-block" class="discover-block hidden">
-      <p class="discover-lead">We'll suggest up to 4 names that match your goal and profit window.</p>
-      <button type="button" id="discover-btn" class="btn ghost discover-btn">Find stocks for my goal</button>
-      <div id="discover-results" class="discover-results hidden"></div>
-    </div>
-    <div id="directive-panel-mount"></div>
-    <div class="actions">
+    <div class="actions hidden" id="path-actions">
       <button id="submit-btn" type="button" class="btn primary" disabled>Generate Report</button>
       <button id="simplify-btn" type="button" class="btn ghost hidden">Explain in Lay Terms</button>
       <div id="share-wrap" class="share-wrap hidden">
@@ -213,27 +260,49 @@ export function mountApp(root: HTMLElement): void {
   const discoverBlock = searchWrap.querySelector("#discover-block") as HTMLDivElement;
   const discoverBtn = searchWrap.querySelector("#discover-btn") as HTMLButtonElement;
   const discoverResults = searchWrap.querySelector("#discover-results") as HTMLDivElement;
-  const inputModeTabs = searchWrap.querySelectorAll<HTMLButtonElement>(".input-mode-tab");
+  const pathPanel = searchWrap.querySelector("#path-panel") as HTMLDivElement;
+  const pathActions = searchWrap.querySelector("#path-actions") as HTMLDivElement;
+  const wizardProgress = searchWrap.querySelector("#wizard-progress") as HTMLDivElement;
+  const wizardProgressLabel = searchWrap.querySelector(
+    "#wizard-progress-label"
+  ) as HTMLParagraphElement;
+  const wizardStep1 = searchWrap.querySelector("#wizard-step-1") as HTMLDivElement;
+  const wizardStep2 = searchWrap.querySelector("#wizard-step-2") as HTMLDivElement;
+  const wizardStep3 = searchWrap.querySelector("#wizard-step-3") as HTMLDivElement;
+  const wizardNav = searchWrap.querySelector("#wizard-nav") as HTMLDivElement;
+  const wizardBack = searchWrap.querySelector("#wizard-back") as HTMLButtonElement;
+  const wizardContinue = searchWrap.querySelector("#wizard-continue") as HTMLButtonElement;
+  const wizardSummary = searchWrap.querySelector("#wizard-summary") as HTMLDivElement;
+  const wizardSummaryChips = searchWrap.querySelector(
+    "#wizard-summary-chips"
+  ) as HTMLParagraphElement;
+  const wizardChange = searchWrap.querySelector("#wizard-change") as HTMLButtonElement;
   const directiveMount = searchWrap.querySelector(
     "#directive-panel-mount"
   ) as HTMLDivElement;
-  mountDirectivePanel(
-    directiveMount,
-    state.directive,
-    state.profitHorizonYears,
-    (id) => {
-      state.directive = id;
-      state.discoverResults = [];
-      state.discoverSelected.clear();
-      renderDiscoverResults();
-    },
-    (years) => {
+  const horizonMount = searchWrap.querySelector(
+    "#horizon-panel-mount"
+  ) as HTMLDivElement;
+
+  function clearDiscoverState(): void {
+    state.discoverResults = [];
+    state.discoverSelected.clear();
+    renderDiscoverResults();
+  }
+
+  mountInvestmentGoalPanel(directiveMount, state.directive, (id, suggested) => {
+    state.directive = id;
+    state.profitHorizonYears = suggested;
+    clearDiscoverState();
+    mountProfitHorizonPanel(horizonMount, suggested, (years) => {
       state.profitHorizonYears = years;
-      state.discoverResults = [];
-      state.discoverSelected.clear();
-      renderDiscoverResults();
-    }
-  );
+      clearDiscoverState();
+    });
+  });
+  mountProfitHorizonPanel(horizonMount, state.profitHorizonYears, (years) => {
+    state.profitHorizonYears = years;
+    clearDiscoverState();
+  });
   const submitBtn = searchWrap.querySelector("#submit-btn") as HTMLButtonElement;
   const simplifyBtn = searchWrap.querySelector(
     "#simplify-btn"
@@ -333,6 +402,7 @@ export function mountApp(root: HTMLElement): void {
     if (hasReport) {
       submitBtn.textContent = "Start New Report";
       submitBtn.disabled = false;
+      pathActions.classList.remove("hidden");
       return;
     }
     submitBtn.textContent = "Generate Report";
@@ -341,6 +411,7 @@ export function mountApp(root: HTMLElement): void {
     } else {
       submitBtn.disabled = state.picks.length === 0;
     }
+    pathActions.classList.toggle("hidden", state.wizardStep !== "path");
   }
 
   function syncPicksFromDiscover(): void {
@@ -395,24 +466,99 @@ export function mountApp(root: HTMLElement): void {
     syncPicksFromDiscover();
   }
 
-  function setInputMode(mode: InputMode): void {
-    state.inputMode = mode;
-    inputModeTabs.forEach((tab) => {
-      const active = tab.dataset.mode === mode;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
+  function pathIntentLabel(mode: InputMode): string {
+    return mode === "discover" ? "Find" : "Analyze";
+  }
+
+  function wizardSummaryText(): string {
+    return `${pathIntentLabel(state.inputMode)} · ${directiveLabel(state.directive)} · ${profitHorizonLabel(state.profitHorizonYears)}`;
+  }
+
+  function focusWizardHeading(step: WizardStep): void {
+    const heading =
+      step === 1
+        ? searchWrap.querySelector<HTMLElement>("#wizard-step1-heading")
+        : step === 2
+          ? searchWrap.querySelector<HTMLElement>("#directive-heading")
+          : step === 3
+            ? searchWrap.querySelector<HTMLElement>("#horizon-heading")
+            : null;
+    heading?.focus({ preventScroll: true });
+  }
+
+  function renderWizard(): void {
+    const unlocked = state.wizardStep === "path";
+    wizardProgress.classList.toggle("hidden", unlocked);
+    wizardStep1.classList.toggle("hidden", state.wizardStep !== 1);
+    wizardStep2.classList.toggle("hidden", state.wizardStep !== 2);
+    wizardStep3.classList.toggle("hidden", state.wizardStep !== 3);
+    wizardNav.classList.toggle("hidden", unlocked);
+    wizardSummary.classList.toggle("hidden", !unlocked);
+    pathPanel.classList.toggle("hidden", !unlocked);
+    pathActions.classList.toggle("hidden", !unlocked && !hasReport);
+
+    if (!unlocked) {
+      wizardProgressLabel.textContent = `Step ${state.wizardStep} of 3`;
+      wizardProgress.querySelectorAll<HTMLElement>(".wizard-dot").forEach((dot) => {
+        const n = Number(dot.dataset.dot);
+        dot.classList.toggle("is-active", n === state.wizardStep);
+        dot.classList.toggle("is-done", n < (state.wizardStep as number));
+      });
+      wizardBack.classList.toggle("hidden", state.wizardStep === 1);
+      wizardBack.disabled = state.wizardStep === 1;
+      const canContinue =
+        state.wizardStep === 1
+          ? state.pathIntentChosen
+          : state.wizardStep === 2
+            ? Boolean(state.directive)
+            : Number.isFinite(state.profitHorizonYears);
+      wizardContinue.disabled = !canContinue;
+    } else {
+      wizardSummaryChips.textContent = wizardSummaryText();
+    }
+
+    searchWrap.querySelectorAll<HTMLLabelElement>(".wizard-goal-card").forEach((card) => {
+      const radio = card.querySelector<HTMLInputElement>('input[name="wizard-path"]');
+      const selected = state.pathIntentChosen && radio?.value === state.inputMode;
+      card.classList.toggle("is-selected", Boolean(selected));
+      if (radio) radio.checked = Boolean(selected);
     });
+  }
+
+  function setInputMode(mode: InputMode, persist = true): void {
+    const changed = state.inputMode !== mode;
+    state.inputMode = mode;
+    if (persist) saveStoredInputMode(mode);
     manualInputBlock.classList.toggle("hidden", mode !== "manual");
     discoverBlock.classList.toggle("hidden", mode !== "discover");
-    if (mode === "manual") {
+    if (changed && mode === "manual") {
       state.discoverResults = [];
       state.discoverSelected.clear();
       renderDiscoverResults();
-    } else {
+    } else if (changed) {
       state.picks = [];
       renderChips();
     }
     syncPrimaryBtn();
+  }
+
+  function unlockPath(): void {
+    saveStoredInputMode(state.inputMode);
+    saveWizardComplete();
+    state.wizardStep = "path";
+    setInputMode(state.inputMode);
+    renderWizard();
+    if (state.inputMode === "discover" && !state.discoverResults.length && !state.discovering) {
+      void runDiscover();
+    } else if (state.inputMode === "manual") {
+      input.focus();
+    }
+  }
+
+  function choosePathIntent(mode: InputMode): void {
+    state.pathIntentChosen = true;
+    setInputMode(mode);
+    renderWizard();
   }
 
   async function runDiscover(): Promise<void> {
@@ -453,14 +599,64 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
-  inputModeTabs.forEach((tab) => {
-    tab.onclick = () => {
-      const mode = tab.dataset.mode as InputMode;
-      if (mode) setInputMode(mode);
-    };
+  searchWrap.querySelectorAll<HTMLInputElement>('input[name="wizard-path"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      if (!radio.checked) return;
+      if (radio.value === "manual" || radio.value === "discover") {
+        choosePathIntent(radio.value);
+      }
+    });
   });
 
+  wizardContinue.onclick = () => {
+    if (state.wizardStep === 1 && state.pathIntentChosen) {
+      state.wizardStep = 2;
+      renderWizard();
+      focusWizardHeading(2);
+      return;
+    }
+    if (state.wizardStep === 2) {
+      state.wizardStep = 3;
+      renderWizard();
+      focusWizardHeading(3);
+      return;
+    }
+    if (state.wizardStep === 3) {
+      unlockPath();
+    }
+  };
+
+  wizardBack.onclick = () => {
+    if (state.wizardStep === 2) {
+      state.wizardStep = 1;
+      renderWizard();
+      focusWizardHeading(1);
+      return;
+    }
+    if (state.wizardStep === 3) {
+      state.wizardStep = 2;
+      renderWizard();
+      focusWizardHeading(2);
+    }
+  };
+
+  wizardChange.onclick = () => {
+    state.wizardStep = 1;
+    renderWizard();
+    focusWizardHeading(1);
+  };
+
   discoverBtn.onclick = () => void runDiscover();
+
+  setInputMode(state.inputMode, false);
+  renderWizard();
+  if (
+    state.wizardStep === "path" &&
+    state.inputMode === "discover" &&
+    !state.discoverResults.length
+  ) {
+    void runDiscover();
+  }
 
   function showPostReportActions(): void {
     shareWrap.classList.remove("hidden");
@@ -1205,12 +1401,13 @@ export function mountApp(root: HTMLElement): void {
     processing.hide();
     state.picks = [];
     state.mode = "separate";
-    state.inputMode = "manual";
     state.directive = loadStoredDirective();
     state.profitHorizonYears = loadStoredProfitHorizon(state.directive);
     state.discoverResults = [];
     state.discoverSelected.clear();
-    setInputMode("manual");
+    state.wizardStep = "path";
+    setInputMode(state.inputMode);
+    renderWizard();
     reportId = "";
     activeShareId = "";
     allowSimilar = true;
@@ -1229,7 +1426,8 @@ export function mountApp(root: HTMLElement): void {
     input.value = "";
     dropdown.classList.add("hidden");
     syncPrimaryBtn();
-    input.focus();
+    if (state.inputMode === "manual") input.focus();
+    else if (!state.discoverResults.length) void runDiscover();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1559,17 +1757,19 @@ export function mountApp(root: HTMLElement): void {
     if (directiveParam && isInvestmentDirectiveId(directiveParam)) {
       state.directive = directiveParam;
       state.profitHorizonYears = loadStoredProfitHorizon(state.directive);
-      mountDirectivePanel(
-        directiveMount,
-        state.directive,
-        state.profitHorizonYears,
-        (id) => {
-          state.directive = id;
-        },
-        (years) => {
+      mountInvestmentGoalPanel(directiveMount, state.directive, (id, suggested) => {
+        state.directive = id;
+        state.profitHorizonYears = suggested;
+        clearDiscoverState();
+        mountProfitHorizonPanel(horizonMount, suggested, (years) => {
           state.profitHorizonYears = years;
-        }
-      );
+          clearDiscoverState();
+        });
+      });
+      mountProfitHorizonPanel(horizonMount, state.profitHorizonYears, (years) => {
+        state.profitHorizonYears = years;
+        clearDiscoverState();
+      });
     }
 
     // Legacy ?symbols=&autostart= links: prefill only — Turnstile needs a tap.
@@ -1582,6 +1782,9 @@ export function mountApp(root: HTMLElement): void {
 
     state.picks = symbols.slice(0, 4).map((symbol) => ({ symbol, name: symbol }));
     state.mode = "separate";
+    state.pathIntentChosen = true;
+    setInputMode("manual");
+    unlockPath();
     renderChips();
 
     if (window.history.replaceState) {
