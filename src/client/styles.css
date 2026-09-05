@@ -1,39 +1,43 @@
 :root {
   color-scheme: light;
-  /* Content surfaces stay light for readability */
-  --green: #3d862d;
-  --green-dark: #2f6b22;
-  --green-light: #e8f4e5;
-  --green-positive: #008248;
-  /* Brand accents — used mainly in the header / logo */
-  --insight-gold: #e8c547;
-  --insight-gold-bright: #f3d86a;
-  --forest: #061a0f;
-  --forest-mid: #0c2818;
+  /* 2026 palette — keep hex lockstep with swift/ZenBuy/Core/Theme/ZenBuyTheme.swift */
+  --green: #247a36;
+  --green-dark: #1a5c28;
+  --green-light: #e4f3e8;
+  --green-positive: #0a7f44;
+  --green-peak: #4caf62;
+  /* Sparse foresight accent — header, charts, insight chips only */
+  --insight-gold: #d4b43a;
+  --insight-gold-bright: #e6c85c;
+  --forest: #03140b;
+  --forest-mid: #082016;
+  --forest-hi: #061910;
+  --forest-lo: #020c08;
   --sage: var(--green);
   --sage-light: var(--green-light);
   --sage-dark: var(--green-dark);
-  --ink: #1a1a1a;
-  --ink-soft: #2a2a2a;
-  --muted: #5c5c5c;
-  --bg: #f7faf6;
+  --ink: #16181a;
+  --ink-soft: #2a2e32;
+  --muted: #5a6168;
+  --bg: #f3f5f3;
   --card: #ffffff;
-  --border: #e0e0e0;
-  --row-alt: #fcfcfb;
-  --skeleton-a: #eee;
-  --skeleton-b: #f5f5f5;
+  --border: #d5dbd6;
+  --row-alt: #f7f8f7;
+  --skeleton-a: #e8ebe8;
+  --skeleton-b: #f2f4f2;
   --error-bg: #fff5f5;
   --error-border: #fecaca;
-  --error-ink: #9b2226;
-  --badge-buy-bg: #d8f3dc;
-  --badge-sell-bg: #fde8e8;
-  --badge-hold-bg: #eef0f2;
+  --error-ink: #a61b22;
+  --badge-buy-bg: #e3f6e8;
+  --badge-sell-bg: #fde4e4;
+  --badge-hold-bg: #eceff2;
   --bull: var(--green-positive);
-  --bear: #9b2226;
-  --neutral: #6c757d;
+  --bear: #a61b22;
+  --neutral: #5f6b73;
   --radius: 14px;
-  --shadow: 0 8px 32px rgba(26, 26, 26, 0.06);
-  --modal-scrim: rgba(26, 26, 26, 0.35);
+  --shadow: 0 10px 36px rgba(16, 24, 20, 0.07), 0 1px 2px rgba(16, 24, 20, 0.04);
+  --focus-ring: color-mix(in srgb, var(--green) 28%, transparent);
+  --modal-scrim: rgba(16, 24, 20, 0.38);
   font-family: "Outfit", "DM Sans", system-ui, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -68,12 +72,12 @@ body {
   background:
     radial-gradient(
       ellipse 80% 90% at 88% 0%,
-      rgba(232, 197, 71, 0.18),
+      color-mix(in srgb, var(--insight-gold) 18%, transparent),
       transparent 55%
     ),
-    linear-gradient(165deg, #0a2416 0%, var(--forest) 55%, #04140c 100%);
-  border-bottom: 1px solid rgba(232, 197, 71, 0.22);
-  box-shadow: 0 8px 28px rgba(4, 20, 12, 0.18);
+    linear-gradient(165deg, var(--forest-hi) 0%, var(--forest) 55%, var(--forest-lo) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--insight-gold) 22%, transparent);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--forest-lo) 55%, transparent);
 }
 
 .brand {
@@ -93,7 +97,7 @@ body {
   flex-shrink: 0;
   display: inline-flex;
   line-height: 0;
-  filter: drop-shadow(0 0 12px rgba(232, 197, 71, 0.35));
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--insight-gold) 35%, transparent));
 }
 
 .brand-mark svg {
@@ -219,6 +223,15 @@ body {
   background: var(--card);
   color: var(--ink);
   white-space: nowrap;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.similar-pick:hover {
+  border-color: var(--sage);
+  background: var(--sage-light);
 }
 
 .similar-run {
@@ -242,7 +255,7 @@ body {
   margin: 0 0 1.35rem;
   padding: 1.25rem 1.2rem 1.15rem;
   background:
-    linear-gradient(165deg, rgba(232, 244, 229, 0.7) 0%, #fff 42%),
+    linear-gradient(165deg, color-mix(in srgb, var(--green-light) 70%, transparent) 0%, #fff 42%),
     var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -319,7 +332,7 @@ body {
   height: 100%;
   width: 0%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--green-dark), var(--green) 60%, #5aa645);
+  background: linear-gradient(90deg, var(--green-dark), var(--green) 60%, var(--green-peak));
   transition: width 0.35s linear;
 }
 
@@ -594,6 +607,10 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .input-mode-tab.is-active {
@@ -1033,7 +1050,7 @@ input[type="text"]::placeholder {
 input[type="text"]:focus {
   outline: none;
   border-color: var(--sage);
-  box-shadow: 0 0 0 3px var(--sage-light);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .dropdown {
@@ -1085,7 +1102,7 @@ input[type="text"]:focus {
   align-items: center;
   gap: 0.35rem;
   background: var(--sage-light);
-  /* High contrast on light-green chip (sage-dark was washed on #e8f4e5). */
+  /* High contrast on mint chip (sage-dark washed out on the old wash). */
   color: var(--ink);
   border-radius: 999px;
   padding: 0.35rem 0.65rem 0.35rem 0.85rem;
@@ -1132,7 +1149,11 @@ input[type="text"]:focus {
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: transform 0.15s, background 0.2s;
+  transition:
+    transform 0.12s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .btn:active {
@@ -1146,6 +1167,12 @@ input[type="text"]:focus {
 
 .btn.primary:hover:not(:disabled) {
   background: var(--sage-dark);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--green-dark) 28%, transparent);
+}
+
+.btn.primary:focus-visible {
+  outline: 2px solid var(--green-dark);
+  outline-offset: 2px;
 }
 
 .btn.primary:disabled {
@@ -1199,7 +1226,7 @@ input[type="text"]:focus {
 }
 
 .share-menu-item:hover {
-  background: rgba(61, 134, 45, 0.1);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
 }
 
 .turnstile {
@@ -1226,7 +1253,7 @@ input[type="text"]:focus {
 .report-warning {
   margin: 0.85rem 0 0;
   padding: 0.7rem 0.9rem;
-  background: #f4f4f1;
+  background: var(--row-alt);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--muted);
@@ -1404,9 +1431,9 @@ input[type="text"]:focus {
 
 .get-app-cta,
 .unlock-cta {
-  color: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(232, 197, 71, 0.4);
-  background: rgba(232, 197, 71, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  border: 1px solid color-mix(in srgb, var(--insight-gold) 42%, transparent);
+  background: color-mix(in srgb, var(--insight-gold) 10%, transparent);
 }
 
 .get-app-cta[hidden] {
@@ -1420,14 +1447,14 @@ input[type="text"]:focus {
 
 .get-app-cta:hover,
 .unlock-cta:hover {
-  background: rgba(232, 197, 71, 0.16);
+  background: color-mix(in srgb, var(--insight-gold) 18%, transparent);
 }
 
 .unlock-status {
   display: none;
   color: var(--insight-gold-bright);
-  border: 1px solid rgba(232, 197, 71, 0.45);
-  background: rgba(232, 197, 71, 0.12);
+  border: 1px solid color-mix(in srgb, var(--insight-gold) 48%, transparent);
+  background: color-mix(in srgb, var(--insight-gold) 14%, transparent);
   font-weight: 600;
 }
 
@@ -1473,7 +1500,7 @@ body.zb-pro .unlock-status {
   border: 1px solid var(--border);
   border-top: 3px solid var(--green);
   border-radius: var(--radius);
-  box-shadow: 0 18px 60px rgba(6, 26, 15, 0.28);
+  box-shadow: 0 18px 60px color-mix(in srgb, var(--forest) 32%, transparent);
 }
 
 .unlock-card h3 {
@@ -1556,7 +1583,7 @@ body.zb-pro .unlock-status {
   font-weight: 700;
   color: var(--green-dark);
   background: var(--green-light);
-  border: 1px solid rgba(61, 134, 45, 0.35);
+  border: 1px solid color-mix(in srgb, var(--green) 35%, transparent);
 }
 
 .u-step p {
@@ -1645,9 +1672,9 @@ body.zb-pro .unlock-status {
   max-width: 560px;
   padding: 0.8rem 1rem;
   background: var(--card);
-  border: 1px solid rgba(61, 134, 45, 0.45);
+  border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
   border-radius: var(--radius);
-  box-shadow: 0 12px 40px rgba(6, 26, 15, 0.22);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--forest) 22%, transparent);
 }
 
 .link-banner.show {
@@ -1805,20 +1832,20 @@ body.zb-pro .unlock-status {
 @media print {
   :root {
     color-scheme: light;
-    --ink: #1a1a1a;
-    --ink-soft: #2a2a2a;
-    --muted: #5c5c5c;
+    --ink: #16181a;
+    --ink-soft: #2a2e32;
+    --muted: #5a6168;
     --bg: #ffffff;
     --card: #ffffff;
-    --border: #e0e0e0;
-    --row-alt: #fcfcfb;
-    --sage-light: #e8f4e5;
-    --sage-dark: #2f6b22;
+    --border: #d5dbd6;
+    --row-alt: #f7f8f7;
+    --sage-light: #e4f3e8;
+    --sage-dark: #1a5c28;
   }
 
   body {
     background: white;
-    color: #1a1a1a;
+    color: #16181a;
   }
 
   .site-header,

@@ -21,7 +21,7 @@ struct SearchView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .padding(.horizontal, 20)
-                        .background(ZenBuyTheme.greenDark)
+                        .background(ZenBuyTheme.forestHeader)
                         .overlay(alignment: .topTrailing) { unlockButton }
 
                     VStack(alignment: .leading, spacing: 20) {

@@ -5,16 +5,16 @@
       <stop offset="100%" stop-color="#ffffff"/>
     </linearGradient>
     <linearGradient id="zb-peak" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stop-color="#3d862d"/>
-      <stop offset="100%" stop-color="#6fbf5c"/>
+      <stop offset="0%" stop-color="#247a36"/>
+      <stop offset="100%" stop-color="#4caf62"/>
     </linearGradient>
     <linearGradient id="zb-line" x1="0%" y1="100%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
       <stop offset="70%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#e8c547"/>
+      <stop offset="100%" stop-color="#d4b43a"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0b1210"/>
+  <rect width="512" height="512" rx="112" fill="#03140b"/>
   <rect x="28" y="28" width="456" height="456" rx="96" fill="none" stroke="rgba(255,255,255,0.88)" stroke-width="16"/>
   <path d="M112 384 H400" stroke="rgba(255,255,255,0.22)" stroke-width="12" stroke-linecap="round"/>
   <rect x="120" y="320" width="44" height="64" rx="11" fill="url(#zb-bar)" opacity="0.55"/>
@@ -23,6 +23,6 @@
   <rect x="312" y="160" width="44" height="224" rx="11" fill="#ffffff"/>
   <rect x="376" y="104" width="44" height="280" rx="11" fill="url(#zb-peak)"/>
   <path d="M142 340 L206 292 L270 236 L334 180 L398 124" fill="none" stroke="url(#zb-line)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="398" cy="124" r="18" fill="#e8c547"/>
-  <path d="M398 88 V104 M398 144 V160 M362 124 H378 M418 124 H434" stroke="#e8c547" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
+  <circle cx="398" cy="124" r="18" fill="#d4b43a"/>
+  <path d="M398 88 V104 M398 144 V160 M362 124 H378 M418 124 H434" stroke="#d4b43a" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
 </svg>

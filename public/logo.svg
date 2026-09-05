@@ -5,17 +5,17 @@
       <stop offset="100%" stop-color="#ffffff"/>
     </linearGradient>
     <linearGradient id="zb-peak" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stop-color="#3d862d"/>
-      <stop offset="100%" stop-color="#6fbf5c"/>
+      <stop offset="0%" stop-color="#247a36"/>
+      <stop offset="100%" stop-color="#4caf62"/>
     </linearGradient>
     <linearGradient id="zb-line" x1="0%" y1="100%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
       <stop offset="70%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#e8c547"/>
+      <stop offset="100%" stop-color="#d4b43a"/>
     </linearGradient>
   </defs>
   <g transform="translate(4,6)">
-    <rect x="0" y="0" width="52" height="52" rx="13" fill="#0b1210" stroke="rgba(255,255,255,0.88)" stroke-width="2"/>
+    <rect x="0" y="0" width="52" height="52" rx="13" fill="#03140b" stroke="rgba(255,255,255,0.88)" stroke-width="2"/>
     <path d="M10 40 H42" stroke="rgba(255,255,255,0.22)" stroke-width="1.4" stroke-linecap="round"/>
     <rect x="12" y="33" width="4.5" height="7" rx="1.2" fill="url(#zb-bar)" opacity="0.55"/>
     <rect x="18.5" y="28" width="4.5" height="12" rx="1.2" fill="url(#zb-bar)" opacity="0.7"/>
@@ -23,8 +23,8 @@
     <rect x="31.5" y="16" width="4.5" height="24" rx="1.2" fill="#ffffff"/>
     <rect x="38" y="10" width="4.5" height="30" rx="1.2" fill="url(#zb-peak)"/>
     <path d="M14 35.5 L21 30 L27.5 24 L34 18 L40 12.5" fill="none" stroke="url(#zb-line)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="40" cy="12.5" r="1.9" fill="#e8c547"/>
+    <circle cx="40" cy="12.5" r="1.9" fill="#d4b43a"/>
   </g>
   <text x="68" y="38" font-family="Outfit, DM Sans, system-ui, sans-serif" font-size="26" font-weight="700" fill="#f2f7f0" letter-spacing="-0.03em">ZenBuy</text>
-  <text x="178" y="38" font-family="Outfit, DM Sans, system-ui, sans-serif" font-size="26" font-weight="500" fill="#e8c547">.info</text>
+  <text x="178" y="38" font-family="Outfit, DM Sans, system-ui, sans-serif" font-size="26" font-weight="500" fill="#d4b43a">.info</text>
 </svg>

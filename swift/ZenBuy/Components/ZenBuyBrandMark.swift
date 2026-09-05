@@ -6,10 +6,10 @@ struct ZenBuyBrandMark: View {
     var onDark: Bool = false
 
     private var frame: Color { onDark ? Color.white.opacity(0.92) : ZenBuyTheme.green }
-    private var fill: Color { onDark ? Color.white.opacity(0.1) : Color(red: 0.96, green: 0.98, blue: 0.95) }
+    private var fill: Color { onDark ? Color.white.opacity(0.1) : ZenBuyTheme.greenLight }
     private var chart: Color { onDark ? .white : ZenBuyTheme.green }
     private var insight: Color { ZenBuyTheme.insightGold }
-    private var insightBright: Color { Color(red: 0.91, green: 0.77, blue: 0.28) }
+    private var insightBright: Color { ZenBuyTheme.insightGoldBright }
 
     var body: some View {
         Canvas { context, canvasSize in
@@ -69,7 +69,7 @@ struct ZenBuyBrandMark: View {
             context.fill(Path(ellipseIn: core), with: .color(onDark ? insightBright : insight))
 
             let pupil = rect(35.5 - 1.3, 15.5 - 1.3, 2.6, 2.6)
-            context.fill(Path(ellipseIn: pupil), with: .color(Color(red: 1, green: 0.97, blue: 0.9)))
+            context.fill(Path(ellipseIn: pupil), with: .color(Color(hex: 0xFFF7E6)))
 
             let rays: [(CGFloat, CGFloat)] = [(39.5, 11.5), (41, 15.5), (39.5, 19.5)]
             for (x, y) in rays {
@@ -125,6 +125,6 @@ struct ZenBuyBrandHeader: View {
         ZenBuyBrandHeader()
         ZenBuyBrandHeader(onDark: true)
             .padding()
-            .background(ZenBuyTheme.greenDark)
+            .background(ZenBuyTheme.forestHeader)
     }
 }

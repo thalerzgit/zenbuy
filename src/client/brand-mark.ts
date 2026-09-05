@@ -6,13 +6,13 @@ export const BRAND_MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="
       <stop offset="100%" stop-color="#ffffff"/>
     </linearGradient>
     <linearGradient id="zb-peak" x1="0%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stop-color="#3d862d"/>
-      <stop offset="100%" stop-color="#6fbf5c"/>
+      <stop offset="0%" stop-color="#247a36"/>
+      <stop offset="100%" stop-color="#4caf62"/>
     </linearGradient>
     <linearGradient id="zb-line" x1="0%" y1="100%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
       <stop offset="70%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#e8c547"/>
+      <stop offset="100%" stop-color="#d4b43a"/>
     </linearGradient>
   </defs>
   <rect x="2" y="2" width="60" height="60" rx="14" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.88)" stroke-width="2"/>
@@ -27,6 +27,6 @@ export const BRAND_MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="
   <!-- trend line up-and-right -->
   <path d="M17.5 42.5 L25.5 36.5 L33.5 29.5 L41.5 22.5 L49.5 15.5" fill="none" stroke="url(#zb-line)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
   <!-- peak spark (restrained) -->
-  <circle cx="49.5" cy="15.5" r="2.2" fill="#e8c547"/>
-  <path d="M49.5 11.2 V13.2 M49.5 17.8 V19.8 M45.2 15.5 H47.2 M51.8 15.5 H53.8" stroke="#e8c547" stroke-width="1.2" stroke-linecap="round" opacity="0.9"/>
+  <circle cx="49.5" cy="15.5" r="2.2" fill="#d4b43a"/>
+  <path d="M49.5 11.2 V13.2 M49.5 17.8 V19.8 M45.2 15.5 H47.2 M51.8 15.5 H53.8" stroke="#d4b43a" stroke-width="1.2" stroke-linecap="round" opacity="0.9"/>
 </svg>`;

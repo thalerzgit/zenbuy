@@ -35,12 +35,14 @@ function shell(page: "privacy" | "support", title: string, description: string, 
     <style>
       :root {
         color-scheme: light;
-        --green: #3d862d;
-        --forest: #061a0f;
-        --ink: #1a1a1a;
-        --muted: #5c5c5c;
-        --bg: #f7faf6;
-        --border: #e0e0e0;
+        --green: #247a36;
+        --forest: #03140b;
+        --forest-hi: #061910;
+        --forest-lo: #020c08;
+        --ink: #16181a;
+        --muted: #5a6168;
+        --bg: #f3f5f3;
+        --border: #d5dbd6;
       }
       * { box-sizing: border-box; }
       body {
@@ -53,7 +55,7 @@ function shell(page: "privacy" | "support", title: string, description: string, 
       }
       header {
         padding: 1.1rem 1.25rem;
-        background: linear-gradient(165deg, #0a2416 0%, var(--forest) 55%, #04140c 100%);
+        background: linear-gradient(165deg, var(--forest-hi) 0%, var(--forest) 55%, var(--forest-lo) 100%);
         color: #fff;
       }
       header a { color: #fff; text-decoration: none; font-weight: 600; }
