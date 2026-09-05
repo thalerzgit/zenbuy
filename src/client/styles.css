@@ -591,32 +591,152 @@ body {
   margin-top: 0;
 }
 
-.input-mode-tabs {
+.search-wizard {
   display: flex;
-  gap: 0.4rem;
-  margin-bottom: 0.85rem;
+  flex-direction: column;
+  gap: 1rem;
 }
 
-.input-mode-tab {
-  flex: 1;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
+.wizard-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.wizard-progress-label {
+  margin: 0;
   font-size: 0.82rem;
   font-weight: 600;
+  color: var(--muted);
+}
+
+.wizard-dots {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.wizard-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.wizard-dot.is-active {
+  background: var(--sage);
+}
+
+.wizard-dot.is-done {
+  background: color-mix(in srgb, var(--sage) 55%, var(--border));
+}
+
+.wizard-heading,
+.wizard-step .directive-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.wizard-step .directive-panel,
+.wizard-step .horizon-panel {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.wizard-goal-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wizard-goal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
   cursor: pointer;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
-    color 0.15s ease;
+    box-shadow 0.15s ease;
 }
 
-.input-mode-tab.is-active {
+.wizard-goal-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wizard-goal-title {
+  font-size: 1.02rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.wizard-goal-sub {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.wizard-goal-card.is-selected {
   border-color: var(--sage);
   background: var(--sage-light);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sage) 25%, transparent);
+}
+
+.wizard-goal-card.is-selected .wizard-goal-title {
   color: var(--sage-dark);
+}
+
+.wizard-goal-card:has(input:focus-visible) {
+  outline: 2px solid var(--sage);
+  outline-offset: 2px;
+}
+
+.wizard-nav {
+  display: flex;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
+.wizard-nav .btn {
+  min-width: 7.5rem;
+}
+
+.wizard-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--sage-light);
+}
+
+.wizard-summary-chips {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--sage-dark);
+}
+
+.wizard-summary .btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.path-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .discover-block {

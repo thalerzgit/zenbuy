@@ -13,14 +13,10 @@ struct ProfitWindowPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 4) {
-                Text("Profit window")
-                    .font(.subheadline.weight(.semibold))
-                Text("(optional)")
-                    .font(.subheadline)
-                    .opacity(0.85)
-            }
-            .foregroundStyle(ZenBuyTheme.muted)
+            Text("What's your intended profit window?")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(ZenBuyTheme.ink)
+                .accessibilityAddTraits(.isHeader)
 
             FlowLayout(spacing: 8) {
                 ForEach(options) { option in

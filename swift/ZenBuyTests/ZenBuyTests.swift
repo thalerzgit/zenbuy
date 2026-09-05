@@ -287,6 +287,67 @@ final class ZenBuyTests: XCTestCase {
     }
 
     @MainActor
+    func testWizardAnalyzePathUnlocksTickerEntry() {
+        resetWizardDefaults()
+        defer { resetWizardDefaults() }
+
+        let vm = SearchViewModel(api: ZenBuyAPIClient())
+        XCTAssertEqual(vm.wizardStep, .pathIntent)
+        XCTAssertFalse(vm.canContinueWizard)
+
+        vm.choosePathIntent(.enter)
+        XCTAssertTrue(vm.canContinueWizard)
+        XCTAssertEqual(vm.inputMode, .enter)
+
+        vm.continueWizard()
+        XCTAssertEqual(vm.wizardStep, .investmentGoal)
+        vm.continueWizard()
+        XCTAssertEqual(vm.wizardStep, .profitWindow)
+        vm.goBackWizard()
+        XCTAssertEqual(vm.wizardStep, .investmentGoal)
+        vm.continueWizard()
+        XCTAssertEqual(vm.wizardStep, .profitWindow)
+        vm.continueWizard()
+        XCTAssertEqual(vm.wizardStep, .unlocked)
+        XCTAssertEqual(vm.inputMode, .enter)
+        XCTAssertTrue(vm.wizardSummary.contains("Analyze"))
+    }
+
+    @MainActor
+    func testWizardFindPathUnlocksDiscover() {
+        resetWizardDefaults()
+        defer { resetWizardDefaults() }
+
+        let vm = SearchViewModel(api: ZenBuyAPIClient())
+        vm.choosePathIntent(.find)
+        vm.continueWizard()
+        vm.continueWizard()
+        vm.continueWizard()
+        XCTAssertEqual(vm.wizardStep, .unlocked)
+        XCTAssertEqual(vm.inputMode, .find)
+        XCTAssertTrue(vm.isDiscovering)
+        XCTAssertTrue(vm.wizardSummary.hasPrefix("Find"))
+        vm.reopenWizard()
+        XCTAssertEqual(vm.wizardStep, .pathIntent)
+    }
+
+    @MainActor
+    func testPickingGoalPersistsDirectiveLikeWeb() {
+        let prior = UserDefaults.standard.string(forKey: "zenbuy:directive:v1")
+        defer {
+            if let prior {
+                UserDefaults.standard.set(prior, forKey: "zenbuy:directive:v1")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "zenbuy:directive:v1")
+            }
+        }
+
+        let vm = SearchViewModel(api: ZenBuyAPIClient())
+        vm.selectDirective("value_income")
+        XCTAssertEqual(InvestmentDirectiveInfo.loadStoredId(), "value_income")
+    }
+
+    @MainActor
     func testPickingGoalResetsProfitWindowToItsDefault() {
         let stored = ProfitHorizonOption.loadStoredYears(for: "growth")
         defer { ProfitHorizonOption.saveStoredYears(stored) }
@@ -829,6 +890,11 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertTrue(withTrace.contains("sse meta skip:sticky:2398 done"))
         XCTAssertTrue(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 0))
         XCTAssertFalse(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 1))
+    }
+
+    private func resetWizardDefaults() {
+        UserDefaults.standard.removeObject(forKey: "zenbuy:input-mode:v1")
+        UserDefaults.standard.removeObject(forKey: "zenbuy:wizard-complete:v1")
     }
 
     private func fixture(_ name: String) throws -> String {

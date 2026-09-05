@@ -12,6 +12,10 @@ import {
 
 const STORAGE_KEY = "zenbuy:directive:v1";
 const HORIZON_STORAGE_KEY = "zenbuy:profit-horizon:v1";
+const INPUT_MODE_KEY = "zenbuy:input-mode:v1";
+const WIZARD_COMPLETE_KEY = "zenbuy:wizard-complete:v1";
+
+export type StoredInputMode = "manual" | "discover";
 
 export function loadStoredDirective(): InvestmentDirectiveId {
   try {
@@ -54,6 +58,40 @@ export function saveStoredProfitHorizon(years: number): void {
   }
 }
 
+export function loadStoredInputMode(): StoredInputMode | null {
+  try {
+    const raw = localStorage.getItem(INPUT_MODE_KEY);
+    if (raw === "manual" || raw === "discover") return raw;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function saveStoredInputMode(mode: StoredInputMode): void {
+  try {
+    localStorage.setItem(INPUT_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadWizardComplete(): boolean {
+  try {
+    return localStorage.getItem(WIZARD_COMPLETE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveWizardComplete(): void {
+  try {
+    localStorage.setItem(WIZARD_COMPLETE_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
 function pillLabel(d: InvestmentDirective): string {
   if (d.id === "growth_income") return "Growth/Income";
   if (d.id === "value_income") return "Value/Income";
@@ -81,66 +119,11 @@ function syncHorizonPills(container: HTMLElement, years: number): void {
   });
 }
 
-export function mountDirectivePanel(
-  container: HTMLElement,
-  initial: InvestmentDirectiveId,
-  initialHorizonYears: number,
-  onChange: (id: InvestmentDirectiveId) => void,
-  onHorizonChange: (years: number) => void
-): void {
-  container.innerHTML = `
-    <div class="directive-panel">
-      <h2 class="directive-heading" id="directive-heading">What's your goal?</h2>
-      <p class="directive-lead">Tap a strategy — <span class="directive-lead-hint">i</span> for details.</p>
-      <div class="directive-pills" role="radiogroup" aria-labelledby="directive-heading">
-        ${INVESTMENT_DIRECTIVES.map(
-          (d) => `
-          <label class="directive-pill${d.id === initial ? " is-selected" : ""}">
-            <input type="radio" name="investment-directive" value="${d.id}" ${
-              d.id === initial ? "checked" : ""
-            } />
-            <span class="directive-pill-text">${pillLabel(d)}</span>
-            <button type="button" class="directive-info" data-directive-id="${d.id}" aria-label="About ${d.label}">i</button>
-          </label>`
-        ).join("")}
-      </div>
-      <div class="horizon-panel">
-        <h3 class="horizon-heading" id="horizon-heading">Profit window <span class="horizon-optional">(optional)</span></h3>
-        <div class="directive-pills horizon-pills" role="radiogroup" aria-labelledby="horizon-heading">
-          ${PROFIT_HORIZON_OPTIONS.map(
-            (h) => `
-            <label class="directive-pill horizon-pill${h.years === initialHorizonYears ? " is-selected" : ""}">
-              <input type="radio" name="profit-horizon" value="${h.years}" ${
-                h.years === initialHorizonYears ? "checked" : ""
-              } />
-              <span class="directive-pill-text">${h.label}</span>
-            </label>`
-          ).join("")}
-        </div>
-      </div>
-    </div>
-    <dialog class="directive-detail-dialog" aria-labelledby="directive-detail-title">
-      <div class="directive-detail-inner">
-        <header class="directive-detail-header">
-          <h3 id="directive-detail-title"></h3>
-          <button type="button" class="directive-detail-close" aria-label="Close">×</button>
-        </header>
-        <div class="directive-detail-body"></div>
-      </div>
-    </dialog>
-  `;
-
-  const dialog = container.querySelector<HTMLDialogElement>(".directive-detail-dialog")!;
+function bindDetailDialog(container: HTMLElement): void {
+  const dialog = container.querySelector<HTMLDialogElement>(".directive-detail-dialog");
+  if (!dialog) return;
   const titleEl = dialog.querySelector<HTMLHeadingElement>("#directive-detail-title")!;
   const bodyEl = dialog.querySelector<HTMLDivElement>(".directive-detail-body")!;
-  const pills = container.querySelectorAll<HTMLLabelElement>(".directive-pill:not(.horizon-pill)");
-
-  const syncSelected = (id: InvestmentDirectiveId): void => {
-    pills.forEach((pill) => {
-      const input = pill.querySelector<HTMLInputElement>('input[type="radio"]');
-      pill.classList.toggle("is-selected", input?.value === id);
-    });
-  };
 
   const openDetail = (d: InvestmentDirective): void => {
     titleEl.textContent = d.label;
@@ -151,40 +134,6 @@ export function mountDirectivePanel(
       dialog.setAttribute("open", "");
     }
   };
-
-  container
-    .querySelectorAll<HTMLInputElement>('input[name="investment-directive"]')
-    .forEach((input) => {
-      input.addEventListener("change", () => {
-        if (!input.checked || !isInvestmentDirectiveId(input.value)) return;
-        saveStoredDirective(input.value);
-        syncSelected(input.value);
-        onChange(input.value);
-        const suggested = defaultProfitHorizonYears(input.value);
-        syncHorizonPills(container, suggested);
-        const horizonInput = container.querySelector<HTMLInputElement>(
-          `input[name="profit-horizon"][value="${suggested}"]`
-        );
-        if (horizonInput) {
-          horizonInput.checked = true;
-          saveStoredProfitHorizon(suggested);
-          onHorizonChange(suggested);
-        }
-      });
-    });
-
-  container
-    .querySelectorAll<HTMLInputElement>('input[name="profit-horizon"]')
-    .forEach((input) => {
-      input.addEventListener("change", () => {
-        if (!input.checked) return;
-        const years = Number(input.value);
-        if (!Number.isFinite(years)) return;
-        saveStoredProfitHorizon(years);
-        syncHorizonPills(container, years);
-        onHorizonChange(years);
-      });
-    });
 
   container.querySelectorAll<HTMLButtonElement>(".directive-info").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -203,6 +152,99 @@ export function mountDirectivePanel(
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog) dialog.close();
   });
+}
+
+export function mountInvestmentGoalPanel(
+  container: HTMLElement,
+  initial: InvestmentDirectiveId,
+  onChange: (id: InvestmentDirectiveId, suggestedHorizonYears: number) => void
+): void {
+  container.innerHTML = `
+    <div class="directive-panel">
+      <h2 class="directive-heading" id="directive-heading" tabindex="-1">What's your investment goal?</h2>
+      <p class="directive-lead">Tap a strategy — <span class="directive-lead-hint">i</span> for details.</p>
+      <div class="directive-pills" role="radiogroup" aria-labelledby="directive-heading">
+        ${INVESTMENT_DIRECTIVES.map(
+          (d) => `
+          <label class="directive-pill${d.id === initial ? " is-selected" : ""}">
+            <input type="radio" name="investment-directive" value="${d.id}" ${
+              d.id === initial ? "checked" : ""
+            } />
+            <span class="directive-pill-text">${pillLabel(d)}</span>
+            <button type="button" class="directive-info" data-directive-id="${d.id}" aria-label="About ${d.label}">i</button>
+          </label>`
+        ).join("")}
+      </div>
+    </div>
+    <dialog class="directive-detail-dialog" aria-labelledby="directive-detail-title">
+      <div class="directive-detail-inner">
+        <header class="directive-detail-header">
+          <h3 id="directive-detail-title"></h3>
+          <button type="button" class="directive-detail-close" aria-label="Close">×</button>
+        </header>
+        <div class="directive-detail-body"></div>
+      </div>
+    </dialog>
+  `;
+
+  const pills = container.querySelectorAll<HTMLLabelElement>(".directive-pill");
+  const syncSelected = (id: InvestmentDirectiveId): void => {
+    pills.forEach((pill) => {
+      const input = pill.querySelector<HTMLInputElement>('input[type="radio"]');
+      pill.classList.toggle("is-selected", input?.value === id);
+    });
+  };
+
+  container
+    .querySelectorAll<HTMLInputElement>('input[name="investment-directive"]')
+    .forEach((input) => {
+      input.addEventListener("change", () => {
+        if (!input.checked || !isInvestmentDirectiveId(input.value)) return;
+        saveStoredDirective(input.value);
+        syncSelected(input.value);
+        const suggested = defaultProfitHorizonYears(input.value);
+        saveStoredProfitHorizon(suggested);
+        onChange(input.value, suggested);
+      });
+    });
+
+  bindDetailDialog(container);
+}
+
+export function mountProfitHorizonPanel(
+  container: HTMLElement,
+  initialHorizonYears: number,
+  onChange: (years: number) => void
+): void {
+  container.innerHTML = `
+    <div class="horizon-panel">
+      <h2 class="directive-heading" id="horizon-heading" tabindex="-1">What's your intended profit window?</h2>
+      <div class="directive-pills horizon-pills" role="radiogroup" aria-labelledby="horizon-heading">
+        ${PROFIT_HORIZON_OPTIONS.map(
+          (h) => `
+          <label class="directive-pill horizon-pill${h.years === initialHorizonYears ? " is-selected" : ""}">
+            <input type="radio" name="profit-horizon" value="${h.years}" ${
+              h.years === initialHorizonYears ? "checked" : ""
+            } />
+            <span class="directive-pill-text">${h.label}</span>
+          </label>`
+        ).join("")}
+      </div>
+    </div>
+  `;
+
+  container
+    .querySelectorAll<HTMLInputElement>('input[name="profit-horizon"]')
+    .forEach((input) => {
+      input.addEventListener("change", () => {
+        if (!input.checked) return;
+        const years = Number(input.value);
+        if (!Number.isFinite(years)) return;
+        saveStoredProfitHorizon(years);
+        syncHorizonPills(container, years);
+        onChange(years);
+      });
+    });
 }
 
 export function directiveLabel(id: InvestmentDirectiveId): string {
