@@ -87,7 +87,7 @@ Services ID configuration.
 | `APPLE_BUNDLE_ID` | `info.zenbuy.app` | Audience for the app's identity token |
 | `APPLE_PRO_PRODUCT_IDS` | `info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly` | Either one unlocks |
 | `APPLE_ALLOW_SANDBOX` | `1` | TestFlight buys through the sandbox. Set to `0` on App Store release day |
-| `APP_STORE_URL` | `https://testflight.apple.com/join/kMJsdtWY` | Header **Get the App** pill + unlock-guide store row. Swap to `https://apps.apple.com/app/id6807960678` on release day; empty hides both |
+| `APP_STORE_URL` | `https://apps.apple.com/app/id6807960678` | Header **Get the App** pill + unlock-guide store row. Official App Store listing; empty hides both |
 | `RATE_LIMIT_PRO_DAILY` | `25` | Daily reports per unlocked Apple ID (free tier is `RATE_LIMIT_FREE_WEEKLY`, 3 per rolling week) |
 | `APPLE_ID_WHITELIST` | `tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com` | Complimentary unlock with no purchase — see below |
 

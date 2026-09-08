@@ -44,7 +44,7 @@ interface Env {
   APPLE_ID_WHITELIST?: string;
   /**
    * Public download URL (header "Get the App" + unlock-guide store row).
-   * TestFlight until release; then https://apps.apple.com/app/id6807960678.
+   * Official listing: https://apps.apple.com/app/id6807960678.
    * Empty hides both surfaces.
    */
   APP_STORE_URL?: string;
