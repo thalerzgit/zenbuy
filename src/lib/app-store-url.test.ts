@@ -41,8 +41,6 @@ test("wrangler APP_STORE_URL is the public download knob", () => {
   const url = (JSON.parse(stripped) as { vars: { APP_STORE_URL?: string } }).vars
     .APP_STORE_URL;
   assert.ok(configuredAppUrl(url), "empty hides the header pill and store row");
-  assert.match(
-    configuredAppUrl(url),
-    /^https:\/\/(testflight\.apple\.com\/join\/|apps\.apple\.com\/)/
-  );
+  assert.equal(configuredAppUrl(url), APP_STORE);
+  assert.equal(isTestFlightUrl(configuredAppUrl(url)), false);
 });

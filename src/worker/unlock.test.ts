@@ -10,6 +10,7 @@ import {
   resolveUnlock,
   type Entitlement,
 } from "./unlock.ts";
+import { unlockTraceActive } from "./unlock-trace.ts";
 
 /**
  * `APPLE_ID_WHITELIST` is the only way to be unlocked without a purchase, so
@@ -205,15 +206,39 @@ test("token email missing + body email on whitelist grants under the verified su
 test("body email not on the whitelist still 402", async () => {
   const kv = fakeKv();
   const env = envWith(kv, "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
-  const response = await completeUnlockWeb(
-    unlockRequest(),
-    env,
-    { sub: SUB },
-    [],
-    "stranger@example.com"
-  );
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  let response: Response;
+  try {
+    response = await completeUnlockWeb(
+      unlockRequest(),
+      env,
+      { sub: SUB },
+      [],
+      "stranger@example.com"
+    );
+  } finally {
+    console.log = original;
+  }
   assert.equal(response.status, 402);
+  assert.deepEqual(await response.json(), { error: "no active purchase" });
   assert.equal(storedEntitlement(kv), null);
+  const joined = lines.join("\n");
+  assert.equal(joined.includes("stranger@example.com"), false);
+  assert.equal(joined.includes(SUB), false);
+  if (unlockTraceActive()) {
+    assert.equal(joined.includes("unlock_trace.unlock_web"), true);
+    assert.equal(joined.includes("no_purchase_and_no_complimentary"), true);
+    assert.equal(joined.includes("miss_email_not_listed"), true);
+    assert.equal(joined.includes("\"unlock_path\":\"app_unlock_web\""), true);
+    assert.equal(joined.includes("\"storekit_on_this_path\":true"), true);
+    assert.equal(joined.includes("apple_allow_sandbox"), true);
+  } else {
+    assert.equal(joined.includes("unlock_trace."), false);
+  }
 });
 
 test("empty email still 402", async () => {

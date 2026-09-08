@@ -307,7 +307,7 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
 async function handleConfig(env: Env): Promise<Response> {
   return json({
     turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? "",
-    // One wrangler knob: TestFlight now, App Store listing on release day.
+    // One wrangler knob: official App Store listing (header + unlock guide).
     // Empty hides the header pill and the unlock-guide store row.
     appStoreUrl: env.APP_STORE_URL ?? "",
     investmentDirectives: directivesForClient(),

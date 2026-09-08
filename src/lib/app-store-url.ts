@@ -1,9 +1,9 @@
 /**
  * One wrangler knob: `APP_STORE_URL` → `/api/config`.appStoreUrl.
  *
- * TestFlight until App Store release, then swap the var to
- * https://apps.apple.com/app/id6807960678 — copy follows the host, no
- * other code change.
+ * Public download is the official App Store listing
+ * (https://apps.apple.com/app/id6807960678). Copy follows the host if
+ * the var is ever pointed at TestFlight again.
  */
 
 export function configuredAppUrl(url: string | undefined | null): string {
