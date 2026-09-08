@@ -892,6 +892,83 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertFalse(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 1))
     }
 
+    func testReportPDFValidationRejectsEmptyAndRequiresPercentPDFHeader() {
+        XCTAssertFalse(ReportPDFValidation.isValidPDF(Data()))
+        XCTAssertFalse(ReportPDFValidation.isValidPDF(Data("%PD".utf8)))
+        XCTAssertFalse(ReportPDFValidation.isValidPDF(Data("PDF-1.4".utf8)))
+        XCTAssertFalse(ReportPDFValidation.isValidPDF(Data("%PDF".utf8)), "header alone is not a document")
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(Data("%PDF-1.4\n%\u{00e2}\u{00e3}\u{00cf}\u{00d3}\n".utf8)))
+        XCTAssertEqual(ReportPDFValidation.filename(forTitle: "DIS"), "ZenBuy-DIS-report.pdf")
+        XCTAssertEqual(ReportPDFValidation.filename(forTitle: "AAPL / MSFT"), "ZenBuy-AAPL---MSFT-report.pdf")
+    }
+
+    #if canImport(UIKit)
+    @MainActor
+    func testReportPDFExporterWritesNonEmptyColorPDF() throws {
+        let bottom = """
+        <h2>BOTTOM LINE</h2>
+        <ul><li>Buy — conviction Medium at $105.31.</li>
+        <li>Flips to Sell if forward EPS is cut.</li></ul>
+        """
+        let body = """
+        <h2>FUNDAMENTALS</h2>
+        <p>Disney remains a wide-moat media franchise.</p>
+        """
+        let scorecard = """
+        <div class="scorecard">
+          <div class="score-row"><span class="score-label">Growth</span>\
+        <div class="score-bar"><div class="score-fill" style="width:60%"></div></div>\
+        <span class="score-num">6/10</span></div>
+          <div class="score-row"><span class="score-label">Overall</span>\
+        <div class="score-bar"><div class="score-fill" style="width:70%"></div></div>\
+        <span class="score-num">7/10</span></div>
+        </div>
+        """
+        let badges = ReportBadges(recommendation: "Buy", sentiment: "Bullish", conviction: "Medium")
+        let data = try XCTUnwrap(
+            ReportPDFExporter.makePDFData(
+                title: "DIS",
+                badges: badges,
+                scorecardHTML: scorecard,
+                bottomLineHTML: bottom,
+                bodyHTML: body
+            )
+        )
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(data))
+        XCTAssertGreaterThan(data.count, 1_024)
+        let url = try XCTUnwrap(
+            ReportPDFExporter.makePDF(
+                title: "DIS",
+                badges: badges,
+                scorecardHTML: scorecard,
+                bottomLineHTML: bottom,
+                bodyHTML: body
+            )
+        )
+        XCTAssertEqual(url.lastPathComponent, "ZenBuy-DIS-report.pdf")
+        let written = try Data(contentsOf: url)
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(written))
+        XCTAssertGreaterThan(written.count, 0)
+    }
+
+    @MainActor
+    func testPrepareSharePDFRefusesInvalidCachedFile() {
+        let vm = ReportViewModel(api: ZenBuyAPIClient())
+        vm.bottomLineHTML = "<h2>BOTTOM LINE</h2><p>Buy DIS.</p>"
+        vm.bodyHTML = "<h2>FUNDAMENTALS</h2><p>Wide moat.</p>"
+        guard let payload = vm.prepareSharePDF(title: "DIS") else {
+            return XCTFail("Fixture report must export a real PDF")
+        }
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(payload.data))
+        try? Data().write(to: payload.url, options: .atomic)
+        XCTAssertEqual((try? Data(contentsOf: payload.url))?.count, 0)
+        let recovered = vm.prepareSharePDF(title: "DIS")
+        XCTAssertNotNil(recovered, "Empty cache must be discarded and rebuilt")
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(recovered!.data))
+        XCTAssertGreaterThan(recovered!.data.count, 0)
+    }
+    #endif
+
     private func resetWizardDefaults() {
         UserDefaults.standard.removeObject(forKey: "zenbuy:input-mode:v1")
         UserDefaults.standard.removeObject(forKey: "zenbuy:wizard-complete:v1")

@@ -594,7 +594,13 @@ final class ReportViewModel {
     }
 
     /// Local PDF for the system share sheet (Files / Messages / Mail / AirDrop).
+    /// Returns `nil` when the renderer produced empty/invalid bytes — never a
+    /// 0-byte `ZenBuy-*-report.pdf` for Print or Save to Files.
     func sharePDFURL(title: String) -> URL? {
+        prepareSharePDF(title: title)?.url
+    }
+
+    func prepareSharePDF(title: String) -> (url: URL, data: Data)? {
         #if canImport(UIKit)
         ReportVerboseLog.log("sharePDF attempt titleLen=\(title.count)")
         let key = [
@@ -607,8 +613,14 @@ final class ReportViewModel {
             badges?.conviction ?? "",
         ].joined(separator: "\u{1e}")
         if key == cachedShareKey, let cachedShareURL {
-            ReportVerboseLog.log("sharePDF cache hit")
-            return cachedShareURL
+            if let cached = try? Data(contentsOf: cachedShareURL),
+               ReportPDFValidation.isValidPDF(cached) {
+                ReportVerboseLog.log("sharePDF cache hit bytes=\(cached.count)")
+                return (cachedShareURL, cached)
+            }
+            ReportVerboseLog.log("sharePDF cache miss — cached file empty or missing")
+            cachedShareKey = ""
+            cachedShareURL = nil
         }
         guard let url = ReportPDFExporter.makePDF(
             title: title,
@@ -616,14 +628,16 @@ final class ReportViewModel {
             scorecardHTML: scorecardHTML,
             bottomLineHTML: bottomLineHTML,
             bodyHTML: bodyHTML
-        ) else {
-            ReportVerboseLog.log("sharePDF failed — exporter returned nil")
+        ), let data = try? Data(contentsOf: url), ReportPDFValidation.isValidPDF(data) else {
+            ReportVerboseLog.log("sharePDF failed — exporter returned nil or empty PDF")
+            cachedShareKey = ""
+            cachedShareURL = nil
             return nil
         }
         cachedShareKey = key
         cachedShareURL = url
-        ReportVerboseLog.log("sharePDF ok")
-        return url
+        ReportVerboseLog.log("sharePDF ok bytes=\(data.count)")
+        return (url, data)
         #else
         return nil
         #endif
