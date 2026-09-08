@@ -24,6 +24,17 @@
 import type { AppleIdentity } from "./apple-id.ts";
 import { AppleAuthError, exchangeAuthorizationCode, verifyAppleIdToken } from "./apple-id.ts";
 import { AppleJwsError, verifyAppleJws } from "./apple-jws.ts";
+import {
+  USER_FACING_APP_BAD_TOKEN,
+  USER_FACING_APP_NO_PURCHASE,
+  USER_FACING_WEB_SIGNIN_FAILED,
+  USER_FACING_WEB_UNLINKED,
+  emailDomainOnly,
+  logUnlockTrace,
+  subPrefixOnly,
+  unlockCaller,
+  unlockTraceActive,
+} from "./unlock-trace.ts";
 
 const SESSION_COOKIE = "zb_session";
 const STATE_COOKIE = "zb_state";
@@ -202,6 +213,95 @@ function complimentaryEntitlement(now: number): Entitlement {
   };
 }
 
+/** Decision fields for the temporary RCA window. Never includes email/sub/JWT. */
+function whitelistTraceFields(
+  env: Env,
+  identity: AppleIdentity,
+  clientEmail: unknown,
+  matching: "token_only" | "token_then_body"
+): Record<string, unknown> {
+  const entries = (env.APPLE_ID_WHITELIST ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const emailEntries = entries.filter((entry) => !/^sub:/i.test(entry));
+  const subEntries = entries.filter((entry) => /^sub:/i.test(entry));
+  const email =
+    matching === "token_then_body"
+      ? emailForWhitelist(identity.email, clientEmail)
+      : identity.email?.trim() || undefined;
+  const matched = isWhitelisted(env, { sub: identity.sub, email });
+  const bodyPresent = clientEmail != null && String(clientEmail).trim() !== "";
+  let why: string;
+  if (matched) {
+    why = subEntries.some((entry) => entry.slice(4).trim() === identity.sub)
+      ? "matched_sub"
+      : "matched_email";
+  } else if (entries.length === 0) {
+    why = "whitelist_empty";
+  } else if (!email) {
+    why =
+      bodyPresent && !isNormalEmail(clientEmail)
+        ? "miss_no_usable_email_body_not_address"
+        : "miss_no_email_and_no_sub_match";
+  } else {
+    why = "miss_email_not_listed";
+  }
+  return {
+    whitelist_match: matched,
+    whitelist_why: why,
+    whitelist_matching: matching,
+    whitelist_entry_count: entries.length,
+    whitelist_email_entry_count: emailEntries.length,
+    whitelist_sub_entry_count: subEntries.length,
+    whitelist_email_domains: emailEntries.map((entry) => emailDomainOnly(entry)),
+    token_email_claim: Boolean(identity.email?.trim()),
+    token_email_domain: emailDomainOnly(identity.email),
+    body_email_present: bodyPresent,
+    body_email_looks_like_address: isNormalEmail(clientEmail),
+    whitelist_email_source: email ? (identity.email?.trim() ? "token" : "body") : "none",
+    identity_email_domain: emailDomainOnly(email),
+    sub_present: Boolean(identity.sub),
+    sub_prefix: subPrefixOnly(identity.sub),
+  };
+}
+
+function entitlementTraceFields(entitlement: Entitlement | null, now = Date.now()) {
+  return {
+    purchase_lookup: "kv_apple_entitlement_by_sub",
+    purchase_found: Boolean(entitlement),
+    purchase_live: isLive(entitlement, now),
+    purchase_product_id: entitlement?.productId ?? null,
+    purchase_environment: entitlement?.environment ?? null,
+    purchase_expired: Boolean(entitlement?.expiresAt && entitlement.expiresAt <= now),
+    purchase_complimentary_record: entitlement?.productId === COMPLIMENTARY_PRODUCT_ID,
+  };
+}
+
+function transactionSkipReason(
+  env: Env,
+  transaction: SignedTransaction,
+  now: number
+): string {
+  if (transaction.bundleId !== bundleId(env)) return "bundle_mismatch";
+  if (!transaction.productId || !proProductIds(env).includes(transaction.productId)) {
+    return "product_not_pro";
+  }
+  if (transaction.revocationDate) return "revoked";
+  if (transaction.expiresDate && transaction.expiresDate <= now) return "expired";
+  if (
+    transaction.inAppOwnershipType &&
+    transaction.inAppOwnershipType !== "PURCHASED" &&
+    transaction.inAppOwnershipType !== "FAMILY_SHARED"
+  ) {
+    return "ownership_not_accepted";
+  }
+  if (transaction.environment === "Sandbox" && env.APPLE_ALLOW_SANDBOX === "0") {
+    return "sandbox_blocked";
+  }
+  return "rejected";
+}
+
 /**
  * Give a whitelisted Apple ID the entitlement a purchase would have earned.
  *
@@ -258,8 +358,33 @@ async function createSession(env: Env, sub: string): Promise<string> {
 
 /** `GET /api/me` — the website's one source of truth for pro mode. */
 export async function handleMe(request: Request, env: Env): Promise<Response> {
-  const { signedIn, unlocked } = await resolveUnlock(request, env);
-  return json({ signedIn, unlocked });
+  const state = await resolveUnlock(request, env);
+  if (unlockTraceActive() && state.signedIn) {
+    const entitlement = state.sub ? await readEntitlement(env, state.sub) : null;
+    const unlinked = !state.unlocked;
+    logUnlockTrace("unlock_trace.me", {
+      route: "/api/me",
+      http_status: 200,
+      caller: unlockCaller(request),
+      branch: unlinked ? "signed_in_unlinked" : "unlocked",
+      signed_in: true,
+      unlocked: state.unlocked,
+      complimentary: state.complimentary,
+      has_bearer: Boolean(request.headers.get("authorization")),
+      has_session_cookie: Boolean(readCookie(request, SESSION_COOKIE)),
+      sub_present: Boolean(state.sub),
+      sub_prefix: subPrefixOnly(state.sub),
+      whitelist_match: state.sub ? isWhitelisted(env, { sub: state.sub }) : false,
+      whitelist_why: state.sub
+        ? isWhitelisted(env, { sub: state.sub })
+          ? "matched_sub"
+          : "session_has_no_email_to_match"
+        : "no_sub",
+      ...entitlementTraceFields(entitlement),
+      user_facing_error: unlinked ? USER_FACING_WEB_UNLINKED : null,
+    });
+  }
+  return json({ signedIn: state.signedIn, unlocked: state.unlocked });
 }
 
 /** `GET /auth/apple` — hand off to Apple with a single-use state value. */
@@ -297,6 +422,17 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
   const state = url.searchParams.get("state");
   const expectedState = readCookie(request, STATE_COOKIE);
   if (!code || !state || !expectedState || state !== expectedState) {
+    logUnlockTrace("unlock_trace.siwa_callback", {
+      route: "/auth/apple/callback",
+      http_status: 302,
+      caller: "web",
+      branch: "state_mismatch",
+      has_code: Boolean(code),
+      has_state: Boolean(state),
+      has_expected_state: Boolean(expectedState),
+      redirect: "/?signin=failed",
+      user_facing_error: USER_FACING_WEB_SIGNIN_FAILED,
+    });
     return redirect("/?signin=failed", [["set-cookie", clearState]]);
   }
 
@@ -306,16 +442,50 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
       code,
       `${url.origin}/auth/apple/callback`
     );
+    const whitelist = whitelistTraceFields(env, identity, undefined, "token_only");
+    logUnlockTrace("unlock_trace.whitelist", {
+      route: "/auth/apple/callback",
+      caller: "web",
+      ...whitelist,
+    });
     const complimentary = await applyWhitelistGrant(env, identity);
     const sessionId = await createSession(env, identity.sub);
-    const unlocked = complimentary || isLive(await readEntitlement(env, identity.sub));
+    const entitlement = await readEntitlement(env, identity.sub);
+    const unlocked = complimentary || isLive(entitlement);
+    const redirectTo = unlocked ? "/?unlocked=1" : "/?signin=ok";
+    logUnlockTrace("unlock_trace.siwa_callback", {
+      route: "/auth/apple/callback",
+      http_status: 302,
+      caller: "web",
+      branch: unlocked
+        ? complimentary
+          ? "session_created_complimentary"
+          : "session_created_purchase_linked"
+        : "session_created_signed_in_unlinked",
+      session_created: true,
+      complimentary_grant: complimentary,
+      unlocked,
+      redirect: redirectTo,
+      ...whitelist,
+      ...entitlementTraceFields(entitlement),
+      user_facing_error: unlocked ? null : USER_FACING_WEB_UNLINKED,
+    });
 
-    return redirect(unlocked ? "/?unlocked=1" : "/?signin=ok", [
+    return redirect(redirectTo, [
       ["set-cookie", clearState],
       ["set-cookie", cookie(request, SESSION_COOKIE, sessionId, SESSION_TTL_SECONDS)],
     ]);
   } catch (e) {
     console.error("apple callback failed", e);
+    logUnlockTrace("unlock_trace.siwa_callback", {
+      route: "/auth/apple/callback",
+      http_status: 302,
+      caller: "web",
+      branch: "apple_exchange_failed",
+      apple_auth_error: e instanceof AppleAuthError ? e.message : "unexpected",
+      redirect: "/?signin=failed",
+      user_facing_error: USER_FACING_WEB_SIGNIN_FAILED,
+    });
     return redirect("/?signin=failed", [["set-cookie", clearState]]);
   }
 }
@@ -385,6 +555,14 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
   try {
     body = await request.json();
   } catch {
+    logUnlockTrace("unlock_trace.unlock_web", {
+      route: "/api/unlock-web",
+      http_status: 400,
+      caller: unlockCaller(request),
+      branch: "bad_request",
+      response_error: "bad request",
+      user_facing_error: "Linking failed (HTTP 400). Try again in a moment.",
+    });
     return json({ error: "bad request" }, 400);
   }
 
@@ -393,6 +571,20 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     identity = await verifyAppleIdToken(env, body.identityToken ?? "", bundleId(env));
   } catch (e) {
     if (!(e instanceof AppleAuthError)) console.error("identity verification failed", e);
+    logUnlockTrace("unlock_trace.unlock_web", {
+      route: "/api/unlock-web",
+      http_status: 401,
+      caller: unlockCaller(request),
+      branch: "bad_token",
+      has_identity_token: Boolean(body.identityToken),
+      body_email_present: body.email != null && String(body.email).trim() !== "",
+      transaction_submitted_count: Array.isArray(body.transactions)
+        ? body.transactions.length
+        : 0,
+      apple_auth_error: e instanceof AppleAuthError ? e.message : "unexpected",
+      response_error: "bad token",
+      user_facing_error: USER_FACING_APP_BAD_TOKEN,
+    });
     return json({ error: "bad token" }, 401);
   }
 
@@ -417,15 +609,34 @@ export async function completeUnlockWeb(
   // omitted the claim. A name or a non-whitelist address never unlocks.
   const email = emailForWhitelist(identity.email, clientEmail);
   const whitelisted = isWhitelisted(env, { sub: identity.sub, email });
+  const whitelist = whitelistTraceFields(env, identity, clientEmail, "token_then_body");
+  logUnlockTrace("unlock_trace.whitelist", {
+    route: "/api/unlock-web",
+    caller: unlockCaller(request),
+    ...whitelist,
+  });
+  const priorEntitlement = unlockTraceActive()
+    ? await readEntitlement(env, identity.sub)
+    : null;
   const submitted = Array.isArray(transactions) ? transactions.slice(0, 20) : [];
 
   const now = Date.now();
   const candidates: Entitlement[] = [];
+  const transactionSkipReasons: string[] = [];
+  const acceptedProductIds: string[] = [];
   for (const raw of submitted) {
-    if (typeof raw !== "string") continue;
+    if (typeof raw !== "string") {
+      if (unlockTraceActive()) transactionSkipReasons.push("not_jws_string");
+      continue;
+    }
     try {
       const transaction = await verifyAppleJws<SignedTransaction>(raw);
-      if (!acceptTransaction(env, transaction, now)) continue;
+      if (!acceptTransaction(env, transaction, now)) {
+        if (unlockTraceActive()) {
+          transactionSkipReasons.push(transactionSkipReason(env, transaction, now));
+        }
+        continue;
+      }
       candidates.push({
         productId: transaction.productId!,
         originalTransactionId:
@@ -434,14 +645,37 @@ export async function completeUnlockWeb(
         environment: transaction.environment ?? "Production",
         updatedAt: now,
       });
+      if (unlockTraceActive() && transaction.productId) {
+        acceptedProductIds.push(transaction.productId);
+      }
     } catch (e) {
+      if (unlockTraceActive()) {
+        transactionSkipReasons.push(e instanceof AppleJwsError ? "jws_invalid" : "jws_error");
+      }
       if (!(e instanceof AppleJwsError)) console.error("transaction verification failed", e);
     }
   }
 
   const entitlement =
     bestEntitlement(candidates) ?? (whitelisted ? complimentaryEntitlement(now) : null);
-  if (!entitlement) return json({ error: "no active purchase" }, 402);
+  if (!entitlement) {
+    logUnlockTrace("unlock_trace.unlock_web", {
+      route: "/api/unlock-web",
+      http_status: 402,
+      caller: unlockCaller(request),
+      branch: "no_purchase_and_no_complimentary",
+      session_created: false,
+      sandbox_allowed: env.APPLE_ALLOW_SANDBOX !== "0",
+      transaction_submitted_count: submitted.length,
+      transaction_accepted_count: 0,
+      transaction_skip_reasons: transactionSkipReasons,
+      response_error: "no active purchase",
+      user_facing_error: USER_FACING_APP_NO_PURCHASE,
+      ...whitelist,
+      ...entitlementTraceFields(priorEntitlement, now),
+    });
+    return json({ error: "no active purchase" }, 402);
+  }
 
   const ttl =
     entitlement.expiresAt === null
@@ -452,6 +686,24 @@ export async function completeUnlockWeb(
   });
 
   const sessionId = await createSession(env, identity.sub);
+  logUnlockTrace("unlock_trace.unlock_web", {
+    route: "/api/unlock-web",
+    http_status: 200,
+    caller: unlockCaller(request),
+    branch: entitlement.productId === COMPLIMENTARY_PRODUCT_ID
+      ? "complimentary_grant"
+      : "purchase_linked",
+    session_created: true,
+    sandbox_allowed: env.APPLE_ALLOW_SANDBOX !== "0",
+    transaction_submitted_count: submitted.length,
+    transaction_accepted_count: candidates.length,
+    transaction_skip_reasons: transactionSkipReasons,
+    accepted_product_ids: acceptedProductIds,
+    response_error: null,
+    user_facing_error: null,
+    ...whitelist,
+    ...entitlementTraceFields(entitlement, now),
+  });
   return json(
     {
       ok: true,
