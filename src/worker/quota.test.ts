@@ -191,8 +191,46 @@ test("a signal-less client falls back to its network", async () => {
   assert.equal(denied.allowed, false);
 });
 
+test("a private window on the same network cannot mint a fresh allowance", async () => {
+  const env = envWith(fakeKv());
+  const seed = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
+  await seed.consume();
+  await spend(env, 2, request({ cookie: mintedCookie(seed.setCookie) }), SIGNAL);
+
+  // Private Safari: new cookie, different hash, same /24.
+  const privateWindow = await openQuotaGate(
+    request(),
+    env,
+    "203.0.113.90",
+    null,
+    OTHER_SIGNAL
+  );
+  assert.equal(privateWindow.allowed, false);
+  assert.equal(privateWindow.code, "free_limit");
+
+  // Same, but the hash is gone entirely.
+  const noHash = await openQuotaGate(request(), env, "203.0.113.90", null, "");
+  assert.equal(noHash.allowed, false);
+  assert.equal(noHash.code, "free_limit");
+});
+
+test("a new cookie on a different network is still a new visitor", async () => {
+  const env = envWith(fakeKv());
+  const seed = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
+  await seed.consume();
+  await spend(env, 2, request({ cookie: mintedCookie(seed.setCookie) }), SIGNAL);
+
+  const otherNet = await openQuotaGate(request(), env, "198.51.100.9", null, OTHER_SIGNAL);
+  assert.equal(otherNet.allowed, true);
+
+  // Stable cross-network hash still ties them even on a new network.
+  const sameHashElsewhere = await openQuotaGate(request(), env, "198.51.100.9", null, SIGNAL);
+  assert.equal(sameHashElsewhere.allowed, false);
+});
+
 test("unlocked buyers get the daily pro allowance, counted per Apple subject", async () => {
-  const env = envWith(fakeKv(), { RATE_LIMIT_PRO_DAILY: "25" });
+  const kv = fakeKv();
+  const env = envWith(kv, { RATE_LIMIT_PRO_DAILY: "25" });
   for (let i = 0; i < 25; i++) {
     const gate = await openQuotaGate(request(), env, "203.0.113.7", "apple-sub-1", SIGNAL);
     assert.equal(gate.allowed, true);
@@ -212,6 +250,7 @@ test("unlocked buyers get the daily pro allowance, counted per Apple subject", a
     SIGNAL
   );
   assert.equal(otherBuyer.allowed, true);
+  assert.equal(kv.store.has(`fq:n:${networkKey("203.0.113.7")}`), false);
 });
 
 test("no IP is exempt: the weekly limit applies to every free visitor", async () => {
@@ -227,7 +266,8 @@ test("no IP is exempt: the weekly limit applies to every free visitor", async ()
 });
 
 test("a complimentary Apple ID is never counted", async () => {
-  const env = envWith(fakeKv(), { RATE_LIMIT_PRO_DAILY: "25" });
+  const kv = fakeKv();
+  const env = envWith(kv, { RATE_LIMIT_PRO_DAILY: "25" });
   for (let i = 0; i < 40; i++) {
     const gate = await openQuotaGate(
       request(),
@@ -240,6 +280,7 @@ test("a complimentary Apple ID is never counted", async () => {
     assert.equal(gate.allowed, true, `report ${i + 1} should be allowed`);
     await gate.consume();
   }
+  assert.equal(kv.store.has(`fq:n:${networkKey("203.0.113.7")}`), false);
 });
 
 test("networkKey coarsens to /24 and /48", () => {

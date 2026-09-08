@@ -23,10 +23,12 @@
  *                 from more than `FP_GENERIC_NETS` distinct networks is
  *                 demoted to a device class and from then on only links
  *                 requests inside one network.
- *   network       /24 (IPv4) or /48 (IPv6). Never an identity on its own —
- *                 carrier NAT would put a whole city in one bucket — so it
- *                 only qualifies a device signal, or stands in as the bucket
- *                 for a client that presents no signals at all.
+ *   network       /24 (IPv4) or /48 (IPv6). Always resolved and charged on
+ *                 a free report, so a private window that drops the cookie
+ *                 and hash still hits the same weekly bucket. Two people on
+ *                 the same block therefore share one free 3/week until they
+ *                 sign in — intentional for this allowance. Paid and
+ *                 complimentary Apple IDs never touch this bucket.
  *
  * Residual risk, stated honestly: someone who changes network *and* device
  * signals at the same time (a different browser on a different machine) is a
@@ -163,9 +165,9 @@ async function resolveFreeIdentity(
     keys.push(signalKey("fn", `${hash}.${net}`));
     if (await signalLinksAcrossNetworks(env, hash)) keys.push(signalKey("f", hash));
   }
-  // No cookie, no device signal: nothing but the network to go on, and a free
-  // report still has to cost something.
-  if (setCookie && !device && !hash) keys.push(signalKey("n", net));
+  // Always charge the coarse network too. A private window drops the cookie
+  // and often the hash; without `n` it would mint a fresh primary.
+  keys.push(signalKey("n", net));
 
   const mapped = await Promise.all(
     keys.map((key) => env.CACHE.get(key).catch(() => null))

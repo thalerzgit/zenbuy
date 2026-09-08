@@ -145,9 +145,11 @@ to, denying it if **any** of those clusters is out of allowance:
   hash is low-entropy and stock phones share it, which is why a hash seen
   from more than 6 distinct networks is demoted to a device class and from
   then on only links within one network.
-- **Network** — `/24` (IPv4) or `/48` (IPv6). Never an identity on its own
-  (carrier NAT would bucket a whole city); it qualifies a device signal, and
-  is the only bucket for a client that sends no signals at all.
+- **Network** — `/24` (IPv4) or `/48` (IPv6). Always resolved and charged
+  for a free report, so a private window that drops the cookie and hash
+  still hits the same weekly bucket. Two people on the same block share
+  one free 3/week until they sign in (intentional). Paid and complimentary
+  Apple IDs never touch this bucket.
 
 Rolling window, not calendar week: each cluster stores the timestamps of its
 last few reports, and the oldest frees its slot exactly 7×24h later, so the
@@ -156,9 +158,10 @@ error can say when the next report opens. Every key carries a ~1 week TTL.
 **Residual risk, honestly:** a visitor who changes network *and* device
 signals together (different browser on a different machine) is a new free
 identity, and KV's eventual consistency leaves a small burst window. Perfect
-detection is not available without accounts. Conversely, two people on very
-similar devices behind one network can be treated as one visitor — the
-6-network demotion exists to keep that rare.
+detection is not available without accounts. Two people on the same `/24`
+(or `/48`) share one free 3/week until they sign in — that is intentional.
+The 6-network hash demotion still keeps a stock-phone hash from linking
+strangers across networks.
 
 ## Rate limits and resilience
 
