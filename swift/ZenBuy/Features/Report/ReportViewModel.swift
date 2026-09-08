@@ -612,11 +612,11 @@ final class ReportViewModel {
             badges?.sentiment ?? "",
             badges?.conviction ?? "",
         ].joined(separator: "\u{1e}")
-        if key == cachedShareKey, let cachedShareURL {
-            if let cached = try? Data(contentsOf: cachedShareURL),
-               ReportPDFValidation.isValidPDF(cached) {
-                ReportVerboseLog.log("sharePDF cache hit bytes=\(cached.count)")
-                return (cachedShareURL, cached)
+        if key == cachedShareKey, let cached = cachedShareURL {
+            if let data = try? Data(contentsOf: cached),
+               ReportPDFValidation.isValidPDF(data) {
+                ReportVerboseLog.log("sharePDF cache hit bytes=\(data.count)")
+                return (cached, data)
             }
             ReportVerboseLog.log("sharePDF cache miss — cached file empty or missing")
             cachedShareKey = ""
