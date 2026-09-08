@@ -233,6 +233,9 @@ test("body email not on the whitelist still 402", async () => {
     assert.equal(joined.includes("unlock_trace.unlock_web"), true);
     assert.equal(joined.includes("no_purchase_and_no_complimentary"), true);
     assert.equal(joined.includes("miss_email_not_listed"), true);
+    assert.equal(joined.includes("\"unlock_path\":\"app_unlock_web\""), true);
+    assert.equal(joined.includes("\"storekit_on_this_path\":true"), true);
+    assert.equal(joined.includes("apple_allow_sandbox"), true);
   } else {
     assert.equal(joined.includes("unlock_trace."), false);
   }

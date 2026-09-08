@@ -6,7 +6,11 @@ import {
   UNLOCK_TRACE_EXPIRES_MS,
   emailDomainOnly,
   logUnlockTrace,
+  sandboxConfigFields,
+  sandboxGateEffect,
+  sandboxGateForTrace,
   subPrefixOnly,
+  transactionSeenFields,
   unlockCaller,
   unlockTraceActive,
 } from "./unlock-trace.ts";
@@ -71,4 +75,45 @@ test("unlockCaller treats X-ZenBuy-Client ios as the app", () => {
     "ios_app"
   );
   assert.equal(unlockCaller(new Request("https://zenbuy.info/auth/apple/callback")), "web");
+});
+
+test("sandbox gate labels accept vs reject without changing the rule", () => {
+  assert.deepEqual(sandboxConfigFields("1"), {
+    apple_allow_sandbox: "1",
+    sandbox_policy: "accept_sandbox",
+  });
+  assert.deepEqual(sandboxConfigFields("0"), {
+    apple_allow_sandbox: "0",
+    sandbox_policy: "reject_sandbox",
+  });
+  assert.equal(sandboxGateForTrace("Sandbox", "1"), "sandbox_allowed");
+  assert.equal(sandboxGateForTrace("Sandbox", "0"), "sandbox_blocked");
+  assert.equal(sandboxGateForTrace("Production", "0"), "not_sandbox");
+  assert.equal(sandboxGateForTrace(undefined, "1"), "unknown");
+  assert.equal(
+    sandboxGateEffect("Sandbox", false, "sandbox_blocked", "0"),
+    "rejected_by_apple_allow_sandbox"
+  );
+  assert.equal(
+    sandboxGateEffect("Sandbox", true, null, "1"),
+    "accepted_by_apple_allow_sandbox"
+  );
+  assert.equal(
+    sandboxGateEffect("Production", true, null, "1"),
+    "not_sandbox_not_gated"
+  );
+  assert.equal(
+    sandboxGateEffect("Sandbox", false, "product_not_pro", "1"),
+    "not_the_deciding_check"
+  );
+  const seen = transactionSeenFields(
+    "info.zenbuy.app.lifetime",
+    "Sandbox",
+    false,
+    "sandbox_blocked",
+    "0"
+  );
+  assert.equal(seen.product_id, "info.zenbuy.app.lifetime");
+  assert.equal(seen.environment, "Sandbox");
+  assert.equal(seen.sandbox_gate_effect, "rejected_by_apple_allow_sandbox");
 });

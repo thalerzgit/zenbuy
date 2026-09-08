@@ -51,6 +51,65 @@ export function unlockCaller(request: Request): "ios_app" | "web" {
     : "web";
 }
 
+/** Which unlock half this request is. Web SIWA never sees StoreKit JWS. */
+export type UnlockPath = "web_siwa" | "app_unlock_web" | "api_me";
+
+export function sandboxConfigFields(allowSandbox: string | undefined): Record<string, unknown> {
+  return {
+    apple_allow_sandbox: allowSandbox ?? "(unset)",
+    sandbox_policy: allowSandbox === "0" ? "reject_sandbox" : "accept_sandbox",
+  };
+}
+
+export function sandboxGateForTrace(
+  environment: string | null | undefined,
+  allowSandbox: string | undefined
+): "sandbox_allowed" | "sandbox_blocked" | "not_sandbox" | "unknown" {
+  if (!environment) return "unknown";
+  if (environment !== "Sandbox") return "not_sandbox";
+  return allowSandbox === "0" ? "sandbox_blocked" : "sandbox_allowed";
+}
+
+/**
+ * Did APPLE_ALLOW_SANDBOX decide this transaction, or did another check?
+ * Does not change accept/reject — it only labels what already happened.
+ */
+export function sandboxGateEffect(
+  environment: string | null | undefined,
+  accepted: boolean,
+  skipReason: string | null,
+  allowSandbox: string | undefined
+):
+  | "rejected_by_apple_allow_sandbox"
+  | "accepted_by_apple_allow_sandbox"
+  | "not_sandbox_not_gated"
+  | "not_the_deciding_check" {
+  if (skipReason === "sandbox_blocked") return "rejected_by_apple_allow_sandbox";
+  const gate = sandboxGateForTrace(environment, allowSandbox);
+  if (accepted && gate === "sandbox_allowed") return "accepted_by_apple_allow_sandbox";
+  if (accepted && (gate === "not_sandbox" || gate === "unknown")) {
+    return "not_sandbox_not_gated";
+  }
+  return "not_the_deciding_check";
+}
+
+export function transactionSeenFields(
+  productId: string | null | undefined,
+  environment: string | null | undefined,
+  accepted: boolean,
+  skipReason: string | null,
+  allowSandbox: string | undefined
+): Record<string, unknown> {
+  return {
+    product_id: productId ?? null,
+    environment: environment ?? null,
+    accepted,
+    skip_reason: skipReason,
+    sandbox_gate: sandboxGateForTrace(environment, allowSandbox),
+    sandbox_gate_effect: sandboxGateEffect(environment, accepted, skipReason, allowSandbox),
+  };
+}
+
 /** Structured JSON so Cloudflare Workers logs stay greppable. */
 export function logUnlockTrace(
   event: string,

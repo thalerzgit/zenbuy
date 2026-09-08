@@ -31,7 +31,9 @@ import {
   USER_FACING_WEB_UNLINKED,
   emailDomainOnly,
   logUnlockTrace,
+  sandboxConfigFields,
   subPrefixOnly,
+  transactionSeenFields,
   unlockCaller,
   unlockTraceActive,
 } from "./unlock-trace.ts";
@@ -365,7 +367,11 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
     logUnlockTrace("unlock_trace.me", {
       route: "/api/me",
       http_status: 200,
+      unlock_path: "api_me",
       caller: unlockCaller(request),
+      storekit_on_this_path: false,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
+      sandbox_gate_effect: "no_storekit_on_this_path",
       branch: unlinked ? "signed_in_unlinked" : "unlocked",
       signed_in: true,
       unlocked: state.unlocked,
@@ -425,7 +431,11 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
     logUnlockTrace("unlock_trace.siwa_callback", {
       route: "/auth/apple/callback",
       http_status: 302,
+      unlock_path: "web_siwa",
       caller: "web",
+      storekit_on_this_path: false,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
+      sandbox_gate_effect: "no_storekit_on_this_path",
       branch: "state_mismatch",
       has_code: Boolean(code),
       has_state: Boolean(state),
@@ -445,7 +455,10 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
     const whitelist = whitelistTraceFields(env, identity, undefined, "token_only");
     logUnlockTrace("unlock_trace.whitelist", {
       route: "/auth/apple/callback",
+      unlock_path: "web_siwa",
       caller: "web",
+      storekit_on_this_path: false,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
       ...whitelist,
     });
     const complimentary = await applyWhitelistGrant(env, identity);
@@ -456,7 +469,11 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
     logUnlockTrace("unlock_trace.siwa_callback", {
       route: "/auth/apple/callback",
       http_status: 302,
+      unlock_path: "web_siwa",
       caller: "web",
+      storekit_on_this_path: false,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
+      sandbox_gate_effect: "no_storekit_on_this_path",
       branch: unlocked
         ? complimentary
           ? "session_created_complimentary"
@@ -480,7 +497,11 @@ export async function handleAppleCallback(request: Request, env: Env): Promise<R
     logUnlockTrace("unlock_trace.siwa_callback", {
       route: "/auth/apple/callback",
       http_status: 302,
+      unlock_path: "web_siwa",
       caller: "web",
+      storekit_on_this_path: false,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
+      sandbox_gate_effect: "no_storekit_on_this_path",
       branch: "apple_exchange_failed",
       apple_auth_error: e instanceof AppleAuthError ? e.message : "unexpected",
       redirect: "/?signin=failed",
@@ -558,7 +579,10 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     logUnlockTrace("unlock_trace.unlock_web", {
       route: "/api/unlock-web",
       http_status: 400,
+      unlock_path: "app_unlock_web",
       caller: unlockCaller(request),
+      storekit_on_this_path: true,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
       branch: "bad_request",
       response_error: "bad request",
       user_facing_error: "Linking failed (HTTP 400). Try again in a moment.",
@@ -574,7 +598,10 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     logUnlockTrace("unlock_trace.unlock_web", {
       route: "/api/unlock-web",
       http_status: 401,
+      unlock_path: "app_unlock_web",
       caller: unlockCaller(request),
+      storekit_on_this_path: true,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
       branch: "bad_token",
       has_identity_token: Boolean(body.identityToken),
       body_email_present: body.email != null && String(body.email).trim() !== "",
@@ -612,7 +639,10 @@ export async function completeUnlockWeb(
   const whitelist = whitelistTraceFields(env, identity, clientEmail, "token_then_body");
   logUnlockTrace("unlock_trace.whitelist", {
     route: "/api/unlock-web",
+    unlock_path: "app_unlock_web",
     caller: unlockCaller(request),
+    storekit_on_this_path: true,
+    ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
     ...whitelist,
   });
   const priorEntitlement = unlockTraceActive()
@@ -624,16 +654,33 @@ export async function completeUnlockWeb(
   const candidates: Entitlement[] = [];
   const transactionSkipReasons: string[] = [];
   const acceptedProductIds: string[] = [];
+  const transactionsSeen: Record<string, unknown>[] = [];
+  const allowSandbox = env.APPLE_ALLOW_SANDBOX;
   for (const raw of submitted) {
     if (typeof raw !== "string") {
-      if (unlockTraceActive()) transactionSkipReasons.push("not_jws_string");
+      if (unlockTraceActive()) {
+        transactionSkipReasons.push("not_jws_string");
+        transactionsSeen.push(
+          transactionSeenFields(null, null, false, "not_jws_string", allowSandbox)
+        );
+      }
       continue;
     }
     try {
       const transaction = await verifyAppleJws<SignedTransaction>(raw);
       if (!acceptTransaction(env, transaction, now)) {
         if (unlockTraceActive()) {
-          transactionSkipReasons.push(transactionSkipReason(env, transaction, now));
+          const reason = transactionSkipReason(env, transaction, now);
+          transactionSkipReasons.push(reason);
+          transactionsSeen.push(
+            transactionSeenFields(
+              transaction.productId,
+              transaction.environment,
+              false,
+              reason,
+              allowSandbox
+            )
+          );
         }
         continue;
       }
@@ -645,12 +692,23 @@ export async function completeUnlockWeb(
         environment: transaction.environment ?? "Production",
         updatedAt: now,
       });
-      if (unlockTraceActive() && transaction.productId) {
-        acceptedProductIds.push(transaction.productId);
+      if (unlockTraceActive()) {
+        if (transaction.productId) acceptedProductIds.push(transaction.productId);
+        transactionsSeen.push(
+          transactionSeenFields(
+            transaction.productId,
+            transaction.environment,
+            true,
+            null,
+            allowSandbox
+          )
+        );
       }
     } catch (e) {
       if (unlockTraceActive()) {
-        transactionSkipReasons.push(e instanceof AppleJwsError ? "jws_invalid" : "jws_error");
+        const reason = e instanceof AppleJwsError ? "jws_invalid" : "jws_error";
+        transactionSkipReasons.push(reason);
+        transactionsSeen.push(transactionSeenFields(null, null, false, reason, allowSandbox));
       }
       if (!(e instanceof AppleJwsError)) console.error("transaction verification failed", e);
     }
@@ -662,13 +720,25 @@ export async function completeUnlockWeb(
     logUnlockTrace("unlock_trace.unlock_web", {
       route: "/api/unlock-web",
       http_status: 402,
+      unlock_path: "app_unlock_web",
       caller: unlockCaller(request),
+      storekit_on_this_path: true,
+      ...sandboxConfigFields(allowSandbox),
+      sandbox_gate_effect: transactionsSeen.some(
+        (seen) => seen.sandbox_gate_effect === "rejected_by_apple_allow_sandbox"
+      )
+        ? "rejected_by_apple_allow_sandbox"
+        : "not_the_deciding_check",
       branch: "no_purchase_and_no_complimentary",
       session_created: false,
-      sandbox_allowed: env.APPLE_ALLOW_SANDBOX !== "0",
       transaction_submitted_count: submitted.length,
       transaction_accepted_count: 0,
       transaction_skip_reasons: transactionSkipReasons,
+      transactions_seen: transactionsSeen,
+      product_ids_seen: transactionsSeen.map((seen) => seen.product_id).filter(Boolean),
+      environments_seen: [
+        ...new Set(transactionsSeen.map((seen) => seen.environment).filter(Boolean)),
+      ],
       response_error: "no active purchase",
       user_facing_error: USER_FACING_APP_NO_PURCHASE,
       ...whitelist,
@@ -689,16 +759,32 @@ export async function completeUnlockWeb(
   logUnlockTrace("unlock_trace.unlock_web", {
     route: "/api/unlock-web",
     http_status: 200,
+    unlock_path: "app_unlock_web",
     caller: unlockCaller(request),
+    storekit_on_this_path: true,
+    ...sandboxConfigFields(allowSandbox),
+    sandbox_gate_effect: transactionsSeen.some(
+      (seen) => seen.sandbox_gate_effect === "accepted_by_apple_allow_sandbox"
+    )
+      ? "accepted_by_apple_allow_sandbox"
+      : transactionsSeen.some((seen) => seen.sandbox_gate_effect === "rejected_by_apple_allow_sandbox")
+        ? "rejected_by_apple_allow_sandbox"
+        : candidates.length
+          ? "not_sandbox_not_gated"
+          : "not_the_deciding_check",
     branch: entitlement.productId === COMPLIMENTARY_PRODUCT_ID
       ? "complimentary_grant"
       : "purchase_linked",
     session_created: true,
-    sandbox_allowed: env.APPLE_ALLOW_SANDBOX !== "0",
     transaction_submitted_count: submitted.length,
     transaction_accepted_count: candidates.length,
     transaction_skip_reasons: transactionSkipReasons,
+    transactions_seen: transactionsSeen,
+    product_ids_seen: transactionsSeen.map((seen) => seen.product_id).filter(Boolean),
     accepted_product_ids: acceptedProductIds,
+    environments_seen: [
+      ...new Set(transactionsSeen.map((seen) => seen.environment).filter(Boolean)),
+    ],
     response_error: null,
     user_facing_error: null,
     ...whitelist,
