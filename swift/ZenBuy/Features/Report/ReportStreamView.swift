@@ -8,6 +8,7 @@ struct ReportStreamView: View {
     @Bindable var viewModel: ReportViewModel
     /// Runs the peers in this same report view — never a Safari tab.
     var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
+    @State private var shareError: String?
 
     private var title: String { symbols.joined(separator: ", ") }
     private var hasScorecard: Bool { !viewModel.scorecardHTML.isEmpty }
@@ -21,6 +22,13 @@ struct ReportStreamView: View {
             bottomLineHTML: viewModel.bottomLineHTML,
             bodyHTML: viewModel.bodyHTML,
             scorecardHTML: viewModel.scorecardHTML
+        )
+    }
+
+    private var shareErrorPresented: Binding<Bool> {
+        Binding(
+            get: { shareError != nil },
+            set: { if !$0 { shareError = nil } }
         )
     }
 
@@ -42,12 +50,14 @@ struct ReportStreamView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    // Generate PDF only when streaming is done — never from body
-                    // on every sticky/body HTML tick (layout thrash on TestFlight).
-                    if canShare, !viewModel.isStreaming, let url = viewModel.sharePDFURL(title: title) {
-                        ShareLink(item: url) {
+                    // Build the PDF on tap — never from `body`. ShareLink(item: URL)
+                    // plus a file written during toolbar evaluation produced the
+                    // 0-byte ZenBuy-TICKER-report TestFlight bug.
+                    if canShare, !viewModel.isStreaming {
+                        Button(action: shareReport) {
                             Label("Share", systemImage: "square.and.arrow.up")
                         }
+                        .accessibilityLabel("Share report")
                     } else {
                         Image(systemName: "square.and.arrow.up")
                             .foregroundStyle(ZenBuyTheme.muted.opacity(0.45))
@@ -56,6 +66,11 @@ struct ReportStreamView: View {
                             )
                     }
                 }
+            }
+            .alert("Couldn't share report", isPresented: shareErrorPresented) {
+                Button("OK", role: .cancel) { shareError = nil }
+            } message: {
+                Text(shareError ?? ReportPDFValidation.shareFailedMessage)
             }
             .onAppear {
                 ReportVerboseLog.log(
@@ -68,6 +83,18 @@ struct ReportStreamView: View {
                     profitHorizonYears: profitHorizonYears
                 )
             }
+    }
+
+    private func shareReport() {
+        #if canImport(UIKit)
+        guard let payload = viewModel.prepareSharePDF(title: title),
+              ReportPDFSharePresenter.present(url: payload.url, data: payload.data) else {
+            shareError = ReportPDFValidation.shareFailedMessage
+            return
+        }
+        #else
+        shareError = ReportPDFValidation.shareFailedMessage
+        #endif
     }
 
     @ViewBuilder

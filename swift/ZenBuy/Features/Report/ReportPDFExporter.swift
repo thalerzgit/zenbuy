@@ -1,7 +1,29 @@
 import Foundation
 #if canImport(UIKit)
 import UIKit
+import UniformTypeIdentifiers
+#endif
 
+/// PDF header / empty-payload checks that do not need UIKit, so unit tests
+/// can refuse a 0-byte share file without a simulator.
+enum ReportPDFValidation {
+    static let pdfHeader = Data("%PDF".utf8)
+    static let shareFailedMessage =
+        "Couldn't create a PDF of this report. The report is still on screen — try Share again."
+
+    static func filename(forTitle title: String) -> String {
+        let safeTitle = title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: " ", with: "-")
+        return "ZenBuy-\(safeTitle)-report.pdf"
+    }
+
+    static func isValidPDF(_ data: Data) -> Bool {
+        data.count > pdfHeader.count && data.starts(with: pdfHeader)
+    }
+}
+
+#if canImport(UIKit)
 private typealias Palette = ZenBuyTheme.UIKitPalette
 
 /// Builds a local PDF from the native report model (not a webview screenshot).
@@ -19,6 +41,36 @@ enum ReportPDFExporter {
         bottomLineHTML: String,
         bodyHTML: String
     ) -> URL? {
+        guard let data = makePDFData(
+            title: title,
+            badges: badges,
+            scorecardHTML: scorecardHTML,
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML
+        ) else { return nil }
+
+        let filename = ReportPDFValidation.filename(forTitle: title)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    /// Color multi-page PDF bytes, or `nil` when the renderer produced nothing
+    /// usable. Never returns an empty `Data` — callers must not share that.
+    static func makePDFData(
+        title: String,
+        badges: ReportBadges?,
+        scorecardHTML: String,
+        bottomLineHTML: String,
+        bodyHTML: String
+    ) -> Data? {
         let hasScorecard = !scorecardHTML.isEmpty
         let scoreRows = parseScoreRows(from: scorecardHTML)
         let bottom = ReportHTML.parseProgressive(bottomLineHTML, hasScorecard: hasScorecard)
@@ -33,23 +85,45 @@ enum ReportPDFExporter {
             kCGPDFContextTitle as String: "ZenBuy — \(title)",
             kCGPDFContextCreator as String: "ZenBuy",
         ]
-        let renderer = UIGraphicsPDFRenderer(bounds: bounds, format: format)
 
-        // First pass only counts pages so the footer can read "Page 1 of N".
-        let probe = renderer.pdfData { context in
-            render(
-                context: context,
-                bounds: bounds,
-                totalPages: nil,
-                title: title,
-                pills: pills,
-                scoreRows: scoreRows,
-                bottomSections: bottomSections,
-                bodySections: bodySections
-            )
-        }
+        // Fresh renderer per pass so a failed probe cannot poison the final PDF.
+        let probe = renderPDF(
+            bounds: bounds,
+            format: format,
+            totalPages: nil,
+            title: title,
+            pills: pills,
+            scoreRows: scoreRows,
+            bottomSections: bottomSections,
+            bodySections: bodySections
+        )
         let totalPages = pageCount(of: probe)
-        let data = renderer.pdfData { context in
+        let data = renderPDF(
+            bounds: bounds,
+            format: format,
+            totalPages: totalPages,
+            title: title,
+            pills: pills,
+            scoreRows: scoreRows,
+            bottomSections: bottomSections,
+            bodySections: bodySections
+        )
+        guard ReportPDFValidation.isValidPDF(data) else { return nil }
+        return data
+    }
+
+    private static func renderPDF(
+        bounds: CGRect,
+        format: UIGraphicsPDFRendererFormat,
+        totalPages: Int?,
+        title: String,
+        pills: [ReportPDFPill],
+        scoreRows: [ReportHTMLNode.ScoreRow],
+        bottomSections: [ReportSection],
+        bodySections: [ReportSection]
+    ) -> Data {
+        let renderer = UIGraphicsPDFRenderer(bounds: bounds, format: format)
+        return renderer.pdfData { context in
             render(
                 context: context,
                 bounds: bounds,
@@ -60,18 +134,6 @@ enum ReportPDFExporter {
                 bottomSections: bottomSections,
                 bodySections: bodySections
             )
-        }
-
-        let safeTitle = title
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: " ", with: "-")
-        let filename = "ZenBuy-\(safeTitle)-report.pdf"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
         }
     }
 
@@ -721,6 +783,52 @@ private final class ReportPDFCanvas {
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             context: nil
         ).height.rounded(.up)
+    }
+}
+
+/// UIKit share sheet that hands Print / Save to Files real PDF bytes + UTI,
+/// not SwiftUI `ShareLink(item: URL)` (that Transferable is `public.url` and
+/// writes a 0-byte `ZenBuy-*-report` into Files).
+enum ReportPDFSharePresenter {
+    @MainActor
+    @discardableResult
+    static func present(url: URL, data: Data) -> Bool {
+        let provider = NSItemProvider()
+        provider.suggestedName = url.lastPathComponent
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.pdf.identifier,
+            visibility: .all
+        ) { completion in
+            completion(data, nil)
+            return nil
+        }
+        provider.registerFileRepresentation(
+            forTypeIdentifier: UTType.pdf.identifier,
+            fileOptions: [],
+            visibility: .all
+        ) { completion in
+            completion(url, true, nil)
+            return nil
+        }
+        let controller = UIActivityViewController(
+            activityItems: [provider],
+            applicationActivities: nil
+        )
+        guard let host = topViewController() else { return false }
+        host.present(controller, animated: true)
+        return true
+    }
+
+    @MainActor
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.first(where: { $0.activationState == .foregroundActive })?.keyWindow
+            ?? scenes.flatMap(\.windows).first(where: \.isKeyWindow)
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController {
+            top = presented
+        }
+        return top
     }
 }
 #endif
