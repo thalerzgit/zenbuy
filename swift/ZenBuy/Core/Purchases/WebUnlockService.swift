@@ -87,7 +87,11 @@ final class WebUnlockService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("ios", forHTTPHeaderField: "X-ZenBuy-Client")
         request.httpBody = try? JSONEncoder().encode(
-            UnlockRequest(identityToken: identityToken, transactions: transactions)
+            UnlockRequest(
+                identityToken: identityToken,
+                transactions: transactions,
+                email: credential.email
+            )
         )
 
         do {
@@ -127,6 +131,19 @@ final class WebUnlockService {
     private struct UnlockRequest: Encodable {
         let identityToken: String
         let transactions: [String]
+        /// Apple's SIWA button email — omitted when nil. Never a display name.
+        let email: String?
+
+        enum CodingKeys: String, CodingKey {
+            case identityToken, transactions, email
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(identityToken, forKey: .identityToken)
+            try container.encode(transactions, forKey: .transactions)
+            try container.encodeIfPresent(email, forKey: .email)
+        }
     }
 
     private struct UnlockResponse: Decodable {

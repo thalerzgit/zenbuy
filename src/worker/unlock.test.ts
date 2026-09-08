@@ -3,6 +3,9 @@ import { test } from "node:test";
 
 import {
   applyWhitelistGrant,
+  completeUnlockWeb,
+  emailForWhitelist,
+  isNormalEmail,
   isWhitelisted,
   resolveUnlock,
   type Entitlement,
@@ -156,6 +159,100 @@ test("a real purchase is never overwritten by a complimentary grant", async () =
   const state = await resolveUnlock(signedIn(kv), env);
   assert.equal(state.unlocked, true);
   assert.equal(state.complimentary, false);
+});
+
+function unlockRequest(): Request {
+  return new Request("https://zenbuy.info/api/unlock-web", { method: "POST" });
+}
+
+test("token email on the whitelist grants complimentary unlock", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
+  const response = await completeUnlockWeb(
+    unlockRequest(),
+    env,
+    { sub: SUB, email: "thalerz@me.com" },
+    []
+  );
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { unlocked: boolean; productId: string };
+  assert.equal(body.unlocked, true);
+  assert.equal(body.productId, "whitelist");
+  assert.equal(storedEntitlement(kv)?.productId, "whitelist");
+});
+
+test("token email missing + body email on whitelist grants under the verified sub", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
+  const response = await completeUnlockWeb(
+    unlockRequest(),
+    env,
+    { sub: SUB },
+    [],
+    "thalerz@icloud.com"
+  );
+  assert.equal(response.status, 200);
+  assert.equal(storedEntitlement(kv)?.productId, "whitelist");
+
+  // Later sign-in with no email still unlocks from the stored sub grant.
+  const later = envWith(kv, "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
+  assert.equal(isWhitelisted(later, { sub: SUB }), false);
+  const state = await resolveUnlock(signedIn(kv), later);
+  assert.equal(state.unlocked, true);
+  assert.equal(state.complimentary, true);
+});
+
+test("body email not on the whitelist still 402", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
+  const response = await completeUnlockWeb(
+    unlockRequest(),
+    env,
+    { sub: SUB },
+    [],
+    "stranger@example.com"
+  );
+  assert.equal(response.status, 402);
+  assert.equal(storedEntitlement(kv), null);
+});
+
+test("empty email still 402", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
+  const noField = await completeUnlockWeb(unlockRequest(), env, { sub: SUB }, []);
+  assert.equal(noField.status, 402);
+  const empty = await completeUnlockWeb(unlockRequest(), env, { sub: SUB }, [], "");
+  assert.equal(empty.status, 402);
+  const blank = await completeUnlockWeb(unlockRequest(), env, { sub: SUB }, [], "   ");
+  assert.equal(blank.status, 402);
+  assert.equal(storedEntitlement(kv), null);
+});
+
+test("a display name is not a whitelist identity", () => {
+  assert.equal(isNormalEmail("Justin Morgenthaler"), false);
+  assert.equal(emailForWhitelist(undefined, "Justin Morgenthaler"), undefined);
+  const env = envWith(fakeKv(), "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
+  assert.equal(
+    isWhitelisted(env, {
+      sub: SUB,
+      email: emailForWhitelist(undefined, "Justin Morgenthaler"),
+    }),
+    false
+  );
+});
+
+test("a client email cannot override a different token email", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, "thalerz@me.com");
+  const response = await completeUnlockWeb(
+    unlockRequest(),
+    env,
+    { sub: SUB, email: "stranger@example.com" },
+    [],
+    "thalerz@me.com"
+  );
+  assert.equal(response.status, 402);
+  assert.equal(storedEntitlement(kv), null);
 });
 
 test("a lapsed subscription is not treated as a complimentary grant", async () => {

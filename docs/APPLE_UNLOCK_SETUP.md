@@ -89,7 +89,7 @@ Services ID configuration.
 | `APPLE_ALLOW_SANDBOX` | `1` | TestFlight buys through the sandbox. Set to `0` on App Store release day |
 | `APP_STORE_URL` | `https://testflight.apple.com/join/kMJsdtWY` | Header **Get the App** pill + unlock-guide store row. Swap to `https://apps.apple.com/app/id6807960678` on release day; empty hides both |
 | `RATE_LIMIT_PRO_DAILY` | `25` | Daily reports per unlocked Apple ID (free tier is `RATE_LIMIT_FREE_WEEKLY`, 3 per rolling week) |
-| `APPLE_ID_WHITELIST` | `tdmorgenthaler@icloud.com,thalerz@me.com` | Complimentary unlock with no purchase — see below |
+| `APPLE_ID_WHITELIST` | `tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com` | Complimentary unlock with no purchase — see below |
 
 ### Complimentary unlock — `APPLE_ID_WHITELIST`
 
@@ -119,6 +119,14 @@ subject. From then on they stay unlocked from the stored record, so turning on
 Hide My Email later does not lock them back out — and removing the entry stops
 new grants but leaves theirs in place. To revoke one, delete the KV key
 `apple:entitlement:<sub>` in the `CACHE` namespace.
+
+The iOS Unlock Web button requests Apple's email scope and, when Apple
+returns `ASAuthorizationAppleIDCredential.email` (usually first authorization
+only), posts it as `email` on `POST /api/unlock-web`. The Worker uses that
+address **only** for whitelist matching, and **only** when the identity token
+omitted the email claim. A display name is never an identity. After a match
+the grant is stored under the verified `sub`, so later sign-ins work without
+an email.
 
 Finding someone's `sub` when the email is hidden: have them sign in once, then
 look for the newest `apple:entitlement:*` key, or read it from the
