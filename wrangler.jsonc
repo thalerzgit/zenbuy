@@ -42,7 +42,7 @@
     // (matched case-insensitively against the claim Apple sends) or
     // "sub:<apple subject id>" for when the address is hidden.
     //   "someone@example.com,sub:001234.abc...def.5678"
-    "APPLE_ID_WHITELIST": "tdmorgenthaler@icloud.com",
+    "APPLE_ID_WHITELIST": "tdmorgenthaler@icloud.com,thalerz@me.com",
     // Public download URL for the header "Get the App" pill and the unlock
     // guide store row. TestFlight until App Store release; then swap to
     // https://apps.apple.com/app/id6807960678 — no other code change.
