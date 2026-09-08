@@ -163,6 +163,35 @@ export function isWhitelisted(env: Env, identity: AppleIdentity): boolean {
     );
 }
 
+/**
+ * A normal email string — not a display name, not empty, not a `sub:`.
+ * Used only to decide whether a client-supplied address may be shown to
+ * `isWhitelisted` when the identity token omitted the claim.
+ */
+export function isNormalEmail(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const email = value.trim();
+  // One @, no spaces, a dot in the domain. Rejects "Justin Morgenthaler".
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Email used solely for complimentary whitelist matching.
+ *
+ * The verified token email always wins. A client `email` is consulted only
+ * when Apple omitted the claim (repeat SIWA) and the value looks like an
+ * address — never a name, and never as an identity of its own.
+ */
+export function emailForWhitelist(
+  tokenEmail: string | undefined,
+  clientEmail: unknown
+): string | undefined {
+  const fromToken = tokenEmail?.trim();
+  if (fromToken) return fromToken;
+  if (!isNormalEmail(clientEmail)) return undefined;
+  return clientEmail.trim();
+}
+
 function complimentaryEntitlement(now: number): Entitlement {
   return {
     productId: COMPLIMENTARY_PRODUCT_ID,
@@ -345,12 +374,14 @@ function bestEntitlement(candidates: Entitlement[]): Entitlement | null {
 /**
  * `POST /api/unlock-web` — the iOS app donates proof of purchase.
  *
- * Body: `{ identityToken, transactions: [signedTransactionJWS, ...] }`.
- * Returns a session token the app keeps so its own requests also carry the
- * unlocked quota.
+ * Body: `{ identityToken, transactions: [signedTransactionJWS, ...], email? }`.
+ * `email` is the SIWA button address (first authorization only). It is used
+ * only for complimentary whitelist matching when the identity token omitted
+ * the claim. Returns a session token the app keeps so its own requests also
+ * carry the unlocked quota.
  */
 export async function handleUnlockWeb(request: Request, env: Env): Promise<Response> {
-  let body: { identityToken?: string; transactions?: unknown };
+  let body: { identityToken?: string; transactions?: unknown; email?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -365,11 +396,28 @@ export async function handleUnlockWeb(request: Request, env: Env): Promise<Respo
     return json({ error: "bad token" }, 401);
   }
 
-  // A whitelisted Apple ID has nothing to prove, so an empty list is fine;
-  // anyone else sending one simply has no purchase to find, which is the 402
-  // below rather than a malformed request.
-  const whitelisted = isWhitelisted(env, identity);
-  const submitted = Array.isArray(body.transactions) ? body.transactions.slice(0, 20) : [];
+  return completeUnlockWeb(request, env, identity, body.transactions, body.email);
+}
+
+/**
+ * After the identity token has been verified: match a purchase or a
+ * complimentary whitelist grant. Entitlements are always stored under the
+ * verified `sub`, so a later sign-in with no email still unlocks.
+ *
+ * Exported for tests — token signatures belong to `apple-id.ts`.
+ */
+export async function completeUnlockWeb(
+  request: Request,
+  env: Env,
+  identity: AppleIdentity,
+  transactions: unknown,
+  clientEmail?: unknown
+): Promise<Response> {
+  // Token email wins. Client email is whitelist-only, and only when Apple
+  // omitted the claim. A name or a non-whitelist address never unlocks.
+  const email = emailForWhitelist(identity.email, clientEmail);
+  const whitelisted = isWhitelisted(env, { sub: identity.sub, email });
+  const submitted = Array.isArray(transactions) ? transactions.slice(0, 20) : [];
 
   const now = Date.now();
   const candidates: Entitlement[] = [];

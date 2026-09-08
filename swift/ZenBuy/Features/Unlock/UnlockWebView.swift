@@ -163,7 +163,11 @@ struct UnlockWebView: View {
                 ProgressView().frame(maxWidth: .infinity)
             } else {
                 SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = []
+                    // Email is first-authorization only; the Worker uses it
+                    // solely for complimentary whitelist matching when the
+                    // identity token omits the claim. Display name is never
+                    // sent as an identity.
+                    request.requestedScopes = [.fullName, .email]
                 } onCompletion: { result in
                     handleSignIn(result)
                 }
