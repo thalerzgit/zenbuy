@@ -85,7 +85,7 @@ Services ID configuration.
 | `APPLE_SERVICES_ID` | `info.zenbuy.web` | Must equal the Services ID |
 | `APPLE_TEAM_ID` | `XQP4QUVJYY` | |
 | `APPLE_BUNDLE_ID` | `info.zenbuy.app` | Audience for the app's identity token |
-| `APPLE_PRO_PRODUCT_IDS` | `info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly` | Either one unlocks |
+| `APPLE_PRO_PRODUCT_IDS` | `info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly` | Either IAP unlocks. The paid App Store download (`AppTransaction` for `APPLE_BUNDLE_ID`) also unlocks — it is not listed here |
 | `APPLE_ALLOW_SANDBOX` | `1` | TestFlight buys through the sandbox. Set to `0` on App Store release day |
 | `APP_STORE_URL` | `https://apps.apple.com/app/id6807960678` | Header **Get the App** pill + unlock-guide store row. Official App Store listing; empty hides both |
 | `RATE_LIMIT_PRO_DAILY` | `25` | Daily reports per unlocked Apple ID (free tier is `RATE_LIMIT_FREE_WEEKLY`, 3 per rolling week) |
@@ -164,10 +164,12 @@ curl -sI https://zenbuy.info/auth/apple | grep -i location
 #   → https://appleid.apple.com/auth/authorize?...client_id=info.zenbuy.web...
 ```
 
-Then, on a device: buy in the app → globe → Sign in with Apple → the screen
-says *Purchase linked*. On zenbuy.info: **Own it? Unlock this site** → Sign in
+Then, on a device: buy the app (or either IAP) → globe → Sign in with Apple →
+the screen says *Purchase linked*. That step stores the entitlement under the
+verified Apple `sub`. On zenbuy.info: **Own it? Unlock this site** → Sign in
 with Apple → the page reloads with `?unlocked=1` and the header shows
-**Unlocked**.
+**Unlocked**. The website does not receive StoreKit JWS; it only looks up that
+stored grant (or a live complimentary whitelist match).
 
 If the website says you are signed in but not unlocked, the app step has not
 been completed with that same Apple ID. The banner's **Unlink** is the way out.

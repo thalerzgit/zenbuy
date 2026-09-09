@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  acceptTransaction,
   applyWhitelistGrant,
   completeUnlockWeb,
   emailForWhitelist,
+  entitlementFromTransaction,
   isNormalEmail,
+  isPaidAppTransaction,
   isWhitelisted,
   resolveUnlock,
   type Entitlement,
+  type SignedTransaction,
 } from "./unlock.ts";
 import { unlockTraceActive } from "./unlock-trace.ts";
 
@@ -51,6 +55,41 @@ function signedIn(kv: ReturnType<typeof fakeKv>, sub = SUB): Request {
 
 function envWith(kv: ReturnType<typeof fakeKv>, whitelist = "") {
   return { CACHE: kv, APPLE_ID_WHITELIST: whitelist } as unknown as Env;
+}
+
+function purchaseEnv(
+  kv: ReturnType<typeof fakeKv> = fakeKv(),
+  extra: Partial<Env> = {}
+): Env {
+  return {
+    CACHE: kv,
+    APPLE_BUNDLE_ID: "info.zenbuy.app",
+    APPLE_PRO_PRODUCT_IDS: "info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly",
+    APPLE_ALLOW_SANDBOX: "1",
+    APPLE_ID_WHITELIST: "",
+    ...extra,
+  } as unknown as Env;
+}
+
+function iapLifetime(overrides: Partial<SignedTransaction> = {}): SignedTransaction {
+  return {
+    bundleId: "info.zenbuy.app",
+    productId: "info.zenbuy.app.lifetime",
+    originalTransactionId: "2000000012345678",
+    transactionId: "2000000012345678",
+    inAppOwnershipType: "PURCHASED",
+    environment: "Production",
+    ...overrides,
+  };
+}
+
+function paidAppDownload(overrides: Partial<SignedTransaction> = {}): SignedTransaction {
+  return {
+    bundleId: "info.zenbuy.app",
+    appTransactionId: "0:1000000123456789",
+    receiptType: "Production",
+    ...overrides,
+  };
 }
 
 function storedEntitlement(kv: ReturnType<typeof fakeKv>): Entitlement | null {
@@ -278,6 +317,113 @@ test("a client email cannot override a different token email", async () => {
   );
   assert.equal(response.status, 402);
   assert.equal(storedEntitlement(kv), null);
+});
+
+test("a paid App Store download is an accepted unlock transaction", () => {
+  const env = purchaseEnv();
+  const now = Date.now();
+  const download = paidAppDownload();
+  assert.equal(isPaidAppTransaction(env, download), true);
+  assert.equal(acceptTransaction(env, download, now), true);
+  const entitlement = entitlementFromTransaction(env, download, now);
+  assert.equal(entitlement?.productId, "info.zenbuy.app");
+  assert.equal(entitlement?.originalTransactionId, "0:1000000123456789");
+  assert.equal(entitlement?.expiresAt, null);
+  assert.equal(entitlement?.environment, "Production");
+});
+
+test("productId equal to the bundle id is treated as the paid app", () => {
+  const env = purchaseEnv();
+  const now = Date.now();
+  assert.equal(
+    acceptTransaction(
+      env,
+      {
+        bundleId: "info.zenbuy.app",
+        productId: "info.zenbuy.app",
+        originalTransactionId: "2000000099990001",
+        inAppOwnershipType: "PURCHASED",
+        environment: "Production",
+      },
+      now
+    ),
+    true
+  );
+});
+
+test("the two Pro IAP product ids still unlock", () => {
+  const env = purchaseEnv();
+  const now = Date.now();
+  assert.equal(acceptTransaction(env, iapLifetime(), now), true);
+  assert.equal(
+    acceptTransaction(
+      env,
+      iapLifetime({ productId: "info.zenbuy.app.pro.monthly", expiresDate: now + 60_000 }),
+      now
+    ),
+    true
+  );
+});
+
+test("an unknown IAP product id is not a paid-app substitute", () => {
+  const env = purchaseEnv();
+  const now = Date.now();
+  assert.equal(
+    acceptTransaction(env, iapLifetime({ productId: "info.zenbuy.app.tips" }), now),
+    false
+  );
+  assert.equal(
+    isPaidAppTransaction(env, iapLifetime({ productId: "info.zenbuy.app.tips" })),
+    false
+  );
+});
+
+test("a Production paid-app transaction is accepted even when sandbox is blocked", () => {
+  const env = purchaseEnv(fakeKv(), { APPLE_ALLOW_SANDBOX: "0" });
+  const now = Date.now();
+  assert.equal(acceptTransaction(env, paidAppDownload(), now), true);
+  assert.equal(
+    acceptTransaction(env, paidAppDownload({ receiptType: "ProductionSandbox" }), now),
+    false
+  );
+  assert.equal(
+    acceptTransaction(env, iapLifetime({ environment: "Sandbox" }), now),
+    false
+  );
+});
+
+test("APPLE_ALLOW_SANDBOX=1 still accepts a sandbox paid-app transaction", () => {
+  const env = purchaseEnv();
+  const now = Date.now();
+  assert.equal(
+    acceptTransaction(env, paidAppDownload({ receiptType: "ProductionSandbox" }), now),
+    true
+  );
+});
+
+test("complimentary still misses when Apple sends no whitelisted email", async () => {
+  const kv = fakeKv();
+  const env = purchaseEnv(kv, {
+    APPLE_ID_WHITELIST: "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com",
+  });
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  let response: Response;
+  try {
+    response = await completeUnlockWeb(unlockRequest(), env, { sub: SUB }, [], "Justin Morgenthaler");
+  } finally {
+    console.log = original;
+  }
+  assert.equal(response.status, 402);
+  assert.deepEqual(await response.json(), { error: "no active purchase" });
+  assert.equal(storedEntitlement(kv), null);
+  const joined = lines.join("\n");
+  assert.equal(joined.includes("Justin Morgenthaler"), false);
+  assert.equal(joined.includes("thalerz@me.com"), false);
+  assert.equal(joined.includes(SUB), false);
 });
 
 test("a lapsed subscription is not treated as a complimentary grant", async () => {
