@@ -2,13 +2,13 @@ import Foundation
 import StoreKit
 import os
 
-/// StoreKit 2 for ZenBuy's two in-app purchases.
+/// StoreKit 2 for ZenBuy's paid App Store download and two optional IAPs.
 ///
-/// Owning either one unlocks the website as well as the app, so what the rest
-/// of the app needs from this type is small: what is on sale, whether the
-/// person already owns something, and the signed transactions that prove it.
-/// Those signed transactions are what `POST /api/unlock-web` verifies — the
-/// app never asserts an entitlement on its own say-so.
+/// Owning the paid app, or either IAP, unlocks the website as well, so what
+/// the rest of the app needs from this type is small: what is on sale,
+/// whether the person already owns something, and the signed transactions
+/// that prove it. Those signed transactions are what `POST /api/unlock-web`
+/// verifies — the app never asserts an entitlement on its own say-so.
 @Observable
 @MainActor
 final class ZenBuyStore {
@@ -19,13 +19,15 @@ final class ZenBuyStore {
 
     private(set) var products: [Product] = []
     private(set) var ownedProductIDs: Set<String> = []
+    /// Paid App Store download (`AppTransaction`), independent of the two IAPs.
+    private(set) var ownsAppDownload = false
     private(set) var isLoadingProducts = false
     /// Product id currently being bought, so only that row shows a spinner.
     private(set) var purchasingProductID: String?
     private(set) var isRestoring = false
     var errorMessage: String?
 
-    var hasPurchase: Bool { !ownedProductIDs.isEmpty }
+    var hasPurchase: Bool { !ownedProductIDs.isEmpty || ownsAppDownload }
 
     init() {
         // Renewals, refunds, Ask to Buy approvals and purchases made on
@@ -72,6 +74,7 @@ final class ZenBuyStore {
             owned.insert(transaction.productID)
         }
         ownedProductIDs = owned
+        ownsAppDownload = await appTransactionJWS() != nil
     }
 
     /// - Returns: `true` when the purchase completed and is now owned.
@@ -133,13 +136,32 @@ final class ZenBuyStore {
 
     /// Apple-signed transactions for everything currently owned, exactly as
     /// the Worker wants them — it re-verifies each signature itself.
+    ///
+    /// The paid App Store download is `AppTransaction`, not an IAP, so it
+    /// never appears in `Transaction.currentEntitlements`. Both go in the
+    /// same `transactions` array `POST /api/unlock-web` already accepts.
     func entitlementJWS() async -> [String] {
         var tokens: [String] = []
+        if let appJWS = await appTransactionJWS() {
+            tokens.append(appJWS)
+        }
         for await entitlement in Transaction.currentEntitlements {
             guard case let .verified(transaction) = entitlement else { continue }
             if transaction.revocationDate != nil { continue }
             tokens.append(entitlement.jwsRepresentation)
         }
         return tokens
+    }
+
+    /// StoreKit 2 signed proof of the paid app download, when Apple has one.
+    private func appTransactionJWS() async -> String? {
+        do {
+            let result = try await AppTransaction.shared
+            guard case .verified = result else { return nil }
+            return result.jwsRepresentation
+        } catch {
+            Self.log.notice("app transaction unavailable: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 }

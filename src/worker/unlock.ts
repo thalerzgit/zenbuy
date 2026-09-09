@@ -4,7 +4,8 @@
  * The two halves of the flow meet at the Apple `sub`:
  *
  *   1. In the iOS app, the buyer signs in with Apple and the app posts its
- *      identity token together with the StoreKit 2 signed transactions to
+ *      identity token together with StoreKit 2 signed transactions — the paid
+ *      app download (`AppTransaction`) and any Pro IAP — to
  *      `POST /api/unlock-web`. Both are verified here, and an entitlement is
  *      written under that `sub`.
  *   2. In the browser, the same person signs in with Apple through
@@ -49,16 +50,23 @@ const LIFETIME_TTL_SECONDS = 60 * 60 * 24 * 365 * 5;
 const DEFAULT_BUNDLE_ID = "info.zenbuy.app";
 const DEFAULT_PRO_PRODUCT_IDS = "info.zenbuy.app.lifetime,info.zenbuy.app.pro.monthly";
 
-/** StoreKit 2 `JWSTransactionDecodedPayload`, trimmed to what unlocking needs. */
-interface SignedTransaction {
+/**
+ * StoreKit 2 `JWSTransactionDecodedPayload` or `JWSAppTransactionDecodedPayload`,
+ * trimmed to what unlocking needs. A paid App Store download has
+ * `appTransactionId` and no IAP `productId`; the two Pro IAPs have `productId`.
+ */
+export interface SignedTransaction {
   bundleId?: string;
   productId?: string;
   originalTransactionId?: string;
   transactionId?: string;
+  appTransactionId?: string;
   expiresDate?: number;
   revocationDate?: number;
   inAppOwnershipType?: string;
   environment?: string;
+  /** AppTransaction uses `receiptType` instead of `environment`. */
+  receiptType?: string;
 }
 
 export interface Entitlement {
@@ -86,6 +94,36 @@ function proProductIds(env: Env): string[] {
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+}
+
+const SANDBOX_RECEIPT_TYPES = new Set([
+  "ProductionSandbox",
+  "ProductionVPPSandbox",
+  "Sandbox",
+  "Xcode",
+]);
+
+/** IAP `environment`, else AppTransaction `receiptType` mapped to the same words. */
+export function transactionEnvironment(transaction: SignedTransaction): string | undefined {
+  // AppTransaction JWS uses receiptType (Production / ProductionSandbox). Prefer
+  // that so a sandbox download is not mistaken for Production.
+  if (transaction.appTransactionId && transaction.receiptType) {
+    return SANDBOX_RECEIPT_TYPES.has(transaction.receiptType) ? "Sandbox" : "Production";
+  }
+  if (transaction.environment) return transaction.environment;
+  if (!transaction.receiptType) return undefined;
+  return SANDBOX_RECEIPT_TYPES.has(transaction.receiptType) ? "Sandbox" : "Production";
+}
+
+function isSandboxLike(environment: string | undefined): boolean {
+  return environment === "Sandbox" || environment === "Xcode";
+}
+
+/** Paid App Store download — not one of the two optional Pro IAP ids. */
+export function isPaidAppTransaction(env: Env, transaction: SignedTransaction): boolean {
+  if (transaction.bundleId !== bundleId(env)) return false;
+  if (transaction.appTransactionId) return true;
+  return transaction.productId === bundleId(env);
 }
 
 function bundleId(env: Env): string {
@@ -286,9 +324,8 @@ function transactionSkipReason(
   now: number
 ): string {
   if (transaction.bundleId !== bundleId(env)) return "bundle_mismatch";
-  if (!transaction.productId || !proProductIds(env).includes(transaction.productId)) {
-    return "product_not_pro";
-  }
+  const pro = Boolean(transaction.productId && proProductIds(env).includes(transaction.productId));
+  if (!pro && !isPaidAppTransaction(env, transaction)) return "product_not_pro";
   if (transaction.revocationDate) return "revoked";
   if (transaction.expiresDate && transaction.expiresDate <= now) return "expired";
   if (
@@ -298,7 +335,7 @@ function transactionSkipReason(
   ) {
     return "ownership_not_accepted";
   }
-  if (transaction.environment === "Sandbox" && env.APPLE_ALLOW_SANDBOX === "0") {
+  if (isSandboxLike(transactionEnvironment(transaction)) && env.APPLE_ALLOW_SANDBOX === "0") {
     return "sandbox_blocked";
   }
   return "rejected";
@@ -527,13 +564,14 @@ export async function handleUnlink(request: Request, env: Env): Promise<Response
 }
 
 /** Is this a transaction that entitles the buyer to the website? */
-function acceptTransaction(
+export function acceptTransaction(
   env: Env,
   transaction: SignedTransaction,
   now: number
 ): boolean {
   if (transaction.bundleId !== bundleId(env)) return false;
-  if (!transaction.productId || !proProductIds(env).includes(transaction.productId)) return false;
+  const pro = Boolean(transaction.productId && proProductIds(env).includes(transaction.productId));
+  if (!pro && !isPaidAppTransaction(env, transaction)) return false;
   if (transaction.revocationDate) return false;
   if (transaction.expiresDate && transaction.expiresDate <= now) return false;
   // Family Sharing is a legitimate way to hold this purchase.
@@ -544,10 +582,36 @@ function acceptTransaction(
   ) {
     return false;
   }
-  // TestFlight buys through the sandbox, so it stays accepted until the
-  // App Store release, when APPLE_ALLOW_SANDBOX should be set to "0".
-  if (transaction.environment === "Sandbox" && env.APPLE_ALLOW_SANDBOX === "0") return false;
+  // TestFlight buys through the sandbox, so it stays accepted until
+  // APPLE_ALLOW_SANDBOX is set to "0". Do not flip that policy here.
+  if (isSandboxLike(transactionEnvironment(transaction)) && env.APPLE_ALLOW_SANDBOX === "0") {
+    return false;
+  }
   return true;
+}
+
+/** Recorded entitlement for an already-accepted IAP or paid-app transaction. */
+export function entitlementFromTransaction(
+  env: Env,
+  transaction: SignedTransaction,
+  now: number
+): Entitlement | null {
+  if (!acceptTransaction(env, transaction, now)) return null;
+  const productId =
+    transaction.productId && proProductIds(env).includes(transaction.productId)
+      ? transaction.productId
+      : bundleId(env);
+  return {
+    productId,
+    originalTransactionId:
+      transaction.originalTransactionId ??
+      transaction.appTransactionId ??
+      transaction.transactionId ??
+      "",
+    expiresAt: transaction.expiresDate ?? null,
+    environment: transactionEnvironment(transaction) ?? "Production",
+    updatedAt: now,
+  };
 }
 
 /** Prefer a lifetime purchase, then the subscription that runs longest. */
@@ -566,10 +630,12 @@ function bestEntitlement(candidates: Entitlement[]): Entitlement | null {
  * `POST /api/unlock-web` — the iOS app donates proof of purchase.
  *
  * Body: `{ identityToken, transactions: [signedTransactionJWS, ...], email? }`.
- * `email` is the SIWA button address (first authorization only). It is used
- * only for complimentary whitelist matching when the identity token omitted
- * the claim. Returns a session token the app keeps so its own requests also
- * carry the unlocked quota.
+ * `transactions` may include the paid-app `AppTransaction` JWS and/or Pro IAP
+ * JWS. `email` is the SIWA button address (first authorization only). It is
+ * used only for complimentary whitelist matching when the identity token
+ * omitted the claim. Returns a session token the app keeps so its own
+ * requests also carry the unlocked quota. The website never sees these
+ * JWS values — it only looks up the entitlement stored under the `sub`.
  */
 export async function handleUnlockWeb(request: Request, env: Env): Promise<Response> {
   let body: { identityToken?: string; transactions?: unknown; email?: unknown };
@@ -668,14 +734,15 @@ export async function completeUnlockWeb(
     }
     try {
       const transaction = await verifyAppleJws<SignedTransaction>(raw);
-      if (!acceptTransaction(env, transaction, now)) {
+      const accepted = entitlementFromTransaction(env, transaction, now);
+      if (!accepted) {
         if (unlockTraceActive()) {
           const reason = transactionSkipReason(env, transaction, now);
           transactionSkipReasons.push(reason);
           transactionsSeen.push(
             transactionSeenFields(
-              transaction.productId,
-              transaction.environment,
+              transaction.productId ?? (isPaidAppTransaction(env, transaction) ? bundleId(env) : null),
+              transactionEnvironment(transaction),
               false,
               reason,
               allowSandbox
@@ -684,20 +751,13 @@ export async function completeUnlockWeb(
         }
         continue;
       }
-      candidates.push({
-        productId: transaction.productId!,
-        originalTransactionId:
-          transaction.originalTransactionId ?? transaction.transactionId ?? "",
-        expiresAt: transaction.expiresDate ?? null,
-        environment: transaction.environment ?? "Production",
-        updatedAt: now,
-      });
+      candidates.push(accepted);
       if (unlockTraceActive()) {
-        if (transaction.productId) acceptedProductIds.push(transaction.productId);
+        acceptedProductIds.push(accepted.productId);
         transactionsSeen.push(
           transactionSeenFields(
-            transaction.productId,
-            transaction.environment,
+            accepted.productId,
+            accepted.environment,
             true,
             null,
             allowSandbox

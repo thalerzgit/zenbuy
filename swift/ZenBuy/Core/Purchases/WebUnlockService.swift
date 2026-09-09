@@ -5,9 +5,10 @@ import os
 /// Links an App Store purchase to an Apple ID so zenbuy.info recognizes it.
 ///
 /// This is step one of the two-step unlock: the app sends Apple's identity
-/// token together with its signed transactions to `POST /api/unlock-web`, and
-/// the Worker records an entitlement against that Apple subject. Signing in on
-/// the website with the same Apple ID then finds it.
+/// token together with its signed transactions (paid app download plus any
+/// Pro IAP) to `POST /api/unlock-web`, and the Worker records an entitlement
+/// against that Apple subject. Signing in on the website with the same Apple
+/// ID then finds that stored grant.
 ///
 /// The session token the Worker returns is kept in the Keychain and sent as a
 /// bearer token, so the app's own requests get the unlocked daily allowance
