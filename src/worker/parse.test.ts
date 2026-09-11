@@ -264,6 +264,8 @@ describe("normalizeMarkdown / renderMarkdown (Grok-shaped markdown)", () => {
     assert.doesNotMatch(html, /\| Scenario \| Prob/);
     assert.doesNotMatch(html, /\|----------/);
     assert.equal((html.match(/<tr>/g) ?? []).length, 4);
+    assert.doesNotMatch(html, /<p>[^<]*<div class="table-scroll"/);
+    assert.match(html, /<\/p><div class="table-scroll">|<div class="table-scroll">/);
   });
 
   it("still renders a well-formed Claude GFM table", () => {

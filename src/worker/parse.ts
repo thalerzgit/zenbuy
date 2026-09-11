@@ -616,15 +616,27 @@ export function renderMarkdown(md: string): string {
 
   html = convertGfmTables(html);
 
-  const parts = html.split(/\n\n+/).filter(Boolean);
-  return parts
-    .map((p) => {
-      const t = p.trim();
-      if (/^<(h[23]|ul|table|div)/.test(t)) return t;
-      // Remaining single newlines are wraps, not paragraphs — never <br/>.
-      return `<p>${t.replace(/\n/g, " ")}</p>`;
-    })
-    .join("");
+  return wrapParagraphs(html);
+}
+
+/** Keep h2/h3/ul/table/div as siblings — never nest a table inside `<p>`. */
+function wrapParagraphs(html: string): string {
+  const blocks: string[] = [];
+  const re = /<(h[23]|ul|div|table)\b[\s\S]*?<\/\1>/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const before = html.slice(last, m.index).replace(/\n/g, " ").trim();
+    if (before) blocks.push(`<p>${before}</p>`);
+    blocks.push(m[0]);
+    last = m.index + m[0].length;
+  }
+  const tail = html.slice(last).replace(/\n/g, " ").trim();
+  if (tail) {
+    if (/^<(h[23]|ul|table|div)\b/.test(tail)) blocks.push(tail);
+    else blocks.push(`<p>${tail}</p>`);
+  }
+  return blocks.join("");
 }
 
 export function scorecardHtml(scores: Scorecard): string {
