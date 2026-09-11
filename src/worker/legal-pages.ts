@@ -100,7 +100,7 @@ function privacyPolicyHtml(): string {
     "ZenBuy does not keep personal research history. Operational caches and abuse counters expire automatically.",
     `
       <h1>Privacy Policy</h1>
-      <p class="updated">Last updated September 8, 2026</p>
+      <p class="updated">Last updated September 11, 2026</p>
       <p>ZenBuy (the website at zenbuy.info and the ZenBuy iOS app) is a <strong>research tool</strong>. We help you read equity research before you decide anything. We are <strong>not a broker</strong>, bank, or registered investment advisor. We do not open accounts, hold money, or place trades.</p>
       <p>There are <strong>no passwords, no email sign-ups, and no personal profiles</strong>. We do <strong>not</strong> keep a personal research history. We do not run an ads or product-analytics suite. We do not sell personal information.</p>
       <p>The one optional exception is <strong>unlocking</strong>. If you bought ZenBuy on the App Store, you can sign in with Apple — in the app and again here — so the website recognizes the purchase. That is described under <a href="#unlocking">Unlocking with your Apple ID</a>. Everything else on this page applies whether or not you ever unlock.</p>
@@ -144,8 +144,8 @@ function privacyPolicyHtml(): string {
       <ul>
         <li><strong>Cloudflare</strong> — hosts the site and API, stores the ephemeral KV keys above, and provides security. The website uses Cloudflare Turnstile (a bot check). The iOS app sends a client marker so it can skip that web check; rate limits still apply.</li>
         <li><strong>Finnhub</strong> — market data for ticker search and company fundamentals.</li>
-        <li><strong>Anthropic (Claude)</strong> — writes research reports from the tickers and settings in that request.</li>
-        <li><strong>xAI (Grok)</strong> — used only if the primary model is unavailable, for the same one-off report job.</li>
+        <li><strong>xAI (Grok)</strong> — writes research reports from the tickers and settings in that request.</li>
+        <li><strong>Anthropic (Claude)</strong> — used only if the primary model is unavailable, for the same one-off report job.</li>
         <li><strong>Apple</strong> — only if you choose to unlock. Apple handles the sign-in and the purchase, and tells us the subject identifier described above.</li>
       </ul>
       <p>We send these providers what they need to do that job — not a customer profile. Cookies are first-party and functional only: our own <code>zb_vid</code> free-allowance identifier and <code>zb_session</code> if you unlock, plus a short-lived bot-management cookie Cloudflare may set. There are no advertising or analytics cookies.</p>
@@ -207,7 +207,7 @@ function supportHtml(): string {
       </ul>
 
       <h2>Privacy</h2>
-      <p>We do not have passwords or a personal research history. Operational caches expire on their own, and the free weekly allowance is enforced with abuse-prevention identifiers that expire about a week after your last report — see <a href="/privacy#free-limit">How the free limit recognises you</a>. If you unlock, we store an opaque Apple subject identifier and your unlock record — see <a href="/privacy#unlocking">Unlocking with your Apple ID</a> for exactly what that covers, and the <a href="/privacy">Privacy Policy</a> for the retention windows and who helps us run the service (Cloudflare, Finnhub, Anthropic, and xAI as a failover).</p>
+      <p>We do not have passwords or a personal research history. Operational caches expire on their own, and the free weekly allowance is enforced with abuse-prevention identifiers that expire about a week after your last report — see <a href="/privacy#free-limit">How the free limit recognises you</a>. If you unlock, we store an opaque Apple subject identifier and your unlock record — see <a href="/privacy#unlocking">Unlocking with your Apple ID</a> for exactly what that covers, and the <a href="/privacy">Privacy Policy</a> for the retention windows and who helps us run the service (Cloudflare, Finnhub, xAI, and Anthropic as a failover).</p>
     `
   );
 }

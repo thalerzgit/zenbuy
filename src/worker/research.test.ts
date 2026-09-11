@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildUserPrompt, getSystemPrompt } from "./prompt.ts";
 import {
+  ANTHROPIC_OUTPUT_EFFORT,
+  DEFAULT_BACKUP_MODEL,
+  DEFAULT_BACKUP_PROVIDER,
+  DEFAULT_PRIMARY_MODEL,
+  DEFAULT_PRIMARY_PROVIDER,
   RESEARCH_MAX_TOKENS,
+  XAI_REASONING_EFFORT,
   buildAnthropicMessagesBody,
   buildXaiChatBody,
   classifyUpstreamFailure,
   isProviderBillingError,
+  planFailoverChain,
   shouldFailoverStatus,
 } from "./research.ts";
 
@@ -50,6 +57,46 @@ describe("Anthropic failure classification", () => {
   });
 });
 
+describe("research stack defaults", () => {
+  it("uses Grok 4.5 primary and Claude Sonnet 5 backup — not Opus", () => {
+    assert.equal(DEFAULT_PRIMARY_MODEL, "grok-4.5");
+    assert.equal(DEFAULT_PRIMARY_PROVIDER, "xai");
+    assert.equal(DEFAULT_BACKUP_MODEL, "claude-sonnet-5");
+    assert.equal(DEFAULT_BACKUP_PROVIDER, "anthropic");
+    assert.notEqual(DEFAULT_PRIMARY_MODEL, "claude-opus-5");
+    assert.notEqual(DEFAULT_BACKUP_MODEL, "grok-4.5");
+    assert.equal(XAI_REASONING_EFFORT, "high");
+    assert.equal(ANTHROPIC_OUTPUT_EFFORT, "medium");
+  });
+
+  it("plans Grok → Sonnet when both keys are present", () => {
+    const chain = planFailoverChain({
+      XAI_API_KEY: "xai-test",
+      ANTHROPIC_API_KEY: "ant-test",
+    } as Env);
+    assert.deepEqual(chain, [
+      { provider: "xai", model: "grok-4.5" },
+      { provider: "anthropic", model: "claude-sonnet-5" },
+    ]);
+  });
+
+  it("skips Grok when the xAI key is missing (Anthropic backup still runs)", () => {
+    const chain = planFailoverChain({
+      ANTHROPIC_API_KEY: "ant-test",
+    } as Env);
+    assert.deepEqual(chain, [
+      { provider: "anthropic", model: "claude-sonnet-5" },
+    ]);
+  });
+
+  it("stays Grok-only when Anthropic key is missing", () => {
+    const chain = planFailoverChain({
+      XAI_API_KEY: "xai-test",
+    } as Env);
+    assert.deepEqual(chain, [{ provider: "xai", model: "grok-4.5" }]);
+  });
+});
+
 describe("Anthropic Messages payload shape", () => {
   it("builds a schema-valid streaming Messages body for short-horizon AVGO", () => {
     const system = getSystemPrompt("aggressive_growth", 2);
@@ -60,15 +107,17 @@ describe("Anthropic Messages payload shape", () => {
       2
     );
     const body = buildAnthropicMessagesBody(
-      "claude-opus-5",
+      "claude-sonnet-5",
       system,
       user,
       RESEARCH_MAX_TOKENS
     );
 
-    assert.equal(body.model, "claude-opus-5");
+    assert.equal(body.model, "claude-sonnet-5");
     assert.equal(body.stream, true);
     assert.equal(body.max_tokens, 12_000);
+    assert.equal(body.output_config.effort, "medium");
+    assert.notEqual(body.output_config.effort, "max");
     assert.ok(Number.isInteger(body.max_tokens) && body.max_tokens > 0);
     assert.equal(typeof body.system, "string");
     assert.ok(body.system.length > 200);
@@ -91,7 +140,7 @@ describe("Anthropic Messages payload shape", () => {
 
   it("keeps long-window Aggressive Growth on the directive 18-year STRUCTURE", () => {
     const body = buildAnthropicMessagesBody(
-      "claude-opus-5",
+      "claude-sonnet-5",
       getSystemPrompt("aggressive_growth", 18),
       buildUserPrompt("separate", [{ symbol: "AVGO" }], "aggressive_growth", 18),
       RESEARCH_MAX_TOKENS
@@ -113,6 +162,8 @@ describe("xAI Chat Completions payload shape", () => {
     assert.equal(body.model, "grok-4.5");
     assert.equal(body.stream, true);
     assert.equal(body.max_completion_tokens, 12_000);
+    assert.equal(body.reasoning_effort, "high");
+    assert.notEqual(body.reasoning_effort, "xhigh");
     assert.equal(body.messages[0].role, "system");
     assert.equal(body.messages[1].role, "user");
     assert.ok(body.messages[1].content.includes("AVGO"));
@@ -122,6 +173,7 @@ describe("xAI Chat Completions payload shape", () => {
     );
     const serialized = JSON.stringify(body);
     assert.doesNotMatch(serialized, /search_parameters/);
+    assert.doesNotMatch(serialized, /"xhigh"|"max"/);
     assert.deepEqual(JSON.parse(serialized), body);
   });
 });

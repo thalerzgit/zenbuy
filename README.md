@@ -2,7 +2,7 @@
 
 Calm equity research — **Know before you trade.**
 
-Alpha stack: Cloudflare Workers, Finnhub fundamentals, Claude Opus (Anthropic) with xAI Grok backup, KV cache.
+Alpha stack: Cloudflare Workers, Finnhub fundamentals, xAI Grok 4.5 primary with Anthropic Claude Sonnet 5 backup, KV cache.
 
 ## Quick start
 
@@ -17,7 +17,7 @@ npm run dev                 # http://localhost:5173
 ```bash
 wrangler secret put FINNHUB_API_KEY   # one key, or "key1,key2" to pool budgets
 wrangler secret put ANTHROPIC_API_KEY
-wrangler secret put XAI_API_KEY             # optional; enables grok-4.5 failover
+wrangler secret put XAI_API_KEY             # primary research path (grok-4.5)
 wrangler secret put AI_GATEWAY_ACCOUNT_ID   # optional
 wrangler secret put AI_GATEWAY_ID           # optional
 wrangler secret put AI_GATEWAY_TOKEN        # optional
@@ -69,15 +69,16 @@ Recommended token (dashboard → API Tokens → Create Custom Token), name e.g. 
 
 Worker runtime secrets (`FINNHUB_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`, …) stay in the Cloudflare Worker — set once with `wrangler secret put`. The client loads the public Turnstile site key from `GET /api/config`.
 
-Optional Worker vars (also in `wrangler.jsonc`; `ZENBUY_MODEL` **must** stay `claude-opus-5` there so a deploy cannot reset production to Sonnet):
+Optional Worker vars (also in `wrangler.jsonc`):
 
 | Var | Default | Role |
 |-----|---------|------|
-| `ZENBUY_MODEL` | `claude-opus-5` | Primary Anthropic model |
-| `ZENBUY_BACKUP_MODEL` | `grok-4.5` | Cross-provider backup when Anthropic is down |
-| `ZENBUY_BACKUP_PROVIDER` | `xai` | Backup provider id |
+| `ZENBUY_MODEL` | `grok-4.5` | Primary model |
+| `ZENBUY_PRIMARY_PROVIDER` | `xai` | Primary provider (`xai` or `anthropic`) |
+| `ZENBUY_BACKUP_MODEL` | `claude-sonnet-5` | Cross-provider backup when Grok is down |
+| `ZENBUY_BACKUP_PROVIDER` | `anthropic` | Backup provider id |
 
-`XAI_API_KEY` is optional at runtime. Without it, reports stay Anthropic-only and failover is skipped.
+`XAI_API_KEY` is required for the default Grok-first path. Without it, reports skip to Claude Sonnet 5. Anthropic empty-balance / spend-cap errors do not block the Grok primary path.
 
 Manual redeploy: Actions → **Deploy** → **Run workflow**.
 
@@ -100,7 +101,7 @@ npm run deploy
 | `/api/search?q=` | GET | Symbol autocomplete (Finnhub), KV-cached per query |
 | `/api/discover` | GET | Goal-fit ticker picks (`directive`, optional `horizon` / `limit`) |
 | `/api/config` | GET | Public client config (Turnstile site key) |
-| `/api/health` | GET | Primary `model`, `backupModel`, key presence booleans (`anthropic`, `xai`, …). `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
+| `/api/health` | GET | Primary `model` + `provider`, `backupModel` + `backupProvider`, key presence booleans (`anthropic`, `xai`, …). `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
 | `/api/prefetch?symbol=` | GET | Warms a symbol's fundamentals into KV so they're not on the critical path |
 | `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken? }` — Turnstile required for web; native iOS sends `X-ZenBuy-Client: ios` and skips it |
 | `/privacy` | GET | Privacy policy HTML (Worker, not the SPA) |
@@ -184,12 +185,13 @@ within budget:
   `dataQuality: "degraded"` and the report says which figures are
   unavailable rather than estimating them. Price only — it is a last resort,
   not a substitute.
-- **Model retirement self-heals:** a `404` on `ZENBUY_MODEL` resolves a live
-  Anthropic model id from `/v1/models`, retries once, and caches the result
-  for a day. If Opus still fails, one `claude-sonnet-5` attempt runs, then
-  (when `XAI_API_KEY` is set) the request fails over to xAI `grok-4.5`.
-  Ordinary `400` prompt errors do not fail over. Anthropic empty-balance /
-  spend-cap `400`s do — Sonnet is skipped (same bill) and xAI runs.
+- **Model retirement self-heals:** a `404` on the current provider’s model
+  resolves a live id from that provider’s `/v1/models`, retries once, and
+  caches the result for a day (Grok prefers `grok-4.5`, never `grok-4.6`;
+  Anthropic prefers Sonnet, never Opus). Chain is **Grok 4.5 → Claude
+  Sonnet 5**. Ordinary `400` prompt errors do not fail over. Empty-balance /
+  spend-cap `400`s do — same-provider retry is skipped and the other
+  provider runs. Anthropic billing cannot block a healthy Grok primary.
 
 ## Latency
 

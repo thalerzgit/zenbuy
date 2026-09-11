@@ -4,7 +4,7 @@ interface Env {
   FINNHUB_API_KEY: string;
   FRED_API_KEY?: string;
   ANTHROPIC_API_KEY: string;
-  /** Optional. When set, Anthropic outages fail over to xAI Chat Completions. */
+  /** Primary research path (Grok). Required for the default xAI-first stack. */
   XAI_API_KEY?: string;
   AI_GATEWAY_ACCOUNT_ID?: string;
   AI_GATEWAY_ID?: string;
@@ -12,6 +12,7 @@ interface Env {
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
   ZENBUY_MODEL?: string;
+  ZENBUY_PRIMARY_PROVIDER?: string;
   ZENBUY_BACKUP_MODEL?: string;
   ZENBUY_BACKUP_PROVIDER?: string;
   /**
