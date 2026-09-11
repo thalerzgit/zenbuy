@@ -4,18 +4,68 @@ import {
   type InvestmentDirectiveId,
 } from "../lib/investment-directives.ts";
 
-function corePromptFor(directive: InvestmentDirective): string {
+/** Mid band sits between 12-month and the long window; never >= long. */
+export function midHorizonYearsFor(horizonYears: number): number {
+  const mid =
+    horizonYears <= 2
+      ? 1
+      : horizonYears <= 3
+        ? 1
+        : horizonYears <= 5
+          ? 2
+          : horizonYears <= 10
+            ? 3
+            : 5;
+  return Math.min(mid, Math.max(1, horizonYears - 1));
+}
+
+export function resolvePromptHorizons(
+  directive: InvestmentDirective,
+  profitHorizonYears?: number
+): {
+  horizonYears: number;
+  midHorizonYears: number;
+  hasProfitWindow: boolean;
+} {
+  const hasProfitWindow =
+    profitHorizonYears != null &&
+    Number.isFinite(profitHorizonYears) &&
+    profitHorizonYears > 0;
+  const horizonYears = hasProfitWindow
+    ? Math.round(profitHorizonYears)
+    : directive.promptHorizonYears;
+  return {
+    horizonYears,
+    midHorizonYears: midHorizonYearsFor(horizonYears),
+    hasProfitWindow,
+  };
+}
+
+function corePromptFor(
+  directive: InvestmentDirective,
+  profitHorizonYears?: number
+): string {
+  const { horizonYears, midHorizonYears, hasProfitWindow } =
+    resolvePromptHorizons(directive, profitHorizonYears);
+  const goalLine = hasProfitWindow
+    ? `${directive.promptThesis} risk/style. Holding period is the user's ~${horizonYears}-year profit window — not the typical ${directive.horizon} wait.`
+    : directive.promptGoal;
+  const typicalHorizon = hasProfitWindow
+    ? `~${horizonYears} yrs (user profit window — the ONLY window for RETURN SCENARIOS and SUMMARY)`
+    : `${directive.horizon} (anchor return scenarios and SUMMARY timeframes to this)`;
+
   return `ROLE
 Act as a senior equity research analyst and portfolio manager at a top-tier growth fund. You are paid for being right, not for being balanced. Produce a decision-ready research report on the company below. Deliver the analysis only; never describe your process.
 
 INPUTS
 Ticker / Company: [TICKER]
 Investment thesis: ${directive.promptThesis}
-Goal: ${directive.promptGoal}
-Typical investor horizon: ${directive.horizon} (anchor return scenarios and SUMMARY timeframes to this)
+Goal: ${goalLine}
+Typical investor horizon: ${typicalHorizon}
 Current position: none
 
 RULES
+HARD HORIZON: Do not invent compounding math, outlook bands, or "X-year" language beyond ~${horizonYears} years. Do not write 18-year or 15–20+ outlooks unless ~${horizonYears} years is that long. ${directive.promptThesis} is risk/style only when a profit window is set.
 Use ONLY the injected JSON for all numeric facts (price, market cap, margins, multiples, dividends, buybacks/share-count trend, insider trades, institutional13F, earningsHistory, macro, longHorizonArchive, news headlines, earnings dates, peers). Never invent or recall numbers from memory.
 All dates and market "today / tomorrow / this week" language are relative to the NYSE calendar in America/New_York (Eastern Time). Prefer each payload's asOfEt and nextCatalysts.earningsDate; when earningsSessionEt is present, state it (before the open / after the close, ET). Never convert earnings to UTC or the reader's local zone.
 If nextCatalysts.earningsDate is null, write "Next earnings date not in feed" — do not guess a quarter or month from memory.
@@ -47,13 +97,13 @@ STRUCTURE — use these exact markdown headers:
 (Dated events from nextCatalysts and earningsHistory; short/long catalysts; top 3 risks with early warning signs)
 
 ## RETURN SCENARIOS
-(Bear/Base/Bull with probabilities; note how dividends and net buybacks (share shrinkage) affect ~${directive.promptHorizonYears}-year compounding vs price appreciation alone; vs a relevant benchmark for this thesis)
+(Bear/Base/Bull with probabilities; note how dividends and net buybacks (share shrinkage) affect ~${horizonYears}-year compounding vs price appreciation alone; vs a relevant benchmark for this thesis)
 
 ## ACTION PLAN
 (Entry tranches, add/trim triggers, thesis-kill criteria, 5 KPIs including one capital-return KPI when relevant, alternatives if not Buy)
 
 ## SUMMARY
-(5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + ${directive.promptMidHorizonYears}-year + ${directive.promptHorizonYears}-year outlook)
+(5-bullet thesis, Scorecard 1-10: Growth, Moat, Management, Valuation, Balance sheet, Catalysts, Overall — format "Growth: 8/10", timeframe 12-month + ${midHorizonYears}-year + ${horizonYears}-year outlook)
 
 FORMATTING
 Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.
@@ -62,8 +112,14 @@ BREVITY
 Respect the word budget in the request as a hard cap. Density beats length: never restate a number you have already given, never recap a previous section, and drop any bullet that carries no number, fact, or decision. Prefer a 4-column table over prose when comparing. Stop immediately after SUMMARY — do not add extra sections, recaps, or a second scorecard.`;
 }
 
-export function getSystemPrompt(directiveId?: InvestmentDirectiveId): string {
-  return corePromptFor(getInvestmentDirective(directiveId));
+export function getSystemPrompt(
+  directiveId?: InvestmentDirectiveId,
+  profitHorizonYears?: number
+): string {
+  return corePromptFor(
+    getInvestmentDirective(directiveId),
+    profitHorizonYears
+  );
 }
 
 const LAYMAN_PROMPT = `You rewrite equity research into clear, everyday English for smart non-experts.
@@ -72,6 +128,7 @@ Rules:
 - No jargon unless you immediately explain it in parentheses.
 - Short sentences. Concrete analogies when helpful (e.g. "like owning a toll road").
 - Preserve existing markdown short-links like [AAPL-Yahoo](https://…) — keep the label and URL exactly as written, and do not invent new URLs.
+- Keep the source report's timeframes. Do not stretch a short profit window into multi-decade or 18-year compounding.
 - Use these exact markdown headers:
 ## Bottom line
 ## What this company does
@@ -112,19 +169,19 @@ export function buildUserPrompt(
 
   const dataPolicy = `Injected data (cite using each entry's _citation):\n${JSON.stringify(payloads, null, 2)}${degradedNote}`;
 
-  const hasProfitWindow =
-    profitHorizonYears != null && Number.isFinite(profitHorizonYears);
+  const { horizonYears, midHorizonYears, hasProfitWindow } =
+    resolvePromptHorizons(directive, profitHorizonYears);
 
-  const thesisNote = `\nAnalyst framing (guidance for you — never restate it as a caption or heading in the report): ${directive.promptThesis} thesis. ${directive.promptGoal} Typical horizon: ${directive.horizon}.`;
+  const thesisNote = hasProfitWindow
+    ? `\nAnalyst framing (guidance for you — never restate it as a caption or heading in the report): ${directive.promptThesis} thesis (risk/style). Holding period: ~${horizonYears}-year profit window. Do not use the typical ${directive.horizon} wait as the report timeframe.`
+    : `\nAnalyst framing (guidance for you — never restate it as a caption or heading in the report): ${directive.promptThesis} thesis. ${directive.promptGoal} Typical horizon: ${directive.horizon}.`;
 
   const profitNote = hasProfitWindow
-    ? `\nProfit window overlay: frame RETURN SCENARIOS, price targets, and SUMMARY around ~${profitHorizonYears}-year outcomes the user cares about (this may refine but not contradict the thesis).`
+    ? `\nHARD RULE: Every timeframe in RETURN SCENARIOS, SUMMARY, price targets, and ranking is ~${horizonYears} years (12-month + ${midHorizonYears}-year + ${horizonYears}-year). Do not invent multi-decade compounding or outlooks beyond this window. The investment goal is risk/style only.`
     : "";
 
   if (mode === "comparative") {
-    const rankingHorizonYears = hasProfitWindow
-      ? profitHorizonYears
-      : directive.promptHorizonYears;
+    const rankingHorizonYears = horizonYears;
     return `${dataPolicy}${thesisNote}${profitNote}
 
 Write ONE comparative decision report covering ALL companies above.
