@@ -107,6 +107,14 @@ STRUCTURE — use these exact markdown headers:
 
 FORMATTING
 Markdown, bullets, mobile-friendly. Concise, professional; every bullet must carry a number, a fact, or a decision. No process narration, no hedging boilerplate.
+HARD FORMAT — the renderer is strict (do not hard-wrap):
+- Never insert a newline inside a sentence, bullet, table row, or markdown link. One idea = one line.
+- BOTTOM LINE: 4–6 bullets each starting with "- " on a single line. Do not put a price, percent, or "·" marker on its own line.
+- GFM tables: each row on ONE line starting and ending with "|". Include a separator row like "|---|---|---|". Never wrap a cell onto the next line.
+- Scorecard on ONE line: Growth: 8/10 · Moat: 7/10 · Management: 7/10 · Valuation: 5/10 · Balance sheet: 8/10 · Catalysts: 6/10 · Overall: 6.5/10
+- Missing injected numbers: write "Not in feed" — never the token null or the phrase "null in feed".
+- Citations stay on the same line as the claim (Fact · [NTSK-Yahoo](url) · 2026-09-11). Never a lone outlet name (Yahoo, Finnhub) on its own line.
+- Use ### Bull / ### Bear headings, not a bare word on its own line.
 
 BREVITY
 Respect the word budget in the request as a hard cap. Density beats length: never restate a number you have already given, never recap a previous section, and drop any bullet that carries no number, fact, or decision. Prefer a 4-column table over prose when comparing. Stop immediately after SUMMARY — do not add extra sections, recaps, or a second scorecard.`;

@@ -226,7 +226,9 @@ struct ScorecardView: View {
                     Text(row.value)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(ZenBuyTheme.ink)
-                        .frame(width: 40, alignment: .trailing)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(width: 56, alignment: .trailing)
                 }
             }
         }

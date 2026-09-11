@@ -105,6 +105,24 @@ function cachedReportHasContent(report: CachedReport | null): boolean {
   );
 }
 
+/** Re-render HTML from stored markdown so parser fixes heal still-hot KV. */
+function hydrateCachedReport(report: CachedReport): CachedReport {
+  if (!report.markdown?.trim()) return report;
+  const parsed = parseReport(report.markdown);
+  const bottomLineHtml = renderMarkdown(parsed.bottomLine);
+  const bodyHtml = renderMarkdown(parsed.body);
+  const scoreHtml = scorecardHtml(parsed.scorecard);
+  return {
+    ...report,
+    badges: parsed.badges.recommendation || parsed.badges.conviction
+      ? parsed.badges
+      : report.badges,
+    bottomLineHtml: bottomLineHtml || report.bottomLineHtml,
+    bodyHtml: bodyHtml || report.bodyHtml,
+    scorecardHtml: scoreHtml || report.scorecardHtml,
+  };
+}
+
 function emitParsed(
   send: (event: string, data: unknown) => void,
   markdown: string
@@ -460,19 +478,20 @@ async function handleCreateShare(request: Request, env: Env): Promise<Response> 
       );
     }
     const { mode, symbols } = parseReportIdParts(reportId);
+    const fresh = hydrateCachedReport(report!);
     snapshot = {
       reportId,
       variant: "full",
       mode,
       symbols,
-      badges: report!.badges,
-      bottomLineHtml: report!.bottomLineHtml,
-      bodyHtml: report!.bodyHtml,
-      scorecardHtml: report!.scorecardHtml,
-      asOf: report!.asOf,
-      stale: report!.stale,
-      partial: report!.partial,
-      warning: report!.warning,
+      badges: fresh.badges,
+      bottomLineHtml: fresh.bottomLineHtml,
+      bodyHtml: fresh.bodyHtml,
+      scorecardHtml: fresh.scorecardHtml,
+      asOf: fresh.asOf,
+      stale: fresh.stale,
+      partial: fresh.partial,
+      warning: fresh.warning,
     };
   }
 
@@ -566,23 +585,24 @@ async function handleGetReport(request: Request, env: Env): Promise<Response> {
   }
 
   const { mode, symbols } = parseReportIdParts(reportId);
+  const fresh = hydrateCachedReport(report!);
 
   return json({
     reportId,
     variant: "full",
     mode,
     symbols,
-    badges: report!.badges,
-    bottomLineHtml: report!.bottomLineHtml,
-    bodyHtml: report!.bodyHtml,
-    scorecardHtml: report!.scorecardHtml,
-    companies: report!.markdown
-      ? companyProfilesFromMarkdown(report!.markdown, symbols)
+    badges: fresh.badges,
+    bottomLineHtml: fresh.bottomLineHtml,
+    bodyHtml: fresh.bodyHtml,
+    scorecardHtml: fresh.scorecardHtml,
+    companies: fresh.markdown
+      ? companyProfilesFromMarkdown(fresh.markdown, symbols)
       : [],
-    asOf: report!.asOf,
-    stale: report!.stale,
-    partial: report!.partial,
-    warning: report!.warning,
+    asOf: fresh.asOf,
+    stale: fresh.stale,
+    partial: fresh.partial,
+    warning: fresh.warning,
   });
 }
 
@@ -861,6 +881,7 @@ async function handleResearch(
 
       try {
         if (cached) {
+          const fresh = hydrateCachedReport(cached);
           const {
             mode: cachedMode,
             symbols: cachedSymbols,
@@ -869,36 +890,36 @@ async function handleResearch(
           } = parseReportIdParts(cacheKey);
           send("meta", {
             cached: true,
-            asOf: cached.asOf,
-            showAsOf: cached.stale,
+            asOf: fresh.asOf,
+            showAsOf: fresh.stale,
             directive: cachedDirective,
             directiveLabel: getInvestmentDirective(cachedDirective).label,
             profitHorizonYears: cachedHorizon ?? profitHorizonYears,
           });
           send("sticky", {
-            bottomLineHtml: cached.bottomLineHtml,
-            badges: cached.badges,
-            scorecardHtml: cached.scorecardHtml,
+            bottomLineHtml: fresh.bottomLineHtml,
+            badges: fresh.badges,
+            scorecardHtml: fresh.scorecardHtml,
           });
-          send("body", { html: cached.bodyHtml });
-          if (cached.markdown) {
+          send("body", { html: fresh.bodyHtml });
+          if (fresh.markdown) {
             send("companies", {
               companies: companyProfilesFromMarkdown(
-                cached.markdown,
+                fresh.markdown,
                 cachedSymbols
               ),
               mode: cachedMode,
             });
           }
           send("done", {
-            badges: cached.badges,
+            badges: fresh.badges,
             reportId:
-              cached.markdown && cached.markdown.length >= 80 ? cacheKey : "",
+              fresh.markdown && fresh.markdown.length >= 80 ? cacheKey : "",
             directive: cachedDirective,
             directiveLabel: getInvestmentDirective(cachedDirective).label,
             profitHorizonYears: cachedHorizon ?? profitHorizonYears,
-            partial: cached.partial === true,
-            warning: cached.warning,
+            partial: fresh.partial === true,
+            warning: fresh.warning,
           });
           return;
         }

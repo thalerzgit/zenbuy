@@ -6,9 +6,11 @@ import {
   assessReportCompleteness,
   isParseableBottomLine,
   isUsablePartialReport,
+  normalizeMarkdown,
   parseReport,
   parseScorecard,
   planResearchFinish,
+  renderMarkdown,
   shouldSilentRetryIncomplete,
   splitReport,
 } from "./parse.ts";
@@ -188,5 +190,117 @@ describe("planResearchFinish (Worker finish path)", () => {
     assert.equal(shouldSilentRetryIncomplete(usable), false);
     assert.equal(shouldSilentRetryIncomplete("## BOTTOM LINE\n"), true);
     assert.equal(shouldSilentRetryIncomplete("drafting…"), true);
+  });
+});
+
+const GROK_BOTTOM_LINE = [
+  "## BOTTOM LINE",
+  "Buy — Medium conviction.",
+  "Flip to Selling if next 2 prints show",
+  "revenue growth still",
+  "$18.50",
+  "· probability-weighted expected return",
+  "~28%",
+  "(12m).",
+  "Buy zone",
+  "$12.50–14.50",
+  "· do-not-chase above",
+  "$17.50",
+  "·",
+  "Position size:",
+  "2.5–3.5%",
+  "of aggressive-growth book.",
+].join("\n");
+
+const GROK_BROKEN_TABLE = [
+  "## RETURN SCENARIOS",
+  "Horizon = ~2 years only.",
+  "| Scenario | Prob | 12m price | ~2y",
+  "price | ~2y return |",
+  "|----------|------|-----------|--",
+  "--------|------------|",
+  "| Bear | 25% | $10 | $9 | -38% |",
+  "| Base | 50% | $18 | $22 | +52% |",
+  "| Bull | 25% | $24 | $30 | +107% |",
+].join("\n");
+
+const GROK_SCORECARD = [
+  "## SUMMARY",
+  "Scorecard: Growth:",
+  "8/10",
+  "· Moat:",
+  "6/10",
+  "· Management:",
+  "7/10",
+  "· Valuation:",
+  "5/10",
+  "· Balance sheet:",
+  "5/10",
+  "· Catalysts:",
+  "7/10",
+  "·",
+  "Overall: 6.5/10",
+].join("\n");
+
+describe("normalizeMarkdown / renderMarkdown (Grok-shaped markdown)", () => {
+  it("collapses fragment-per-line BOTTOM LINE into coherent prose", () => {
+    const html = renderMarkdown(GROK_BOTTOM_LINE);
+    assert.doesNotMatch(html, /<br\s*\/?>/i);
+    assert.match(html, /\$18\.50/);
+    assert.match(html, /probability-weighted expected return/);
+    assert.match(html, /\$18\.50 · probability-weighted expected return ~28%/);
+    assert.doesNotMatch(html, /<p>\$18\.50<\/p>/);
+    assert.doesNotMatch(html, /<p>·<\/p>/);
+  });
+
+  it("turns wrapped Grok pipe tables into real <table> HTML", () => {
+    const html = renderMarkdown(GROK_BROKEN_TABLE);
+    assert.match(html, /<table>/);
+    assert.match(html, /<th>Scenario<\/th>/);
+    assert.match(html, /<th>~2y price<\/th>/);
+    assert.match(html, /<td>Bear<\/td>/);
+    assert.match(html, /<td>\+107%<\/td>/);
+    assert.doesNotMatch(html, /<th>-+/);
+    assert.doesNotMatch(html, /\| Scenario \| Prob/);
+    assert.doesNotMatch(html, /\|----------/);
+    assert.equal((html.match(/<tr>/g) ?? []).length, 4);
+  });
+
+  it("still renders a well-formed Claude GFM table", () => {
+    const md = [
+      "| Metric | AAPL |",
+      "| --- | --- |",
+      "| PE | 34.4 |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    assert.match(html, /<table>/);
+    assert.match(html, /<th>Metric<\/th>/);
+    assert.match(html, /<td>34\.4<\/td>/);
+  });
+
+  it("joins scorecard dots onto one line and still parses Overall 6.5", () => {
+    const normalized = normalizeMarkdown(GROK_SCORECARD);
+    assert.match(normalized, /Growth: 8\/10 · Moat: 6\/10/);
+    assert.match(normalized, /Overall: 6\.5\/10/);
+    const html = renderMarkdown(GROK_SCORECARD);
+    assert.match(html, /Growth: 8\/10 · Moat: 6\/10/);
+    assert.doesNotMatch(html, /<p>8\/10<\/p>/);
+    assert.equal(parseScorecard(GROK_SCORECARD).overall, 6.5);
+    assert.equal(parseScorecard(GROK_SCORECARD).growth, 8);
+  });
+
+  it("replaces user-facing 'null in feed' and drops orphan outlet lines", () => {
+    const md = [
+      "## FUNDAMENTALS",
+      "FCF/share and FCF margin: null in feed.",
+      "Revenue/EPS YoY: null/null.",
+      "Yahoo",
+      "Fact · Finnhub · 2026-09-11",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    assert.match(html, /not in feed/i);
+    assert.doesNotMatch(html, />\s*null/i);
+    assert.doesNotMatch(html, /<p>Yahoo<\/p>/);
+    assert.match(html, /Fact · Finnhub/);
   });
 });

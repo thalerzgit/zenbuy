@@ -511,7 +511,7 @@ body {
 
 .score-row {
   display: grid;
-  grid-template-columns: 4.5rem 1fr 2.2rem;
+  grid-template-columns: 4.5rem 1fr 3.2rem;
   align-items: center;
   gap: 0.4rem;
   font-size: 0.78rem;
@@ -539,6 +539,7 @@ body {
   text-align: right;
   font-weight: 600;
   color: var(--sage-dark);
+  white-space: nowrap;
 }
 
 .shared-error-body {

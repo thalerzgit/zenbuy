@@ -139,6 +139,17 @@ describe("profit window wins report timeframes", () => {
       /Do not stretch a short profit window into multi-decade or 18-year compounding/
     );
   });
+
+  it("HARD FORMAT forbids Grok-style wraps, raw null, and split scorecards", () => {
+    const system = getSystemPrompt("aggressive_growth", 2);
+    assert.match(system, /HARD FORMAT/);
+    assert.match(system, /Never insert a newline inside a sentence/);
+    assert.match(system, /GFM tables/);
+    assert.match(system, /Not in feed/);
+    assert.match(system, /null in feed/);
+    assert.match(system, /Scorecard on ONE line/);
+    assert.match(system, /~2-year compounding/);
+  });
 });
 
 function typicalHorizonLine(prompt: string): string {

@@ -589,7 +589,7 @@ private final class ReportPDFCanvas {
         path.stroke()
 
         let labelWidth: CGFloat = 52
-        let valueWidth: CGFloat = 34
+        let valueWidth: CGFloat = 48
         let trackHeight: CGFloat = 6
         var rowTop = top + padding
 
