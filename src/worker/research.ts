@@ -15,10 +15,26 @@ import type { FundamentalsPayload } from "./finnhub.ts";
 /** Headroom for a 1500-word single report or 2200-word comparative. */
 export const RESEARCH_MAX_TOKENS = 12_000;
 
-export const DEFAULT_PRIMARY_MODEL = "claude-opus-5";
-const ANTHROPIC_SECONDARY_MODEL = "claude-sonnet-5";
-export const DEFAULT_BACKUP_MODEL = "grok-4.5";
-export const DEFAULT_BACKUP_PROVIDER = "xai";
+export type ProviderId = "xai" | "anthropic";
+
+export const DEFAULT_PRIMARY_MODEL = "grok-4.5";
+export const DEFAULT_PRIMARY_PROVIDER: ProviderId = "xai";
+export const DEFAULT_BACKUP_MODEL = "claude-sonnet-5";
+export const DEFAULT_BACKUP_PROVIDER: ProviderId = "anthropic";
+
+/**
+ * Grok 4.5 Chat Completions: `high` is the quality/speed balance for streamed
+ * equity reports (finance reasoning without the TTFT hit). `xhigh` is grok-4.6+
+ * and inflates latency; grok-4.5 treats `xhigh` as `high` anyway. Do not use
+ * `max`. Explicit so a later model swap cannot silently pick a slower default.
+ */
+export const XAI_REASONING_EFFORT = "high" as const;
+
+/**
+ * Claude Sonnet 5 backup: `medium` (~1.8s TTFT on Artificial Analysis) vs
+ * default `high` or `max` (minutes). Do not use `max`/`xhigh` on ZenBuy streams.
+ */
+export const ANTHROPIC_OUTPUT_EFFORT = "medium" as const;
 
 /** Headers must arrive before we treat the primary as unresponsive. */
 const TTFB_TIMEOUT_MS = 45_000;
@@ -31,22 +47,76 @@ export interface StreamHandlers {
   onRestart?: () => void;
 }
 
+function normalizeProvider(raw: string | undefined, fallback: ProviderId): ProviderId {
+  const p = (raw || fallback).trim().toLowerCase();
+  if (p === "xai" || p === "grok") return "xai";
+  if (p === "anthropic" || p === "claude") return "anthropic";
+  return fallback;
+}
+
 export function primaryModel(env: Env): string {
   return env.ZENBUY_MODEL || DEFAULT_PRIMARY_MODEL;
+}
+
+export function primaryProvider(env: Env): ProviderId {
+  return normalizeProvider(env.ZENBUY_PRIMARY_PROVIDER, DEFAULT_PRIMARY_PROVIDER);
 }
 
 export function backupModel(env: Env): string {
   return env.ZENBUY_BACKUP_MODEL || DEFAULT_BACKUP_MODEL;
 }
 
-export function backupProvider(env: Env): string {
-  return (env.ZENBUY_BACKUP_PROVIDER || DEFAULT_BACKUP_PROVIDER)
-    .trim()
-    .toLowerCase();
+export function backupProvider(env: Env): ProviderId {
+  return normalizeProvider(env.ZENBUY_BACKUP_PROVIDER, DEFAULT_BACKUP_PROVIDER);
 }
 
 export function hasXaiKey(env: Env): boolean {
   return Boolean(env.XAI_API_KEY?.trim());
+}
+
+export function hasAnthropicKey(env: Env): boolean {
+  return Boolean(env.ANTHROPIC_API_KEY?.trim());
+}
+
+export function hasProviderKey(env: Env, provider: ProviderId): boolean {
+  return provider === "xai" ? hasXaiKey(env) : hasAnthropicKey(env);
+}
+
+export interface ModelAttempt {
+  provider: ProviderId;
+  model: string;
+}
+
+/**
+ * Grok 4.5 first (when the xAI key is present), then Claude Sonnet 5.
+ * Same-provider Grok retry is the 404 live-id resolve inside consumeXai —
+ * we do not add grok-4.6 or Opus to this chain.
+ */
+export function planFailoverChain(env: Env): ModelAttempt[] {
+  const primary: ModelAttempt = {
+    provider: primaryProvider(env),
+    model: primaryModel(env),
+  };
+  const backup: ModelAttempt = {
+    provider: backupProvider(env),
+    model: backupModel(env),
+  };
+  const chain: ModelAttempt[] = [];
+  if (hasProviderKey(env, primary.provider)) chain.push(primary);
+  const sameSlot =
+    backup.provider === primary.provider && backup.model === primary.model;
+  if (!sameSlot && hasProviderKey(env, backup.provider)) {
+    if (!chain.some((a) => a.provider === backup.provider && a.model === backup.model)) {
+      chain.push(backup);
+    }
+  }
+  return chain;
+}
+
+export function modelForProvider(env: Env, provider: ProviderId): string | null {
+  if (primaryProvider(env) === provider) return primaryModel(env);
+  if (backupProvider(env) === provider) return backupModel(env);
+  return null;
 }
 
 /** Outage / timeout / rate-limit / model-gone — never ordinary 400 prompt bugs. */
@@ -101,6 +171,7 @@ export function buildAnthropicMessagesBody(
   max_tokens: number;
   stream: true;
   system: string;
+  output_config: { effort: typeof ANTHROPIC_OUTPUT_EFFORT };
   messages: Array<{ role: "user"; content: string }>;
 } {
   return {
@@ -108,6 +179,7 @@ export function buildAnthropicMessagesBody(
     max_tokens: maxTokens,
     stream: true,
     system,
+    output_config: { effort: ANTHROPIC_OUTPUT_EFFORT },
     messages: [{ role: "user", content: user }],
   };
 }
@@ -126,12 +198,14 @@ export function buildXaiChatBody(
   model: string;
   max_completion_tokens: number;
   stream: true;
+  reasoning_effort: typeof XAI_REASONING_EFFORT;
   messages: Array<{ role: "system" | "user"; content: string }>;
 } {
   return {
     model,
     max_completion_tokens: maxTokens,
     stream: true,
+    reasoning_effort: XAI_REASONING_EFFORT,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -201,15 +275,22 @@ function analysisErrorMessage(status: number): string {
   return `Analysis unavailable (${status}). Try again?`;
 }
 
-const FALLBACK_MODEL_KEY = "model:fallback";
+const ANTHROPIC_FALLBACK_MODEL_KEY = "model:fallback:anthropic";
+const XAI_FALLBACK_MODEL_KEY = "model:fallback:xai";
 
 /**
  * Model ids get retired, which otherwise takes every report down until
  * someone edits a var. Resolve a live id once and remember it for a day.
+ * Prefer Sonnet — Opus is not in the ZenBuy chain.
  */
-async function resolveLiveModel(env: Env, rejected: string): Promise<string | null> {
-  const cached = await env.CACHE.get(FALLBACK_MODEL_KEY);
-  if (cached && cached !== rejected) return cached;
+async function resolveLiveAnthropicModel(
+  env: Env,
+  rejected: string
+): Promise<string | null> {
+  const cached = await env.CACHE.get(ANTHROPIC_FALLBACK_MODEL_KEY);
+  if (cached && cached !== rejected && !cached.startsWith("claude-opus")) {
+    return cached;
+  }
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/models?limit=30", {
@@ -222,16 +303,58 @@ async function resolveLiveModel(env: Env, rejected: string): Promise<string | nu
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
     const ids = (body.data ?? []).map((m) => m.id).filter(Boolean) as string[];
     const pick =
-      ids.find((id) => id.startsWith("claude-opus") && id !== rejected) ??
       ids.find((id) => id.startsWith("claude-sonnet") && id !== rejected) ??
-      ids.find((id) => id !== rejected) ??
+      ids.find((id) => id !== rejected && !id.startsWith("claude-opus")) ??
       null;
     if (pick) {
-      await env.CACHE.put(FALLBACK_MODEL_KEY, pick, { expirationTtl: 86_400 });
+      await env.CACHE.put(ANTHROPIC_FALLBACK_MODEL_KEY, pick, {
+        expirationTtl: 86_400,
+      });
     }
     return pick;
   } catch (e) {
     console.error("model resolve failed", e);
+    return null;
+  }
+}
+
+/** Same 404 self-heal for Grok. Prefer 4.5; never pick grok-4.6. */
+async function resolveLiveXaiModel(
+  env: Env,
+  rejected: string
+): Promise<string | null> {
+  const cached = await env.CACHE.get(XAI_FALLBACK_MODEL_KEY);
+  if (
+    cached &&
+    cached !== rejected &&
+    !cached.startsWith("grok-4.6")
+  ) {
+    return cached;
+  }
+
+  try {
+    const res = await fetch("https://api.x.ai/v1/models", {
+      headers: { authorization: `Bearer ${env.XAI_API_KEY}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: Array<{ id?: string }> };
+    const ids = (body.data ?? []).map((m) => m.id).filter(Boolean) as string[];
+    const pick =
+      ids.find((id) => id.startsWith("grok-4.5") && id !== rejected) ??
+      ids.find(
+        (id) =>
+          id.startsWith("grok-4") &&
+          !id.startsWith("grok-4.6") &&
+          id !== rejected
+      ) ??
+      ids.find((id) => id.startsWith("grok-") && !id.startsWith("grok-4.6") && id !== rejected) ??
+      null;
+    if (pick) {
+      await env.CACHE.put(XAI_FALLBACK_MODEL_KEY, pick, { expirationTtl: 86_400 });
+    }
+    return pick;
+  } catch (e) {
+    console.error("xAI model resolve failed", e);
     return null;
   }
 }
@@ -261,7 +384,7 @@ type AttemptFail = {
   failover: boolean;
   message: string;
   status?: number;
-  /** Billing/auth — retrying Opus→Sonnet on the same account cannot help. */
+  /** Billing/auth — retrying another model on the same account cannot help. */
   sameProviderUseless?: boolean;
 };
 type Attempt = AttemptOk | AttemptFail;
@@ -378,7 +501,7 @@ async function consumeAnthropic(
 
   if (res.status === 404) {
     console.error("Anthropic model rejected", body.model, await res.text());
-    const live = await resolveLiveModel(env, body.model);
+    const live = await resolveLiveAnthropicModel(env, body.model);
     if (live && live !== body.model) {
       console.warn("retrying with model", live);
       body.model = live;
@@ -432,42 +555,68 @@ async function consumeAnthropic(
 
 async function consumeXai(
   env: Env,
+  model: string,
   system: string,
   user: string,
   maxTokens: number,
   onText: (text: string) => void
 ): Promise<Attempt> {
-  const body = buildXaiChatBody(backupModel(env), system, user, maxTokens);
+  const body = buildXaiChatBody(model, system, user, maxTokens);
 
-  let res: Response;
-  try {
-    res = await fetchHeaders(xaiUrl(env), {
+  const post = (): Promise<Response> =>
+    fetchHeaders(xaiUrl(env), {
       method: "POST",
       headers: xaiHeaders(env),
       body: JSON.stringify(body),
     });
+
+  let res: Response;
+  try {
+    res = await post();
   } catch (e) {
-    return { ...networkFail("xAI request failed", e), failover: false };
+    return networkFail("xAI request failed", e);
+  }
+
+  if (res.status === 404) {
+    console.error("xAI model rejected", body.model, await res.text());
+    const live = await resolveLiveXaiModel(env, body.model);
+    if (live && live !== body.model) {
+      console.warn("retrying with xAI model", live);
+      body.model = live;
+      try {
+        res = await post();
+      } catch (e) {
+        return networkFail("xAI retry failed", e);
+      }
+    }
   }
 
   if (!res.ok) {
     const errText = await res.text();
     console.error("xAI error", res.status, errText);
+    const classified = classifyUpstreamFailure(res.status, errText);
     return {
       ok: false,
-      failover: false,
+      failover: classified.failover,
+      sameProviderUseless: classified.sameProviderUseless,
       status: res.status,
-      message: analysisErrorMessage(res.status),
+      message: classified.message,
     };
   }
 
+  let emitted = 0;
+  const track = (text: string): void => {
+    emitted += text.length;
+    onText(text);
+  };
+
   try {
-    const result = await readSseStream(res, onText, "openai");
+    const result = await readSseStream(res, track, "openai");
     if (!result.text.trim()) {
       console.error("xAI stream empty");
       return {
         ok: false,
-        failover: false,
+        failover: true,
         message: "The analysis stream dropped. Try again?",
       };
     }
@@ -476,15 +625,31 @@ async function consumeXai(
     console.error("xAI stream read failed", e);
     return {
       ok: false,
-      failover: false,
+      failover: emitted === 0,
       message: "The analysis stream dropped. Try again?",
     };
   }
 }
 
+async function consumeProvider(
+  env: Env,
+  attempt: ModelAttempt,
+  system: string,
+  user: string,
+  maxTokens: number,
+  onText: (text: string) => void
+): Promise<Attempt> {
+  if (attempt.provider === "xai") {
+    return consumeXai(env, attempt.model, system, user, maxTokens, onText);
+  }
+  return consumeAnthropic(env, attempt.model, system, user, maxTokens, onText);
+}
+
 /**
- * Primary Anthropic → same-provider live-id retry → optional Sonnet once → xAI.
+ * Grok 4.5 → (404 live-id retry inside consume) → Claude Sonnet 5.
  * Failover only when no tokens were already painted to the client.
+ * Empty-balance / auth on the current provider skips any remaining
+ * same-provider hop and continues to the other provider.
  */
 async function analyzeStream(
   env: Env,
@@ -493,31 +658,36 @@ async function analyzeStream(
   maxTokens: number,
   onText: (text: string) => void
 ): Promise<Attempt> {
-  const primary = primaryModel(env);
-  let last = await consumeAnthropic(env, primary, system, user, maxTokens, onText);
-  if (last.ok || !last.failover) return last;
+  const chain = planFailoverChain(env);
+  if (chain.length === 0) {
+    return {
+      ok: false,
+      failover: false,
+      message: "Analysis service rejected our credentials. This needs a config fix.",
+    };
+  }
 
-  // Empty Anthropic balance 400s Sonnet too — skip straight to xAI.
-  if (!last.sameProviderUseless && primary !== ANTHROPIC_SECONDARY_MODEL) {
-    console.warn("anthropic secondary", ANTHROPIC_SECONDARY_MODEL);
-    last = await consumeAnthropic(
-      env,
-      ANTHROPIC_SECONDARY_MODEL,
-      system,
-      user,
-      maxTokens,
-      onText
-    );
+  let last: Attempt = {
+    ok: false,
+    failover: true,
+    message: "Analysis service didn't respond. Try again in a moment?",
+  };
+
+  for (let i = 0; i < chain.length; i++) {
+    const attempt = chain[i];
+    if (i > 0) {
+      console.warn("failing over to", attempt.provider, attempt.model);
+    }
+    last = await consumeProvider(env, attempt, system, user, maxTokens, onText);
     if (last.ok || !last.failover) return last;
-  }
-
-  if (backupProvider(env) === "xai" && hasXaiKey(env)) {
-    console.warn("failing over to xAI", backupModel(env));
-    return consumeXai(env, system, user, maxTokens, onText);
-  }
-
-  if (backupProvider(env) === "xai") {
-    console.warn("xAI backup skipped: XAI_API_KEY missing");
+    if (last.sameProviderUseless) {
+      while (
+        i + 1 < chain.length &&
+        chain[i + 1].provider === attempt.provider
+      ) {
+        i++;
+      }
+    }
   }
   return last;
 }

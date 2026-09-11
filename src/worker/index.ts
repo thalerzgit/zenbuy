@@ -46,8 +46,11 @@ import { discoverPicksForGoal } from "./discover";
 import { findSimilarSymbols } from "./similar";
 import {
   backupModel,
+  backupProvider,
   hasXaiKey,
+  modelForProvider,
   primaryModel,
+  primaryProvider,
   streamLayman,
   streamResearch,
   streamResearchParallel,
@@ -207,7 +210,9 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
   const model = primaryModel(env);
   const out: Record<string, unknown> = {
     model,
+    provider: primaryProvider(env),
     backupModel: backupModel(env),
+    backupProvider: backupProvider(env),
     keys: {
       finnhub: parseKeyPool(env.FINNHUB_API_KEY ?? "").length,
       anthropic: Boolean(env.ANTHROPIC_API_KEY),
@@ -257,10 +262,11 @@ async function handleHealth(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  if (env.ANTHROPIC_API_KEY) {
+  const anthropicModel = modelForProvider(env, "anthropic");
+  if (env.ANTHROPIC_API_KEY && anthropicModel) {
     try {
       const r = await fetch(
-        `https://api.anthropic.com/v1/models/${encodeURIComponent(model)}`,
+        `https://api.anthropic.com/v1/models/${encodeURIComponent(anthropicModel)}`,
         {
           headers: {
             "x-api-key": env.ANTHROPIC_API_KEY,
