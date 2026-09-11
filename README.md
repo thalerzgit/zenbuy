@@ -188,7 +188,8 @@ within budget:
   Anthropic model id from `/v1/models`, retries once, and caches the result
   for a day. If Opus still fails, one `claude-sonnet-5` attempt runs, then
   (when `XAI_API_KEY` is set) the request fails over to xAI `grok-4.5`.
-  Ordinary `400` prompt errors do not fail over.
+  Ordinary `400` prompt errors do not fail over. Anthropic empty-balance /
+  spend-cap `400`s do — Sonnet is skipped (same bill) and xAI runs.
 
 ## Latency
 

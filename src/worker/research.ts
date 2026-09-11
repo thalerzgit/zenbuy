@@ -1,19 +1,19 @@
-import type { InvestmentDirectiveId } from "../lib/investment-directives";
+import type { InvestmentDirectiveId } from "../lib/investment-directives.ts";
 import {
   isUsablePartialReport,
   planResearchFinish,
   shouldSilentRetryIncomplete,
-} from "./parse";
+} from "./parse.ts";
 import {
   buildLaymanPrompt,
   buildUserPrompt,
   getLaymanSystemPrompt,
   getSystemPrompt,
-} from "./prompt";
-import type { FundamentalsPayload } from "./finnhub";
+} from "./prompt.ts";
+import type { FundamentalsPayload } from "./finnhub.ts";
 
 /** Headroom for a 1500-word single report or 2200-word comparative. */
-const RESEARCH_MAX_TOKENS = 12_000;
+export const RESEARCH_MAX_TOKENS = 12_000;
 
 export const DEFAULT_PRIMARY_MODEL = "claude-opus-5";
 const ANTHROPIC_SECONDARY_MODEL = "claude-sonnet-5";
@@ -52,6 +52,64 @@ export function hasXaiKey(env: Env): boolean {
 /** Outage / timeout / rate-limit / model-gone — never ordinary 400 prompt bugs. */
 export function shouldFailoverStatus(status: number): boolean {
   return status === 408 || status === 429 || status === 404 || status >= 500;
+}
+
+/**
+ * Anthropic documents spend-cap / empty-balance as HTTP 400
+ * `invalid_request_error` (not 402). Same-provider retry is useless.
+ */
+export function isProviderBillingError(errText: string): boolean {
+  const text = errText.toLowerCase();
+  return (
+    /credit balance is too low/.test(text) ||
+    /purchase credits/.test(text) ||
+    /plans & billing/.test(text) ||
+    /spend (?:limit|cap)/.test(text) ||
+    /usage (?:limit|cap)/.test(text) ||
+    /"billing_error"/.test(text)
+  );
+}
+
+export function classifyUpstreamFailure(
+  status: number,
+  errText = ""
+): { failover: boolean; sameProviderUseless: boolean; message: string } {
+  const billing = status === 402 || isProviderBillingError(errText);
+  if (billing) {
+    return {
+      failover: true,
+      sameProviderUseless: true,
+      message:
+        "Primary analysis is out of credits. Try again shortly?",
+    };
+  }
+  return {
+    failover: shouldFailoverStatus(status),
+    sameProviderUseless: status === 401 || status === 403,
+    message: analysisErrorMessage(status),
+  };
+}
+
+/** Messages API body the Worker posts to Anthropic (or AI Gateway → Anthropic). */
+export function buildAnthropicMessagesBody(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number
+): {
+  model: string;
+  max_tokens: number;
+  stream: true;
+  system: string;
+  messages: Array<{ role: "user"; content: string }>;
+} {
+  return {
+    model,
+    max_tokens: maxTokens,
+    stream: true,
+    system,
+    messages: [{ role: "user", content: user }],
+  };
 }
 
 function anthropicUrl(env: Env): string {
@@ -171,7 +229,14 @@ async function fetchHeaders(
 type StreamKind = "anthropic" | "openai";
 
 type AttemptOk = { ok: true; text: string; stopReason: string | null };
-type AttemptFail = { ok: false; failover: boolean; message: string; status?: number };
+type AttemptFail = {
+  ok: false;
+  failover: boolean;
+  message: string;
+  status?: number;
+  /** Billing/auth — retrying Opus→Sonnet on the same account cannot help. */
+  sameProviderUseless?: boolean;
+};
 type Attempt = AttemptOk | AttemptFail;
 
 function parseAnthropicEvent(evt: Record<string, unknown>): {
@@ -268,13 +333,7 @@ async function consumeAnthropic(
   maxTokens: number,
   onText: (text: string) => void
 ): Promise<Attempt> {
-  const body = {
-    model,
-    max_tokens: maxTokens,
-    stream: true,
-    system,
-    messages: [{ role: "user" as const, content: user }],
-  };
+  const body = buildAnthropicMessagesBody(model, system, user, maxTokens);
 
   const post = (): Promise<Response> =>
     fetchHeaders(anthropicUrl(env), {
@@ -307,11 +366,13 @@ async function consumeAnthropic(
   if (!res.ok) {
     const errText = await res.text();
     console.error("Anthropic error", res.status, errText);
+    const classified = classifyUpstreamFailure(res.status, errText);
     return {
       ok: false,
-      failover: shouldFailoverStatus(res.status),
+      failover: classified.failover,
+      sameProviderUseless: classified.sameProviderUseless,
       status: res.status,
-      message: analysisErrorMessage(res.status),
+      message: classified.message,
     };
   }
 
@@ -419,7 +480,8 @@ async function analyzeStream(
   let last = await consumeAnthropic(env, primary, system, user, maxTokens, onText);
   if (last.ok || !last.failover) return last;
 
-  if (primary !== ANTHROPIC_SECONDARY_MODEL) {
+  // Empty Anthropic balance 400s Sonnet too — skip straight to xAI.
+  if (!last.sameProviderUseless && primary !== ANTHROPIC_SECONDARY_MODEL) {
     console.warn("anthropic secondary", ANTHROPIC_SECONDARY_MODEL);
     last = await consumeAnthropic(
       env,
