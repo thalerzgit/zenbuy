@@ -1,5 +1,5 @@
-# Archive ZenBuy and upload to App Store Connect / TestFlight.
-# Does NOT submit the build for App Store production review.
+# Archive ZenBuy, upload Dist to TestFlight, then submit the VALID build
+# for App Store review (retract any in-flight iOS review first).
 #
 # Pattern: MyRepresent Dist — MANUAL App Store signing.
 # Automatic signing + -allowProvisioningUpdates mints ephemeral iOS Development
@@ -11,6 +11,8 @@
 #   2) Archive and upload — import Dist p12 + App Store profile, archive with
 #      CODE_SIGN_STYLE=Manual (no -allowProvisioningUpdates), export+upload,
 #      then invite thalerz@me.com only after a successful upload.
+#   3) Submit review — Ubuntu + ASC API only (no signing). Wait VALID, retract
+#      in-review if needed, attach latest Dist build, set What’s New, submit.
 name: TestFlight
 
 on:
@@ -142,6 +144,8 @@ jobs:
     needs: rails
     runs-on: macos-26
     timeout-minutes: 75
+    outputs:
+      build_number: ${{ steps.stamp.outputs.build_number }}
     defaults:
       run:
         working-directory: swift
@@ -192,6 +196,7 @@ jobs:
           esac
 
       - name: Stamp CURRENT_PROJECT_VERSION
+        id: stamp
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
@@ -207,6 +212,7 @@ jobs:
           esac
           BUILD=$((GITHUB_RUN_NUMBER + OFFSET))
           echo "IOS_BUILD_NUMBER=${BUILD}" >> "${GITHUB_ENV}"
+          echo "build_number=${BUILD}" >> "${GITHUB_OUTPUT}"
           echo "Build ${BUILD} = GITHUB_RUN_NUMBER ${GITHUB_RUN_NUMBER} + offset ${OFFSET}"
           echo "Marketing version comes from Config/Shared.xcconfig (not stamped)."
 
@@ -351,7 +357,7 @@ jobs:
             -authenticationKeyID "${ASC_KEY_ID}" \
             -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
             | beautify
-          echo "Upload requested via ExportOptions destination=upload. Not submitted for App Store review."
+          echo "Upload requested via ExportOptions destination=upload. Review submit is the following Ubuntu job."
           echo "uploaded=true" >> "${GITHUB_OUTPUT}"
 
       - name: Invite internal TestFlight tester
@@ -380,3 +386,34 @@ jobs:
           if [ -n "${IOS_KEYCHAIN_PATH:-}" ]; then
             security delete-keychain "${IOS_KEYCHAIN_PATH}" 2>/dev/null || true
           fi
+
+  # ASC API only — no Dist p12, no profiles, no xcodebuild, no Dev certs.
+  submit_review:
+    name: Submit App Store review
+    needs: upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Wait VALID, retract in-review, submit latest Dist build
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          IOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
+          ASC_WHATS_NEW: Report formatting polish for Grok as the primary research model. Tables, scorecard, and BOTTOM LINE stay readable on iPhone and PDF.
+        run: |
+          set -euo pipefail
+          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          export ASC_MARKETING_VERSION="${MARKETING}"
+          echo "ASC API submit: marketing ${MARKETING} Dist build ${IOS_BUILD_NUMBER}."
+          echo "No signing on this job (Dist upload already finished)."
+          node tools/asc-ios.mjs submit-review
