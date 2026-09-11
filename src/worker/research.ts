@@ -499,7 +499,7 @@ export async function streamResearch(
   profitHorizonYears?: number
 ): Promise<void> {
   try {
-    const system = getSystemPrompt(directive);
+    const system = getSystemPrompt(directive, profitHorizonYears);
     const user = buildUserPrompt(mode, payloads, directive, profitHorizonYears);
     let result = await analyzeStream(
       env,
@@ -611,7 +611,7 @@ export async function streamResearchParallel(
         const runTicker = (): Promise<Attempt> =>
           analyzeStream(
             env,
-            getSystemPrompt(directive),
+            getSystemPrompt(directive, profitHorizonYears),
             buildUserPrompt("separate", [payload], directive, profitHorizonYears),
             RESEARCH_MAX_TOKENS,
             (text) => {
