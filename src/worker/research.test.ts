@@ -4,6 +4,7 @@ import { buildUserPrompt, getSystemPrompt } from "./prompt.ts";
 import {
   RESEARCH_MAX_TOKENS,
   buildAnthropicMessagesBody,
+  buildXaiChatBody,
   classifyUpstreamFailure,
   isProviderBillingError,
   shouldFailoverStatus,
@@ -98,5 +99,29 @@ describe("Anthropic Messages payload shape", () => {
     assert.match(body.system, /~18-year compounding/);
     assert.match(body.system, /12-month \+ 5-year \+ 18-year outlook/);
     JSON.parse(JSON.stringify(body));
+  });
+});
+
+describe("xAI Chat Completions payload shape", () => {
+  it("omits deprecated search_parameters (xAI 410 Live search is deprecated)", () => {
+    const body = buildXaiChatBody(
+      "grok-4.5",
+      getSystemPrompt("aggressive_growth", 2),
+      buildUserPrompt("separate", [{ symbol: "AVGO" }], "aggressive_growth", 2),
+      RESEARCH_MAX_TOKENS
+    );
+    assert.equal(body.model, "grok-4.5");
+    assert.equal(body.stream, true);
+    assert.equal(body.max_completion_tokens, 12_000);
+    assert.equal(body.messages[0].role, "system");
+    assert.equal(body.messages[1].role, "user");
+    assert.ok(body.messages[1].content.includes("AVGO"));
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(body, "search_parameters"),
+      false
+    );
+    const serialized = JSON.stringify(body);
+    assert.doesNotMatch(serialized, /search_parameters/);
+    assert.deepEqual(JSON.parse(serialized), body);
   });
 });

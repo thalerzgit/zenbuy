@@ -112,6 +112,33 @@ export function buildAnthropicMessagesBody(
   };
 }
 
+/**
+ * xAI Chat Completions body. Do not send `search_parameters` — xAI now
+ * returns HTTP 410 ("Live search is deprecated") even for `{ mode: "off" }`.
+ * Omitting the field keeps reports on injected Finnhub numbers.
+ */
+export function buildXaiChatBody(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number
+): {
+  model: string;
+  max_completion_tokens: number;
+  stream: true;
+  messages: Array<{ role: "system" | "user"; content: string }>;
+} {
+  return {
+    model,
+    max_completion_tokens: maxTokens,
+    stream: true,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+}
+
 function anthropicUrl(env: Env): string {
   if (env.AI_GATEWAY_ACCOUNT_ID && env.AI_GATEWAY_ID) {
     return `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}/anthropic/v1/messages`;
@@ -410,17 +437,7 @@ async function consumeXai(
   maxTokens: number,
   onText: (text: string) => void
 ): Promise<Attempt> {
-  const body = {
-    model: backupModel(env),
-    max_completion_tokens: maxTokens,
-    stream: true,
-    // Reports must stay on injected Finnhub numbers, not live search.
-    search_parameters: { mode: "off" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  };
+  const body = buildXaiChatBody(backupModel(env), system, user, maxTokens);
 
   let res: Response;
   try {
