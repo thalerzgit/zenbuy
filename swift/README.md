@@ -60,7 +60,8 @@ Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, 
 Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6):
 
 1. **Validate rails** — ASC + Dist secrets, Xcode 26.6, ExportOptions (manual Dist) / scheme / team / bundle id.
-2. **Archive and upload** — import Dist p12 + App Store profile, archive with `CODE_SIGN_STYLE=Manual` (no `-allowProvisioningUpdates`), export+upload; invite `thalerz@me.com` **only after a successful upload**. Does **not** submit for App Store review.
+2. **Archive and upload** — import Dist p12 + App Store profile, archive with `CODE_SIGN_STYLE=Manual` (no `-allowProvisioningUpdates`), export+upload; invite `thalerz@me.com` **only after a successful upload**.
+3. **App Store review** — after the Dist build is `VALID`, `tools/asc-ios.mjs submit-review` retracts any in-flight iOS review, attaches the latest VALID build, sets What’s New, and submits. Ubuntu/ASC API only — never Dev certs, never `-allowProvisioningUpdates`.
 
 Automatic signing on ephemeral runners mints iOS Development certs and fails when the Apple account is at the 3-cert cap. CI uses **manual Distribution signing** only.
 
@@ -68,7 +69,7 @@ Repo Actions secrets required (stamp from Mini — never invent/commit keys or c
 
 | Secret | Role |
 |--------|------|
-| `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` | ASC API (ensure-app, invite, IPA upload) |
+| `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` | ASC API (ensure-app, invite, IPA upload, submit-review) |
 | `ASC_DIST_P12_BASE64` | Apple Distribution .p12 (legacy 3DES — AES-PBES2 fails `security import`) |
 | `ASC_DIST_P12_PASSWORD` | Password for that p12 |
 | `ASC_PROFILE_APP_BASE64` | App Store profile **CI info.zenbuy.app AppStore** (no widget) |
@@ -96,5 +97,5 @@ xcodebuild test \
 
 ## Versioning
 
-- Marketing version: `1.3` (`Config/Shared.xcconfig`)
-- Build number: `CURRENT_PROJECT_VERSION` in the same file — bump before each TestFlight upload.
+- Marketing version: `1.4` (`Config/Shared.xcconfig`)
+- Build number: CI stamps `CURRENT_PROJECT_VERSION` as `GITHUB_RUN_NUMBER + offset` (default offset `100`). Do not bump it for each upload.
