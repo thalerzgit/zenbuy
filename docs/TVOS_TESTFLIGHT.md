@@ -31,11 +31,16 @@ Never use `.buttonStyle(.bordered)` / `.borderedProminent` with `.tint(green)` o
 | CTA (Continue, Generate report) | `.buttonStyle(.tvPrimary)` | green fill, white label | dark-green fill, white label, gold ring, lift |
 | Secondary (Change setup, Back) | `.buttonStyle(.tvSecondary)` | white fill, green border, dark-green label | same as focused primary |
 | Chip (About this goal, picks) | `.buttonStyle(.tvChip)` | white fill, green border, dark-green label | same as focused primary |
-| Wizard card | `.buttonStyle(.tvCard(selected:minHeight:))` | white (or pale green when selected) with dark text in every state | green ring + lift |
-| Read-only report card | `TVFocusableCard` | white card | green ring |
+| Wizard card | `.buttonStyle(.tvCard(selected:minHeight:))` | white (or pale green when selected) with dark text in every state | gold ring + lift |
+| Read-only report card | `TVFocusableCard` | white card | gold ring |
+
+Gold is the only focus colour on TV. A green focus ring is unreadable on the cards that already carry a green *selected* border — and every discover result arrives pre-selected, so all four looked identical at 10 feet.
 
 Other tvOS constraints baked into the target:
 
+- **Every row of a page needs `.tvFocusRow()`** (`frame(maxWidth: .infinity) + focusSection()`). tvOS moves focus geometrically: a swipe only lands on a focusable view sitting in the corridor directly in the direction of travel, and a move with nothing in that corridor is silently dropped — the remote stops working and the screen looks frozen. It bites whenever a trailing control (the summary bar's "Change setup", a right-hand card) sits above leading-aligned content, which is most of this app. A row-wide focus section accepts the move instead and hands focus to its nearest focusable child. Sections only catch moves that cross them, so the rows on both sides of a hop each need one.
+- A control that is `.disabled` while an async call runs is not focusable. Disabling the only CTA on screen during a request leaves the focus engine nowhere to go — keep the button enabled and guard its action.
+- Async results that add focusable views do not move focus. Park focus explicitly (`@FocusState` + `.onChange`, with `.defaultFocus` for first appearance) or the user is left on whatever the focus engine picked while the screen was still loading.
 - Type comes from the `TVTheme` scale (explicit point sizes, body ≥ 29pt). Semantic styles are outsized on TV — `.title2` is 48pt and truncated card titles.
 - Cards get `lineLimit` + `minimumScaleFactor` + `fixedSize(vertical:)` and a `minHeight` so a row of cards is uniform and no title truncates.
 - A `ScrollView` whose content is all text does not scroll with the Siri Remote — long report sections must be focusable (`TVFocusableCard`).
