@@ -12,10 +12,12 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 |-------|----------|
 | TV target + 10-foot UI | `swift/ZenBuyTV/` |
 | Scheme | `ZenBuyTV` (archive Release) |
+| Brand assets | `ZenBuyTV/Resources/Assets.xcassets/AppIcon.brandassets` — layered `App Icon` / `App Icon - App Store` plus Top Shelf Image Wide (`2320×720` / `4640×1440`). `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. |
+| Info.plist keys | `swift/ZenBuyTV/Info.plist` merged via `TVOS.xcconfig` (`CFBundleIcons.CFBundlePrimaryIcon`, `TVTopShelfImage.TVTopShelfPrimaryImageWide`) |
 | ExportOptions | `swift/ExportOptions-tvos.plist` (manual Dist, upload) |
 | Dist workflow | `.github/workflows/tvos-testflight.yml` |
 | ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`) |
-| Marketing version | `1.4` from `swift/Config/Shared.xcconfig` |
+| Marketing version | `1.5` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 
 Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). No StoreKit / web unlock / PDF share on TV — living-room research uses the free weekly device quota.

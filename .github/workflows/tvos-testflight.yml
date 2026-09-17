@@ -139,6 +139,18 @@ jobs:
           grep -q 'BuildableName = "ZenBuy.app"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme
           grep -q 'buildConfiguration = "Release"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme
 
+          BRAND="ZenBuyTV/Resources/Assets.xcassets/AppIcon.brandassets/Contents.json"
+          test -f "${BRAND}"
+          grep -q 'primary-app-icon' "${BRAND}"
+          grep -q 'top-shelf-image-wide' "${BRAND}"
+          grep -q 'App Icon.imagestack' "${BRAND}"
+          grep -q 'Top Shelf Image Wide.imageset' "${BRAND}"
+          test -f ZenBuyTV/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' ZenBuyTV/Info.plist | grep -qx 'App Icon'
+          /usr/libexec/PlistBuddy -c 'Print :TVTopShelfImage:TVTopShelfPrimaryImageWide' ZenBuyTV/Info.plist | grep -qx 'Top Shelf Image Wide'
+          grep -q 'INFOPLIST_FILE = ZenBuyTV/Info.plist' Config/TVOS.xcconfig
+          test ! -d ZenBuyTV/Resources/Assets.xcassets/AppIcon.appiconset
+
           echo "--- xcodebuild -list ---"
           xcodebuild -list -project "${TVOS_PROJECT}" | tee "${RUNNER_TEMP}/xcodebuild-list.txt"
           grep -q "^[[:space:]]*${TVOS_SCHEME}$" "${RUNNER_TEMP}/xcodebuild-list.txt"
@@ -317,6 +329,25 @@ jobs:
             CURRENT_PROJECT_VERSION="${TVOS_BUILD_NUMBER}" \
             CODE_SIGN_ENTITLEMENTS= \
             archive | beautify
+
+      - name: Confirm archived Info.plist has tvOS icon + Top Shelf keys
+        run: |
+          set -euo pipefail
+          APP_PLIST="${RUNNER_TEMP}/ZenBuyTV.xcarchive/Products/Applications/ZenBuy.app/Info.plist"
+          test -f "${APP_PLIST}"
+          echo "--- archived CFBundleIcons ---"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIcons' "${APP_PLIST}"
+          echo "--- archived TVTopShelfImage ---"
+          /usr/libexec/PlistBuddy -c 'Print :TVTopShelfImage' "${APP_PLIST}"
+          ICON=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "${APP_PLIST}" 2>/dev/null || true)
+          if [ -z "${ICON}" ]; then
+            ICON=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon' "${APP_PLIST}" 2>/dev/null || true)
+          fi
+          WIDE=$(/usr/libexec/PlistBuddy -c 'Print :TVTopShelfImage:TVTopShelfPrimaryImageWide' "${APP_PLIST}")
+          [ -n "${ICON}" ]
+          [ -n "${WIDE}" ]
+          echo "CFBundlePrimaryIcon=${ICON}"
+          echo "TVTopShelfPrimaryImageWide=${WIDE}"
 
       - name: Export and upload to App Store Connect
         id: export_upload

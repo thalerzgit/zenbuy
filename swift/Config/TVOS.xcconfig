@@ -9,3 +9,6 @@ TVOS_DEPLOYMENT_TARGET = 17.0
 SDKROOT = appletvos
 ZENBUY_ENTITLEMENTS =
 CODE_SIGN_ENTITLEMENTS =
+// Merged with GENERATE_INFOPLIST_FILE. Names match AppIcon.brandassets
+// (actool also emits these from primary-app-icon / top-shelf-image-wide).
+INFOPLIST_FILE = ZenBuyTV/Info.plist
