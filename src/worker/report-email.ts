@@ -161,16 +161,8 @@ export async function handleReportEmail(
     return json({ error: parsed.error, code: parsed.code }, parsed.status);
   }
 
-  if (!(await claimSend(env.CACHE, callerId(request)))) {
-    return json(
-      {
-        error: `That's ${REPORT_EMAIL_DAILY_LIMIT} emailed reports today. Try again tomorrow.`,
-        code: "rate_limited",
-      },
-      429
-    );
-  }
-
+  // Looked up before the counter moves so an expired report does not cost the
+  // viewer one of the day's sends.
   const report = await cacheGet<CachedReport>(env.CACHE, parsed.reportId);
   if (!report?.bottomLineHtml?.trim() && !report?.bodyHtml?.trim()) {
     return json(
@@ -179,6 +171,16 @@ export async function handleReportEmail(
         code: "report_expired",
       },
       404
+    );
+  }
+
+  if (!(await claimSend(env.CACHE, callerId(request)))) {
+    return json(
+      {
+        error: `That's ${REPORT_EMAIL_DAILY_LIMIT} emailed reports today. Try again tomorrow.`,
+        code: "rate_limited",
+      },
+      429
     );
   }
 
