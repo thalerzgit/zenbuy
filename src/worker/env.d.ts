@@ -51,4 +51,16 @@ interface Env {
   APP_STORE_URL?: string;
   /** Body of Apple's domain-association file, served under /.well-known/. */
   APPLE_DOMAIN_ASSOCIATION?: string;
+
+  /**
+   * Resend API key for `POST /api/report/email`, which mails a finished report
+   * as a colour PDF (the Apple TV share control). Worker secret — never a var.
+   * Unset disables the endpoint with a 503 instead of failing mid-send.
+   */
+  RESEND_API_KEY?: string;
+  /**
+   * From header for those emails, e.g. `ZenBuy <reports@zenbuy.info>`. Must be
+   * on a domain verified for sending in Resend.
+   */
+  REPORT_EMAIL_FROM?: string;
 }

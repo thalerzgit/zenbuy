@@ -51,7 +51,11 @@
     // Public download URL for the header "Get the App" pill and the unlock
     // guide store row. Official App Store listing now that the app is
     // generally available. Empty hides both surfaces.
-    "APP_STORE_URL": "https://apps.apple.com/app/id6807960678"
+    "APP_STORE_URL": "https://apps.apple.com/app/id6807960678",
+    // From header for the Apple TV "Email PDF" control. Must be a domain
+    // verified for sending in Resend; move to reports@zenbuy.info once that
+    // domain is verified. The RESEND_API_KEY beside it is a Worker secret.
+    "REPORT_EMAIL_FROM": "ZenBuy Reports <zenbuy@cybermansoft.com>"
   },
   "routes": [
     {
