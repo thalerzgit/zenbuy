@@ -79,7 +79,11 @@ enum ZenBuyAPIError: LocalizedError {
 @MainActor
 final class ZenBuyAPIClient {
     private static let clientHeader = "X-ZenBuy-Client"
+    #if os(tvOS)
+    private static let clientValue = "tvos"
+    #else
     private static let clientValue = "ios"
+    #endif
     private static let deviceHeader = "X-ZenBuy-Device"
 
     private let session: URLSession

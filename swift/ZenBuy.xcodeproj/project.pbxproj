@@ -39,6 +39,32 @@
 		A1000000000000000000000E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000000F /* ZenBuyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* ZenBuyTests.swift */; };
 		A10000000000000000000010 /* ZenBuyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* ZenBuyUITests.swift */; };
+
+		A20000000000000000000001 /* ZenBuyTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* ZenBuyTVApp.swift */; };
+		A20000000000000000000002 /* TVContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* TVContentView.swift */; };
+		A20000000000000000000003 /* TVOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* TVOnboardingView.swift */; };
+		A20000000000000000000004 /* TVBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* TVBrowseView.swift */; };
+		A20000000000000000000005 /* TVReportModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* TVReportModeView.swift */; };
+		A20000000000000000000006 /* TVReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* TVReportView.swift */; };
+		A20000000000000000000007 /* TVTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* TVTheme.swift */; };
+		A20000000000000000000008 /* TVDirectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* TVDirectiveDetailView.swift */; };
+		A20000000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* Assets.xcassets */; };
+		A2000000000000000000000A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
+		A21000000000000000000003 /* ZenBuyEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ZenBuyEnvironment.swift */; };
+		A21000000000000000000004 /* ZenBuyAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* ZenBuyAPIClient.swift */; };
+		A21000000000000000000005 /* SSEStreamReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* SSEStreamReader.swift */; };
+		A21000000000000000000006 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* APIModels.swift */; };
+		A21000000000000000000007 /* ZenBuyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* ZenBuyTheme.swift */; };
+		A21000000000000000000008 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SearchViewModel.swift */; };
+		A21000000000000000000009 /* ReportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* ReportViewModel.swift */; };
+		A2100000000000000000000A /* ReportHTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* ReportHTML.swift */; };
+		A2100000000000000000000B /* ReportHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* ReportHTMLView.swift */; };
+		A2100000000000000000000C /* InvestmentDirectives.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* InvestmentDirectives.swift */; };
+		A2100000000000000000000D /* ProcessingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001C /* ProcessingProgress.swift */; };
+		A2100000000000000000000E /* ProcessingPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001D /* ProcessingPanelView.swift */; };
+		A2100000000000000000000F /* ReportVerboseLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ReportVerboseLog.swift */; };
+		A21000000000000000000010 /* ZenBuyBrandMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* ZenBuyBrandMark.swift */; };
+		A21000000000000000000011 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* FlowLayout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,6 +124,18 @@
 		F10000000000000000000001 /* ZenBuy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZenBuy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000000000000000000002 /* ZenBuyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZenBuyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000000000000000000003 /* ZenBuyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZenBuyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+
+		B20000000000000000000001 /* ZenBuyTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyTVApp.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* TVContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVContentView.swift; sourceTree = "<group>"; };
+		B20000000000000000000003 /* TVOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVOnboardingView.swift; sourceTree = "<group>"; };
+		B20000000000000000000004 /* TVBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVBrowseView.swift; sourceTree = "<group>"; };
+		B20000000000000000000005 /* TVReportModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVReportModeView.swift; sourceTree = "<group>"; };
+		B20000000000000000000006 /* TVReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVReportView.swift; sourceTree = "<group>"; };
+		B20000000000000000000007 /* TVTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVTheme.swift; sourceTree = "<group>"; };
+		B20000000000000000000008 /* TVDirectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVDirectiveDetailView.swift; sourceTree = "<group>"; };
+		B20000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B2000000000000000000000A /* TVOS.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = TVOS.xcconfig; sourceTree = "<group>"; };
+		F20000000000000000000001 /* ZenBuy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZenBuy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +160,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+
+		G20000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -130,6 +176,7 @@
 			children = (
 				H10000000000000000000002 /* Config */,
 				H10000000000000000000003 /* ZenBuy */,
+				H20000000000000000000001 /* ZenBuyTV */,
 				H10000000000000000000004 /* ZenBuyTests */,
 				H10000000000000000000005 /* ZenBuyUITests */,
 				H10000000000000000000006 /* Products */,
@@ -142,6 +189,7 @@
 				B10000000000000000000013 /* Shared.xcconfig */,
 				B10000000000000000000011 /* Debug.xcconfig */,
 				B10000000000000000000012 /* Release.xcconfig */,
+				B2000000000000000000000A /* TVOS.xcconfig */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -180,6 +228,7 @@
 			isa = PBXGroup;
 			children = (
 				F10000000000000000000001 /* ZenBuy.app */,
+				F20000000000000000000001 /* ZenBuy.app */,
 				F10000000000000000000002 /* ZenBuyTests.xctest */,
 				F10000000000000000000003 /* ZenBuyUITests.xctest */,
 			);
@@ -298,6 +347,71 @@
 			path = Unlock;
 			sourceTree = "<group>";
 		};
+
+		H20000000000000000000001 /* ZenBuyTV */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000001 /* ZenBuyTVApp.swift */,
+				B20000000000000000000002 /* TVContentView.swift */,
+				H20000000000000000000002 /* Features */,
+				H20000000000000000000006 /* Theme */,
+				H20000000000000000000007 /* Resources */,
+			);
+			path = ZenBuyTV;
+			sourceTree = "<group>";
+		};
+		H20000000000000000000002 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				H20000000000000000000003 /* Onboarding */,
+				H20000000000000000000004 /* Browse */,
+				H20000000000000000000005 /* Report */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		H20000000000000000000003 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000003 /* TVOnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		H20000000000000000000004 /* Browse */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000004 /* TVBrowseView.swift */,
+				B20000000000000000000008 /* TVDirectiveDetailView.swift */,
+			);
+			path = Browse;
+			sourceTree = "<group>";
+		};
+		H20000000000000000000005 /* Report */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000005 /* TVReportModeView.swift */,
+				B20000000000000000000006 /* TVReportView.swift */,
+			);
+			path = Report;
+			sourceTree = "<group>";
+		};
+		H20000000000000000000006 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000007 /* TVTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		H20000000000000000000007 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000009 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -354,6 +468,24 @@
 			productReference = F10000000000000000000003 /* ZenBuyUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+
+		E20000000000000000000001 /* ZenBuyTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = I20000000000000000000001 /* Build configuration list for PBXNativeTarget "ZenBuyTV" */;
+			buildPhases = (
+				J20000000000000000000001 /* Sources */,
+				G20000000000000000000001 /* Frameworks */,
+				K20000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ZenBuyTV;
+			productName = ZenBuy;
+			productReference = F20000000000000000000001 /* ZenBuy.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -375,6 +507,9 @@
 						CreatedOnToolsVersion = 16.0;
 						TestTargetID = E10000000000000000000001;
 					};
+					E20000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
 				};
 			};
 			buildConfigurationList = I10000000000000000000001 /* Build configuration list for PBXProject "ZenBuy" */;
@@ -391,6 +526,7 @@
 			projectRoot = "";
 			targets = (
 				E10000000000000000000001 /* ZenBuy */,
+				E20000000000000000000001 /* ZenBuyTV */,
 				E10000000000000000000002 /* ZenBuyTests */,
 				E10000000000000000000003 /* ZenBuyUITests */,
 			);
@@ -418,6 +554,16 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		K20000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A20000000000000000000009 /* Assets.xcassets in Resources */,
+				A2000000000000000000000A /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -472,6 +618,37 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000010 /* ZenBuyUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		J20000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A20000000000000000000001 /* ZenBuyTVApp.swift in Sources */,
+				A20000000000000000000002 /* TVContentView.swift in Sources */,
+				A20000000000000000000003 /* TVOnboardingView.swift in Sources */,
+				A20000000000000000000004 /* TVBrowseView.swift in Sources */,
+				A20000000000000000000005 /* TVReportModeView.swift in Sources */,
+				A20000000000000000000006 /* TVReportView.swift in Sources */,
+				A20000000000000000000007 /* TVTheme.swift in Sources */,
+				A20000000000000000000008 /* TVDirectiveDetailView.swift in Sources */,
+				A21000000000000000000003 /* ZenBuyEnvironment.swift in Sources */,
+				A21000000000000000000004 /* ZenBuyAPIClient.swift in Sources */,
+				A21000000000000000000005 /* SSEStreamReader.swift in Sources */,
+				A21000000000000000000006 /* APIModels.swift in Sources */,
+				A21000000000000000000007 /* ZenBuyTheme.swift in Sources */,
+				A21000000000000000000008 /* SearchViewModel.swift in Sources */,
+				A21000000000000000000009 /* ReportViewModel.swift in Sources */,
+				A2100000000000000000000A /* ReportHTML.swift in Sources */,
+				A2100000000000000000000B /* ReportHTMLView.swift in Sources */,
+				A2100000000000000000000C /* InvestmentDirectives.swift in Sources */,
+				A2100000000000000000000D /* ProcessingProgress.swift in Sources */,
+				A2100000000000000000000E /* ProcessingPanelView.swift in Sources */,
+				A2100000000000000000000F /* ReportVerboseLog.swift in Sources */,
+				A21000000000000000000010 /* ZenBuyBrandMark.swift in Sources */,
+				A21000000000000000000011 /* FlowLayout.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -672,6 +849,72 @@
 			};
 			name = Release;
 		};
+
+		M20000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = B2000000000000000000000A /* TVOS.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = ZenBuy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_ZENBUY_API_BASE_URL = "$(ZENBUY_API_BASE_URL)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(MARKETING_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = info.zenbuy.app;
+				PRODUCT_NAME = ZenBuy;
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = "$(SWIFT_VERSION)";
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+		M20000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = B2000000000000000000000A /* TVOS.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(CURRENT_PROJECT_VERSION)";
+				DEVELOPMENT_TEAM = XQP4QUVJYY;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = ZenBuy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_ZENBUY_API_BASE_URL = "$(ZENBUY_API_BASE_URL)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = "$(MARKETING_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = info.zenbuy.app;
+				PRODUCT_NAME = ZenBuy;
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = "$(SWIFT_VERSION)";
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -707,6 +950,16 @@
 			buildConfigurations = (
 				M10000000000000000000007 /* Debug */,
 				M10000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+
+		I20000000000000000000001 /* Build configuration list for PBXNativeTarget "ZenBuyTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				M20000000000000000000001 /* Debug */,
+				M20000000000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

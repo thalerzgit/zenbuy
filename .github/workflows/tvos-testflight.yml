@@ -1,49 +1,52 @@
-# Archive ZenBuy, upload Dist to TestFlight, then submit the VALID build
-# for App Store review (retract any in-flight iOS review first).
+# Archive ZenBuyTV, upload Dist to TestFlight (internal). No App Store review.
 #
-# Pattern: MyRepresent Dist — MANUAL App Store signing.
-# Automatic signing + -allowProvisioningUpdates mints ephemeral iOS Development
-# certs on the runner and dies when the Apple account is at the 3-cert cap
-# (Actions run 33673973276 / build 107).
+# Pattern: same Dist rails as iOS TestFlight — MANUAL App Store signing.
+# NEVER -allowProvisioningUpdates. NEVER mint Development certificates.
 #
 # Jobs:
-#   1) Validate rails — ExportOptions (manual Dist) / scheme / team / secrets / Xcode.
-#   2) Archive and upload — import Dist p12 + App Store profile, archive with
-#      CODE_SIGN_STYLE=Manual (no -allowProvisioningUpdates), export+upload,
-#      then invite thalerz@me.com only after a successful upload.
-#   3) Submit review — Ubuntu + ASC API only (no signing). Wait VALID, retract
-#      in-review if needed, attach latest Dist build, set What’s New, submit.
-name: TestFlight
+#   1) Validate rails — ExportOptions-tvos (manual Dist) / scheme / team / secrets.
+#   2) Archive and upload — Dist p12 + tvOS App Store profile, archive with
+#      CODE_SIGN_STYLE=Manual, export+upload, invite thalerz@me.com after upload.
+#   3) Wait VALID — Ubuntu + ASC API only (no signing).
+name: TestFlight tvOS
 
 on:
   push:
     branches: [main]
     paths:
-      - "swift/**"
-      - ".github/workflows/ios-testflight.yml"
-      - "tools/asc-ios.mjs"
+      - "swift/ZenBuyTV/**"
+      - "swift/ExportOptions-tvos.plist"
+      - "swift/Config/TVOS.xcconfig"
+      - "swift/ZenBuy.xcodeproj/**"
+      - "swift/ZenBuy/Core/**"
+      - "swift/ZenBuy/Features/Search/SearchViewModel.swift"
+      - "swift/ZenBuy/Features/Report/ReportViewModel.swift"
+      - "swift/ZenBuy/Features/Report/ReportHTML.swift"
+      - "swift/ZenBuy/Features/Report/ReportHTMLView.swift"
+      - "swift/ZenBuy/Features/Report/ProcessingProgress.swift"
+      - "swift/ZenBuy/Features/Report/ProcessingPanelView.swift"
+      - "swift/ZenBuy/Components/ZenBuyBrandMark.swift"
+      - "swift/ZenBuy/Components/FlowLayout.swift"
+      - ".github/workflows/tvos-testflight.yml"
+      - "tools/asc-tvos.mjs"
       - "!swift/**/*.md"
       - "!swift/**/*.txt"
-      - "!swift/ZenBuyTV/**"
-      - "!swift/ExportOptions-tvos.plist"
-      - "!swift/Config/TVOS.xcconfig"
-      - "!swift/ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-testflight-${{ github.ref }}
+  group: tvos-testflight-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  IOS_PROJECT: ZenBuy.xcodeproj
-  IOS_SCHEME: ZenBuy
-  IOS_BUNDLE_ID: info.zenbuy.app
-  IOS_TEAM_ID: XQP4QUVJYY
-  IOS_TESTER_EMAIL: thalerz@me.com
-  IOS_PROFILE_NAME: CI info.zenbuy.app AppStore
+  TVOS_PROJECT: ZenBuy.xcodeproj
+  TVOS_SCHEME: ZenBuyTV
+  TVOS_BUNDLE_ID: info.zenbuy.app
+  TVOS_TEAM_ID: XQP4QUVJYY
+  TVOS_TESTER_EMAIL: thalerz@me.com
+  TVOS_PROFILE_NAME: CI info.zenbuy.app tvOS AppStore
 
 jobs:
   rails:
@@ -65,25 +68,26 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_DIST_P12_BASE64: ${{ secrets.ASC_DIST_P12_BASE64 }}
           ASC_DIST_P12_PASSWORD: ${{ secrets.ASC_DIST_P12_PASSWORD }}
-          ASC_PROFILE_APP_BASE64: ${{ secrets.ASC_PROFILE_APP_BASE64 }}
+          ASC_PROFILE_TVOS_BASE64: ${{ secrets.ASC_PROFILE_TVOS_BASE64 }}
         run: |
           set -euo pipefail
           missing=0
-          for name in ASC_ISSUER_ID ASC_KEY_ID ASC_PRIVATE_KEY ASC_DIST_P12_BASE64 ASC_DIST_P12_PASSWORD ASC_PROFILE_APP_BASE64; do
+          for name in ASC_ISSUER_ID ASC_KEY_ID ASC_PRIVATE_KEY ASC_DIST_P12_BASE64 ASC_DIST_P12_PASSWORD ASC_PROFILE_TVOS_BASE64; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not set on this repository"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::ASC / Dist secrets missing on thalerzgit/zenbuy."
-            echo "BLOCKER: CoS stamps from Mini (never invent/commit certs):"
+            echo "::error::ASC / Dist tvOS secrets missing on thalerzgit/zenbuy."
+            echo "BLOCKER: stamp from Mini (never invent/commit certs):"
             echo "  ASC_ISSUER_ID, ASC_KEY_ID, ASC_PRIVATE_KEY"
             echo "  ASC_DIST_P12_BASE64 (legacy 3DES p12), ASC_DIST_P12_PASSWORD"
-            echo "  ASC_PROFILE_APP_BASE64 (profile name: CI info.zenbuy.app AppStore)"
+            echo "  ASC_PROFILE_TVOS_BASE64 (profile name: CI info.zenbuy.app tvOS AppStore)"
+            echo "See docs/TVOS_TESTFLIGHT.md. Do not mint Development certs."
             exit 1
           fi
-          echo "ASC API + Dist signing secrets are present (values not printed)."
+          echo "ASC API + Dist tvOS signing secrets are present (values not printed)."
 
       - name: Select Xcode 26.6
         working-directory: ${{ github.workspace }}
@@ -97,9 +101,6 @@ jobs:
             exit 1
           fi
           sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
-          # Capture then case-match. Do not pipe xcodebuild -version to grep -q:
-          # SIGPIPE abort (exit 134) after Xcode 26.6 selected (MyRepresent /
-          # Actions run 33473157844).
           XCODE_VER="$(xcodebuild -version)"
           printf '%s\n' "${XCODE_VER}"
           case "${XCODE_VER}" in
@@ -114,34 +115,34 @@ jobs:
       - name: Validate ExportOptions, scheme, bundle id, team
         run: |
           set -euo pipefail
-          test -f ExportOptions.plist
-          test -f ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
+          test -f ExportOptions-tvos.plist
+          test -f ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme
 
-          method=$(plutil -extract method raw -o - ExportOptions.plist)
-          dest=$(plutil -extract destination raw -o - ExportOptions.plist)
-          style=$(plutil -extract signingStyle raw -o - ExportOptions.plist)
-          team=$(plutil -extract teamID raw -o - ExportOptions.plist)
-          manage=$(plutil -extract manageAppVersionAndBuildNumber raw -o - ExportOptions.plist)
-          profile=$(/usr/libexec/PlistBuddy -c 'Print :provisioningProfiles:info.zenbuy.app' ExportOptions.plist)
+          method=$(plutil -extract method raw -o - ExportOptions-tvos.plist)
+          dest=$(plutil -extract destination raw -o - ExportOptions-tvos.plist)
+          style=$(plutil -extract signingStyle raw -o - ExportOptions-tvos.plist)
+          team=$(plutil -extract teamID raw -o - ExportOptions-tvos.plist)
+          manage=$(plutil -extract manageAppVersionAndBuildNumber raw -o - ExportOptions-tvos.plist)
+          profile=$(/usr/libexec/PlistBuddy -c 'Print :provisioningProfiles:info.zenbuy.app' ExportOptions-tvos.plist)
           [ "${method}" = "app-store-connect" ]
           [ "${dest}" = "upload" ]
           [ "${style}" = "manual" ]
-          [ "${team}" = "${IOS_TEAM_ID}" ]
+          [ "${team}" = "${TVOS_TEAM_ID}" ]
           [ "${manage}" = "false" ]
-          [ "${profile}" = "${IOS_PROFILE_NAME}" ]
+          [ "${profile}" = "${TVOS_PROFILE_NAME}" ]
 
-          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_ID};" ZenBuy.xcodeproj/project.pbxproj
-          grep -q "DEVELOPMENT_TEAM = ${IOS_TEAM_ID};" ZenBuy.xcodeproj/project.pbxproj
-          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_ID}" Config/Shared.xcconfig
-          grep -q "DEVELOPMENT_TEAM = ${IOS_TEAM_ID}" Config/Shared.xcconfig
-          grep -q 'BlueprintName = "ZenBuy"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
-          grep -q 'BuildableName = "ZenBuy.app"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
-          grep -q 'buildConfiguration = "Release"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuy.xcscheme
+          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${TVOS_BUNDLE_ID};" ZenBuy.xcodeproj/project.pbxproj
+          grep -q "name = ZenBuyTV;" ZenBuy.xcodeproj/project.pbxproj
+          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${TVOS_BUNDLE_ID}" Config/TVOS.xcconfig
+          grep -q "DEVELOPMENT_TEAM = ${TVOS_TEAM_ID}" Config/Shared.xcconfig
+          grep -q 'BlueprintName = "ZenBuyTV"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme
+          grep -q 'BuildableName = "ZenBuy.app"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme
+          grep -q 'buildConfiguration = "Release"' ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme
 
           echo "--- xcodebuild -list ---"
-          xcodebuild -list -project "${IOS_PROJECT}" | tee "${RUNNER_TEMP}/xcodebuild-list.txt"
-          grep -q "^[[:space:]]*${IOS_SCHEME}$" "${RUNNER_TEMP}/xcodebuild-list.txt"
-          echo "Rails check passed: scheme ${IOS_SCHEME}, bundle ${IOS_BUNDLE_ID}, team ${IOS_TEAM_ID}, profile '${IOS_PROFILE_NAME}' (manual Dist)."
+          xcodebuild -list -project "${TVOS_PROJECT}" | tee "${RUNNER_TEMP}/xcodebuild-list.txt"
+          grep -q "^[[:space:]]*${TVOS_SCHEME}$" "${RUNNER_TEMP}/xcodebuild-list.txt"
+          echo "Rails check passed: scheme ${TVOS_SCHEME}, bundle ${TVOS_BUNDLE_ID}, team ${TVOS_TEAM_ID}, profile '${TVOS_PROFILE_NAME}' (manual Dist)."
 
   upload:
     name: Archive and upload
@@ -204,60 +205,43 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          OFFSET="${{ vars.IOS_BUILD_NUMBER_OFFSET }}"
+          OFFSET="${{ vars.TVOS_BUILD_NUMBER_OFFSET }}"
           if [ -z "${OFFSET}" ]; then
-            OFFSET=100
+            OFFSET=5000
           fi
           case "${OFFSET}" in
             ''|*[!0-9]*)
-              echo "::error::vars.IOS_BUILD_NUMBER_OFFSET must be a non-negative integer (got '${OFFSET}')"
+              echo "::error::vars.TVOS_BUILD_NUMBER_OFFSET must be a non-negative integer (got '${OFFSET}')"
               exit 1
               ;;
           esac
           BUILD=$((GITHUB_RUN_NUMBER + OFFSET))
-          echo "IOS_BUILD_NUMBER=${BUILD}" >> "${GITHUB_ENV}"
+          echo "TVOS_BUILD_NUMBER=${BUILD}" >> "${GITHUB_ENV}"
           echo "build_number=${BUILD}" >> "${GITHUB_OUTPUT}"
           echo "Build ${BUILD} = GITHUB_RUN_NUMBER ${GITHUB_RUN_NUMBER} + offset ${OFFSET}"
           echo "Marketing version comes from Config/Shared.xcconfig (not stamped)."
 
-      # Sign in with Apple needs the capability on the App ID *and* on the
-      # fixed Dist profile this workflow signs against. Turning it on before
-      # the profile is regenerated fails the archive, so it is opt-in.
-      - name: Resolve Sign in with Apple entitlement
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          if [ "${{ vars.IOS_SIGN_IN_WITH_APPLE }}" = "1" ]; then
-            echo "IOS_ENTITLEMENTS=ZenBuy/ZenBuy.entitlements" >> "${GITHUB_ENV}"
-            echo "Sign in with Apple ON — '${IOS_PROFILE_NAME}' must carry the capability."
-          else
-            echo "IOS_ENTITLEMENTS=" >> "${GITHUB_ENV}"
-            echo "Sign in with Apple OFF. Enable it on App ID ${IOS_BUNDLE_ID}, regenerate"
-            echo "'${IOS_PROFILE_NAME}', refresh ASC_PROFILE_APP_BASE64, then set the"
-            echo "repository variable IOS_SIGN_IN_WITH_APPLE=1."
-          fi
-
-      # READ-ONLY check — never creates Bundle ID or ASC app via API.
-      - name: Check App Store Connect app exists
+      # READ-ONLY — never creates Bundle ID, ASC app, or tvOS platform via API.
+      - name: Check App Store Connect tvOS platform exists
         working-directory: ${{ github.workspace }}
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
-        run: node tools/asc-ios.mjs ensure-app
+        run: node tools/asc-tvos.mjs ensure-app
 
-      - name: Import Dist certificate and App Store profile
+      - name: Import Dist certificate and tvOS App Store profile
         working-directory: ${{ github.workspace }}
         env:
           ASC_DIST_P12_BASE64: ${{ secrets.ASC_DIST_P12_BASE64 }}
           ASC_DIST_P12_PASSWORD: ${{ secrets.ASC_DIST_P12_PASSWORD }}
-          ASC_PROFILE_APP_BASE64: ${{ secrets.ASC_PROFILE_APP_BASE64 }}
+          ASC_PROFILE_TVOS_BASE64: ${{ secrets.ASC_PROFILE_TVOS_BASE64 }}
         run: |
           set -euo pipefail
-          KCH="${RUNNER_TEMP}/zenbuy.keychain-db"
+          KCH="${RUNNER_TEMP}/zenbuy-tvos.keychain-db"
           KCH_PASS="ci-${GITHUB_RUN_ID}"
-          echo "IOS_KEYCHAIN_PATH=${KCH}" >> "${GITHUB_ENV}"
+          echo "TVOS_KEYCHAIN_PATH=${KCH}" >> "${GITHUB_ENV}"
 
           security create-keychain -p "${KCH_PASS}" "${KCH}"
           security set-keychain-settings -lut 21600 "${KCH}"
@@ -266,8 +250,6 @@ jobs:
           security default-keychain -s "${KCH}"
 
           printf '%s' "${ASC_DIST_P12_BASE64}" | tr -d '[:space:]' | base64 --decode > "${RUNNER_TEMP}/dist-raw.p12"
-          # Prefer direct import (Mini stamps legacy 3DES). AES-PBES2 fails Apple
-          # `security import` — rewrap with OpenSSL -legacy -descert if needed.
           if ! security import "${RUNNER_TEMP}/dist-raw.p12" -k "${KCH}" -P "${ASC_DIST_P12_PASSWORD}" \
             -T /usr/bin/codesign -T /usr/bin/security; then
             echo "Direct p12 import failed; rewrapping as legacy 3DES…"
@@ -298,17 +280,19 @@ jobs:
           fi
 
           mkdir -p "${HOME}/Library/MobileDevice/Provisioning Profiles"
-          printf '%s' "${ASC_PROFILE_APP_BASE64}" | tr -d '[:space:]' | base64 --decode > "${RUNNER_TEMP}/app.mobileprovision"
-          security cms -D -i "${RUNNER_TEMP}/app.mobileprovision" > "${RUNNER_TEMP}/pp.plist"
+          printf '%s' "${ASC_PROFILE_TVOS_BASE64}" | tr -d '[:space:]' | base64 --decode > "${RUNNER_TEMP}/tvos.mobileprovision"
+          security cms -D -i "${RUNNER_TEMP}/tvos.mobileprovision" > "${RUNNER_TEMP}/pp.plist"
           UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "${RUNNER_TEMP}/pp.plist")
           NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "${RUNNER_TEMP}/pp.plist")
-          if [ "${NAME}" != "${IOS_PROFILE_NAME}" ]; then
-            echo "::error::Installed profile name '${NAME}' != expected '${IOS_PROFILE_NAME}'"
+          if [ "${NAME}" != "${TVOS_PROFILE_NAME}" ]; then
+            echo "::error::Installed profile name '${NAME}' != expected '${TVOS_PROFILE_NAME}'"
             exit 1
           fi
-          cp "${RUNNER_TEMP}/app.mobileprovision" "${HOME}/Library/MobileDevice/Provisioning Profiles/${UUID}.mobileprovision"
-          echo "Installed profile '${NAME}' (${UUID}). No widget profile (ZenBuy is app-only)."
-          rm -f "${RUNNER_TEMP}/dist-raw.p12" "${RUNNER_TEMP}/dist.p12" "${RUNNER_TEMP}/dist.pem" "${RUNNER_TEMP}/app.mobileprovision"
+          PLATFORMS=$(/usr/libexec/PlistBuddy -c 'Print :Platform' "${RUNNER_TEMP}/pp.plist" 2>/dev/null || true)
+          echo "Profile platforms: ${PLATFORMS}"
+          cp "${RUNNER_TEMP}/tvos.mobileprovision" "${HOME}/Library/MobileDevice/Provisioning Profiles/${UUID}.mobileprovision"
+          echo "Installed profile '${NAME}' (${UUID})."
+          rm -f "${RUNNER_TEMP}/dist-raw.p12" "${RUNNER_TEMP}/dist.p12" "${RUNNER_TEMP}/dist.pem" "${RUNNER_TEMP}/tvos.mobileprovision"
 
       - name: Archive
         run: |
@@ -320,20 +304,18 @@ jobs:
               cat
             fi
           }
-          # Manual Dist only — do not pass -allowProvisioningUpdates or ASC
-          # auth flags (those mint iOS Development certs on ephemeral runners).
           xcodebuild \
-            -project "${IOS_PROJECT}" \
-            -scheme "${IOS_SCHEME}" \
+            -project "${TVOS_PROJECT}" \
+            -scheme "${TVOS_SCHEME}" \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath "${RUNNER_TEMP}/ZenBuy.xcarchive" \
+            -destination 'generic/platform=tvOS' \
+            -archivePath "${RUNNER_TEMP}/ZenBuyTV.xcarchive" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
-            PROVISIONING_PROFILE_SPECIFIER="${IOS_PROFILE_NAME}" \
-            CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER}" \
-            CODE_SIGN_ENTITLEMENTS="${IOS_ENTITLEMENTS}" \
+            DEVELOPMENT_TEAM="${TVOS_TEAM_ID}" \
+            PROVISIONING_PROFILE_SPECIFIER="${TVOS_PROFILE_NAME}" \
+            CURRENT_PROJECT_VERSION="${TVOS_BUILD_NUMBER}" \
+            CODE_SIGN_ENTITLEMENTS= \
             archive | beautify
 
       - name: Export and upload to App Store Connect
@@ -350,18 +332,16 @@ jobs:
               cat
             fi
           }
-          # destination=upload authenticates delivery with the ASC API key.
-          # No -allowProvisioningUpdates (would mint Dev certs).
           xcodebuild \
             -exportArchive \
-            -archivePath "${RUNNER_TEMP}/ZenBuy.xcarchive" \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath "${RUNNER_TEMP}/ZenBuy-export" \
+            -archivePath "${RUNNER_TEMP}/ZenBuyTV.xcarchive" \
+            -exportOptionsPlist ExportOptions-tvos.plist \
+            -exportPath "${RUNNER_TEMP}/ZenBuyTV-export" \
             -authenticationKeyPath "${ASC_API_KEY_PATH}" \
             -authenticationKeyID "${ASC_KEY_ID}" \
             -authenticationKeyIssuerID "${ASC_ISSUER_ID}" \
             | beautify
-          echo "Upload requested via ExportOptions destination=upload. Review submit is the following Ubuntu job."
+          echo "Upload requested via ExportOptions-tvos destination=upload. No App Store review submit."
           echo "uploaded=true" >> "${GITHUB_OUTPUT}"
 
       - name: Invite internal TestFlight tester
@@ -375,7 +355,7 @@ jobs:
           ASC_BUNDLE_ID: info.zenbuy.app
           ASC_TESTER_EMAIL: thalerz@me.com
           ASC_GROUP_NAME: Internal Testers
-        run: node tools/asc-ios.mjs invite-tester
+        run: node tools/asc-tvos.mjs invite-tester
 
       - name: Remove secrets and CI keychain
         if: always()
@@ -386,14 +366,13 @@ jobs:
           fi
           rm -f "${RUNNER_TEMP}"/AuthKey_*.p8
           rm -f "${RUNNER_TEMP}/dist-raw.p12" "${RUNNER_TEMP}/dist.p12" "${RUNNER_TEMP}/dist.pem"
-          rm -f "${RUNNER_TEMP}/app.mobileprovision" "${RUNNER_TEMP}/pp.plist"
-          if [ -n "${IOS_KEYCHAIN_PATH:-}" ]; then
-            security delete-keychain "${IOS_KEYCHAIN_PATH}" 2>/dev/null || true
+          rm -f "${RUNNER_TEMP}/tvos.mobileprovision" "${RUNNER_TEMP}/pp.plist"
+          if [ -n "${TVOS_KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "${TVOS_KEYCHAIN_PATH}" 2>/dev/null || true
           fi
 
-  # ASC API only — no Dist p12, no profiles, no xcodebuild, no Dev certs.
-  submit_review:
-    name: Submit App Store review
+  wait_valid:
+    name: Wait TestFlight VALID
     needs: upload
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -406,18 +385,17 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Wait VALID, retract in-review, submit latest Dist build
+      - name: Wait for VALID tvOS Dist build
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
-          IOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
-          ASC_WHATS_NEW: Report formatting polish for Grok as the primary research model. Tables, scorecard, and BOTTOM LINE stay readable on iPhone and PDF.
+          TVOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
         run: |
           set -euo pipefail
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
           export ASC_MARKETING_VERSION="${MARKETING}"
-          echo "ASC API submit: marketing ${MARKETING} Dist build ${IOS_BUILD_NUMBER}."
-          echo "No signing on this job (Dist upload already finished)."
-          node tools/asc-ios.mjs submit-review
+          echo "ASC wait-valid: marketing ${MARKETING} Dist tvOS build ${TVOS_BUILD_NUMBER}."
+          echo "No signing on this job. No App Store review submit."
+          node tools/asc-tvos.mjs wait-valid
