@@ -2,6 +2,9 @@ import SwiftUI
 
 struct TVBrowseView: View {
     private enum BrowseFocus: Hashable {
+        case intent(SearchInputMode)
+        case goal(String)
+        case window(String)
         case discover
         case result(String)
     }
@@ -38,10 +41,6 @@ struct TVBrowseView: View {
                         unlockedPath
                     }
 
-                    if viewModel.wizardStep != .unlocked {
-                        wizardNav
-                    }
-
                     if let errorMessage = viewModel.errorMessage {
                         Text(errorMessage)
                             .font(TVTheme.captionFont)
@@ -58,12 +57,18 @@ struct TVBrowseView: View {
         .onAppear {
             viewModel.onUnlockedPathAppeared()
         }
-        .onChange(of: viewModel.wizardStep) { _, _ in
-            // Unlocking tears down the wizard's "Continue" button, so tvOS has
-            // to hand focus somewhere else. Claim the discover CTA instead of
-            // letting it fall to "Change setup" in the summary bar.
-            guard findScreenIsVisible else { return }
-            focus = .discover
+        .onChange(of: viewModel.wizardStep) { _, step in
+            // Selecting a card advances the wizard, which tears the focused
+            // card out of the hierarchy. Nothing else on a wizard step is
+            // focusable, so focus has to be handed to the next step's lead
+            // card by hand or the remote goes dead. Unlocking claims the
+            // discover CTA for the same reason — otherwise focus falls to
+            // "Change setup" in the summary bar.
+            guard viewModel.path.isEmpty else { return }
+            // Unlocked in "enter" mode brings its own focusables (ticker field,
+            // summary bar); only the find screen owns the discover CTA.
+            guard step != .unlocked || viewModel.inputMode == .find else { return }
+            focus = wizardLeadFocus
         }
         .onChange(of: discoverSymbols) { _, symbols in
             guard findScreenIsVisible, let first = symbols.first else { return }
@@ -73,6 +78,30 @@ struct TVBrowseView: View {
 
     private var discoverSymbols: [String] {
         viewModel.discoverResults.map(\.symbol)
+    }
+
+    /// Lead control of the current step — the focus target after an
+    /// auto-advance, and the `.defaultFocus` for a step's first appearance.
+    private var wizardLeadFocus: BrowseFocus {
+        switch viewModel.wizardStep {
+        case .pathIntent:
+            return .intent(.find)
+        case .investmentGoal:
+            return .goal(viewModel.directives.first?.id ?? "")
+        case .profitWindow:
+            return .window(viewModel.profitHorizonOptions.first?.id ?? "")
+        case .unlocked:
+            return .discover
+        }
+    }
+
+    /// Every wizard step is a single choice, so the click that records the
+    /// choice is also the click that moves on — there is no Continue button, and
+    /// no Back button either. "Change setup" on the unlocked screen reopens the
+    /// wizard from the top when a choice needs redoing.
+    private func advance(_ choose: () -> Void) {
+        choose()
+        viewModel.continueWizard()
     }
 
     /// Only the unlocked Find screen owns `focus`. A discover call can also
@@ -126,24 +155,6 @@ struct TVBrowseView: View {
         .tvFocusRow()
     }
 
-    private var wizardNav: some View {
-        HStack(spacing: 24) {
-            if viewModel.wizardStep != .pathIntent {
-                Button("Back") {
-                    viewModel.goBackWizard()
-                }
-                .buttonStyle(.tvSecondary)
-            }
-            Button("Continue") {
-                viewModel.continueWizard()
-            }
-            .buttonStyle(.tvPrimary)
-            .disabled(!viewModel.canContinueWizard)
-        }
-        .padding(.top, 8)
-        .tvFocusRow()
-    }
-
     private var pathIntent: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("What do you want to do?")
@@ -164,12 +175,13 @@ struct TVBrowseView: View {
             }
         }
         .tvFocusRow()
+        .defaultFocus($focus, wizardLeadFocus)
     }
 
     private func intentCard(mode: SearchInputMode, title: String, subtitle: String) -> some View {
         let selected = viewModel.pathIntentChosen && viewModel.inputMode == mode
         return Button {
-            viewModel.choosePathIntent(mode)
+            advance { viewModel.choosePathIntent(mode) }
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 Text(title)
@@ -183,6 +195,7 @@ struct TVBrowseView: View {
             }
         }
         .buttonStyle(.tvCard(selected: selected, minHeight: TVTheme.intentCardMinHeight))
+        .focused($focus, equals: .intent(mode))
     }
 
     private var goalPicker: some View {
@@ -196,7 +209,7 @@ struct TVBrowseView: View {
                     let selected = viewModel.selectedDirectiveId == directive.id
                     VStack(alignment: .leading, spacing: 12) {
                         Button {
-                            viewModel.selectDirective(directive.id)
+                            advance { viewModel.selectDirective(directive.id) }
                         } label: {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(directive.label)
@@ -217,6 +230,7 @@ struct TVBrowseView: View {
                             }
                         }
                         .buttonStyle(.tvCard(selected: selected, minHeight: TVTheme.goalCardMinHeight))
+                        .focused($focus, equals: .goal(directive.id))
 
                         Button("About this goal") {
                             viewModel.showDirectiveDetail(directive.id)
@@ -227,6 +241,7 @@ struct TVBrowseView: View {
             }
         }
         .tvFocusRow()
+        .defaultFocus($focus, wizardLeadFocus)
     }
 
     private var windowPicker: some View {
@@ -242,7 +257,7 @@ struct TVBrowseView: View {
                         in: viewModel.profitHorizonOptions
                     )?.id == option.id
                     Button {
-                        viewModel.setProfitHorizonYears(option.years)
+                        advance { viewModel.setProfitHorizonYears(option.years) }
                     } label: {
                         Text(option.label)
                             .font(TVTheme.cardTitleFont)
@@ -252,10 +267,12 @@ struct TVBrowseView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .buttonStyle(.tvCard(selected: selected, minHeight: TVTheme.windowCardMinHeight))
+                    .focused($focus, equals: .window(option.id))
                 }
             }
         }
         .tvFocusRow()
+        .defaultFocus($focus, wizardLeadFocus)
     }
 
     @ViewBuilder

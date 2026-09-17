@@ -3,7 +3,6 @@ import SwiftUI
 struct TVReportModeView: View {
     let picks: [SymbolResult]
     let onSelect: (ReportMode) -> Void
-    @State private var mode: ReportMode = .separate
 
     var body: some View {
         VStack(alignment: .leading, spacing: TVTheme.stackSpacing) {
@@ -29,13 +28,6 @@ struct TVReportModeView: View {
                 )
             }
             .tvFocusRow()
-
-            Button("Continue") {
-                onSelect(mode)
-            }
-            .buttonStyle(.tvPrimary)
-            .padding(.top, 8)
-            .tvFocusRow()
         }
         .padding(TVTheme.pagePadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -44,7 +36,7 @@ struct TVReportModeView: View {
 
     private func modeCard(title: String, subtitle: String, value: ReportMode) -> some View {
         Button {
-            mode = value
+            onSelect(value)
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 Text(title)
@@ -57,6 +49,6 @@ struct TVReportModeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .buttonStyle(.tvCard(selected: mode == value, minHeight: TVTheme.intentCardMinHeight))
+        .buttonStyle(.tvCard(minHeight: TVTheme.intentCardMinHeight))
     }
 }
