@@ -5,19 +5,20 @@ struct TVDirectiveDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: TVTheme.stackSpacing) {
                 Text(directive.label)
                     .font(TVTheme.titleFont)
                     .foregroundStyle(ZenBuyTheme.ink)
                 Text(directive.headline)
-                    .font(TVTheme.headlineFont)
-                    .foregroundStyle(ZenBuyTheme.sageDark)
+                    .font(TVTheme.cardTitleFont)
+                    .foregroundStyle(ZenBuyTheme.greenDark)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(directive.detailProfile ?? directive.plainEnglish)
                     .font(TVTheme.bodyFont)
-                    .foregroundStyle(ZenBuyTheme.muted)
+                    .foregroundStyle(ZenBuyTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 28) {
+                HStack(alignment: .top, spacing: TVTheme.columnGap) {
                     stat("Wait", directive.horizon)
                     stat("Risk", directive.risk)
                     stat("Income", directive.incomeFocus)
@@ -26,24 +27,27 @@ struct TVDirectiveDetailView: View {
                 Text("Example: \(directive.exampleGoal)")
                     .font(TVTheme.captionFont)
                     .foregroundStyle(ZenBuyTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(TVTheme.pagePadding)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: TVTheme.readingMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .background(ZenBuyTheme.background)
+        .background(ZenBuyTheme.background.ignoresSafeArea())
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
-        TVFocusCard(selected: false) {
-            VStack(alignment: .leading, spacing: 8) {
+        TVCardSurface {
+            VStack(alignment: .leading, spacing: 10) {
                 Text(title.uppercased())
-                    .font(TVTheme.captionFont.weight(.semibold))
+                    .font(TVTheme.eyebrowFont)
                     .foregroundStyle(ZenBuyTheme.muted)
                 Text(value)
-                    .font(TVTheme.headlineFont)
+                    .font(TVTheme.cardTitleFont)
                     .foregroundStyle(ZenBuyTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: 260)
+        .frame(maxWidth: 380)
     }
 }
