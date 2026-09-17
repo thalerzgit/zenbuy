@@ -6,7 +6,7 @@ struct TVReportModeView: View {
     @State private var mode: ReportMode = .separate
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: TVTheme.stackSpacing) {
             Text("How should we analyze these?")
                 .font(TVTheme.titleFont)
                 .foregroundStyle(ZenBuyTheme.ink)
@@ -14,6 +14,7 @@ struct TVReportModeView: View {
             Text("You selected \(picks.map(\.symbol).joined(separator: ", ")).")
                 .font(TVTheme.bodyFont)
                 .foregroundStyle(ZenBuyTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .top, spacing: TVTheme.columnGap) {
                 modeCard(
@@ -31,31 +32,29 @@ struct TVReportModeView: View {
             Button("Continue") {
                 onSelect(mode)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(ZenBuyTheme.sage)
-            .font(TVTheme.headlineFont)
+            .buttonStyle(.tvPrimary)
+            .padding(.top, 8)
         }
         .padding(TVTheme.pagePadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(ZenBuyTheme.background)
+        .background(ZenBuyTheme.background.ignoresSafeArea())
     }
 
     private func modeCard(title: String, subtitle: String, value: ReportMode) -> some View {
         Button {
             mode = value
         } label: {
-            TVFocusCard(selected: mode == value) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(title)
-                        .font(TVTheme.headlineFont)
-                        .foregroundStyle(ZenBuyTheme.ink)
-                    Text(subtitle)
-                        .font(TVTheme.captionFont)
-                        .foregroundStyle(ZenBuyTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title)
+                    .font(TVTheme.cardTitleFont)
+                    .foregroundStyle(ZenBuyTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subtitle)
+                    .font(TVTheme.captionFont)
+                    .foregroundStyle(ZenBuyTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .buttonStyle(.card)
+        .buttonStyle(.tvCard(selected: mode == value, minHeight: TVTheme.intentCardMinHeight))
     }
 }

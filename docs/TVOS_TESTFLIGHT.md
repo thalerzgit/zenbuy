@@ -22,6 +22,26 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 
 Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). No StoreKit / web unlock / PDF share on TV — living-room research uses the free weekly device quota.
 
+## 10-foot UI rules (ZenBuyTV only)
+
+Never use `.buttonStyle(.bordered)` / `.borderedProminent` with `.tint(green)` on tvOS: the unfocused capsule fills with the tint and draws its label in the same green, so buttons render as blank green pills. Use the target styles in `ZenBuyTV/Theme/TVTheme.swift`:
+
+| Control | Style | Unfocused | Focused |
+|---------|-------|-----------|---------|
+| CTA (Continue, Generate report) | `.buttonStyle(.tvPrimary)` | green fill, white label | dark-green fill, white label, gold ring, lift |
+| Secondary (Change setup, Back) | `.buttonStyle(.tvSecondary)` | white fill, green border, dark-green label | same as focused primary |
+| Chip (About this goal, picks) | `.buttonStyle(.tvChip)` | white fill, green border, dark-green label | same as focused primary |
+| Wizard card | `.buttonStyle(.tvCard(selected:minHeight:))` | white (or pale green when selected) with dark text in every state | green ring + lift |
+| Read-only report card | `TVFocusableCard` | white card | green ring |
+
+Other tvOS constraints baked into the target:
+
+- Type comes from the `TVTheme` scale (explicit point sizes, body ≥ 29pt). Semantic styles are outsized on TV — `.title2` is 48pt and truncated card titles.
+- Cards get `lineLimit` + `minimumScaleFactor` + `fixedSize(vertical:)` and a `minHeight` so a row of cards is uniform and no title truncates.
+- A `ScrollView` whose content is all text does not scroll with the Siri Remote — long report sections must be focusable (`TVFocusableCard`).
+- Page backgrounds use `.ignoresSafeArea()`; without it the tvOS overscan inset shows through as black gutters.
+- `Link` cannot open a browser on tvOS; report citations render as plain chips.
+
 ## Hard Dist rules (same as iOS)
 
 - Never `-allowProvisioningUpdates`
