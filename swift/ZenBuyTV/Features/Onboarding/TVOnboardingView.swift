@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TVOnboardingView: View {
-    var onContinue: () -> Void
+    var onStart: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 56) {
@@ -13,13 +13,13 @@ struct TVOnboardingView: View {
                     .foregroundStyle(ZenBuyTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Use the Siri Remote to move between cards. Click to select. Type a ticker or let ZenBuy find names that match your goal.")
+                Text("Use the Siri Remote to move between cards. Clicking a card selects it and moves straight on — there is nothing else to press.")
                     .font(TVTheme.bodyFont)
                     .foregroundStyle(ZenBuyTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Button("Continue") {
-                    onContinue()
+                Button("Start") {
+                    onStart()
                 }
                 .buttonStyle(.tvPrimary)
                 .padding(.top, 8)

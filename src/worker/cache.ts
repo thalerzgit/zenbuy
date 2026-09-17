@@ -1,5 +1,5 @@
-import type { InvestmentDirectiveId } from "../lib/investment-directives";
-import type { Badges } from "./parse";
+import type { InvestmentDirectiveId } from "../lib/investment-directives.ts";
+import type { Badges } from "./parse.ts";
 
 export async function cacheGet<T>(kv: KVNamespace, key: string): Promise<T | null> {
   const raw = await kv.get(key, "json");
@@ -15,7 +15,7 @@ export async function cacheSet(
   await kv.put(key, JSON.stringify(value), { expirationTtl: ttlSeconds });
 }
 
-import { DEFAULT_DIRECTIVE_ID, isInvestmentDirectiveId } from "../lib/investment-directives";
+import { DEFAULT_DIRECTIVE_ID, isInvestmentDirectiveId } from "../lib/investment-directives.ts";
 
 export function reportCacheKey(
   mode: string,

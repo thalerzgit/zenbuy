@@ -22,7 +22,12 @@ wrangler secret put AI_GATEWAY_ACCOUNT_ID   # optional
 wrangler secret put AI_GATEWAY_ID           # optional
 wrangler secret put AI_GATEWAY_TOKEN        # optional
 wrangler secret put TURNSTILE_SECRET_KEY    # optional
+wrangler secret put RESEND_API_KEY          # optional — Apple TV "Email PDF"
 ```
+
+`RESEND_API_KEY` pairs with the `REPORT_EMAIL_FROM` var in `wrangler.jsonc`, whose
+domain must be verified for sending in Resend. Leave the key unset and
+`POST /api/report/email` answers 503 instead of half-sending.
 
 Create a KV namespace and set the id in `wrangler.jsonc`:
 
@@ -104,6 +109,7 @@ npm run deploy
 | `/api/health` | GET | Primary `model` + `provider`, `backupModel` + `backupProvider`, key presence booleans (`anthropic`, `xai`, …). `?deep=1` also probes upstreams (costs quota, cached 60s). Statuses only, never key material |
 | `/api/prefetch?symbol=` | GET | Warms a symbol's fundamentals into KV so they're not on the critical path |
 | `/api/research` | POST | SSE stream `{ symbols, mode, turnstileToken? }` — Turnstile required for web; native iOS/tvOS send `X-ZenBuy-Client: ios` or `tvos` and skip it |
+| `/api/report/email` | POST | `{ reportId, email }` — mails that cached report as a colour PDF (Apple TV share control). The report id is the capability; 10 sends per device per day |
 | `/privacy` | GET | Privacy policy HTML (Worker, not the SPA) |
 | `/support` | GET | Support / contact HTML (Worker, not the SPA) |
 

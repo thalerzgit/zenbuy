@@ -1,15 +1,57 @@
 import SwiftUI
 
 struct TVReportView: View {
+    /// Restart and share are offered at both ends of a long report, so the two
+    /// bars have to be told apart to keep the email panel next to the control
+    /// the viewer actually clicked.
+    private enum ControlBar: Hashable {
+        case top
+        case bottom
+    }
+
+    private enum EmailStatus: Equatable {
+        case idle
+        case sending
+        case sent(String)
+        case failed(String)
+    }
+
+    private enum ReportFocus: Hashable {
+        case share(ControlBar)
+    }
+
     let symbols: [String]
     let mode: ReportMode
     let directive: String
     let profitHorizonYears: Int
     @Bindable var viewModel: ReportViewModel
     var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
+    var onRestart: () -> Void = {}
+
+    @AppStorage("zenbuy.tv.report.email.v1") private var emailAddress = ""
+    @State private var openPanel: ControlBar?
+    @State private var emailStatus: EmailStatus = .idle
+    @FocusState private var emailFieldFocused: Bool
+    @FocusState private var focus: ReportFocus?
 
     private var title: String { symbols.joined(separator: ", ") }
     private var hasScorecard: Bool { !viewModel.scorecardHTML.isEmpty }
+
+    /// Restart and share only appear once the report is finished — a half-drawn
+    /// report has nothing worth mailing and restarting mid-stream would abandon
+    /// a run the viewer is still waiting on.
+    private var isFinished: Bool {
+        viewModel.didFinishSuccessfully && !viewModel.isStreaming
+    }
+
+    private var reportId: String {
+        ReportCacheKey.make(
+            mode: mode,
+            symbols: symbols,
+            directive: directive,
+            profitHorizonYears: profitHorizonYears
+        )
+    }
 
     private var hasVisibleReportContent: Bool {
         ReportHTML.hasVisibleContent(
@@ -35,6 +77,10 @@ struct TVReportView: View {
                 Text(title)
                     .font(TVTheme.titleFont)
                     .foregroundStyle(ZenBuyTheme.ink)
+
+                if isFinished {
+                    controlBar(.top)
+                }
 
                 if shouldShowProcessingPanel {
                     TVProcessingPanel(progress: viewModel.processing)
@@ -90,6 +136,10 @@ struct TVReportView: View {
                     .buttonStyle(.tvSecondary)
                     .padding(.top, 8)
                 }
+
+                if isFinished {
+                    controlBar(.bottom)
+                }
             }
             .padding(TVTheme.pagePadding)
             .frame(maxWidth: TVTheme.readingMaxWidth, alignment: .leading)
@@ -103,6 +153,177 @@ struct TVReportView: View {
                 directive: directive,
                 profitHorizonYears: profitHorizonYears
             )
+        }
+    }
+
+    @ViewBuilder
+    private func controlBar(_ bar: ControlBar) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 24) {
+                Button("Restart") {
+                    onRestart()
+                }
+                .buttonStyle(.tvPrimary)
+
+                Button {
+                    openPanel = openPanel == bar ? nil : bar
+                    emailStatus = .idle
+                } label: {
+                    Label("Email PDF", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.tvSecondary)
+                .focused($focus, equals: .share(bar))
+            }
+            .tvFocusRow()
+
+            if openPanel == bar {
+                emailPanel(bar)
+            }
+        }
+    }
+
+    /// Inline rather than an alert: focusing a tvOS text field is what raises
+    /// the system keyboard, and the ticker field on the Find screen already
+    /// works this way.
+    private func emailPanel(_ bar: ControlBar) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Email this report as a color PDF")
+                .font(TVTheme.cardTitleFont)
+                .foregroundStyle(ZenBuyTheme.ink)
+
+            TextField("you@example.com", text: $emailAddress)
+                .font(TVTheme.bodyFont)
+                .focused($emailFieldFocused)
+                .frame(maxWidth: TVTheme.fieldMaxWidth)
+                .padding(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(
+                            emailFieldFocused ? ZenBuyTheme.green : Color.clear,
+                            lineWidth: 6
+                        )
+                )
+                .animation(TVTheme.focusAnimation, value: emailFieldFocused)
+
+            // Stays enabled while the mail is in flight: a disabled button is
+            // not focusable on tvOS, and the send action guards itself.
+            HStack(spacing: 24) {
+                Button {
+                    sendReportEmail()
+                } label: {
+                    HStack(spacing: 16) {
+                        if emailStatus == .sending {
+                            ProgressView()
+                        }
+                        Text(emailStatus == .sending ? "Sending…" : "Send PDF")
+                    }
+                }
+                .buttonStyle(.tvPrimary)
+
+                // Closing removes the focused button, so hand focus back to the
+                // control that opened the panel rather than letting tvOS drop it.
+                Button("Close") {
+                    openPanel = nil
+                    focus = .share(bar)
+                }
+                .buttonStyle(.tvSecondary)
+            }
+            .tvFocusRow()
+
+            if let message = statusMessage {
+                Text(message)
+                    .font(TVTheme.captionFont)
+                    .foregroundStyle(statusIsFailure ? ZenBuyTheme.bear : ZenBuyTheme.greenDark)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(TVTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ZenBuyTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: TVTheme.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TVTheme.cardRadius, style: .continuous)
+                .strokeBorder(ZenBuyTheme.border, lineWidth: 2)
+        )
+        .tvFocusRow()
+    }
+
+    private var statusMessage: String? {
+        switch emailStatus {
+        case .idle:
+            return nil
+        case .sending:
+            return "Rendering the PDF and handing it to the mail service…"
+        case let .sent(address):
+            return "Sent to \(address). Give it a minute to arrive."
+        case let .failed(message):
+            return message
+        }
+    }
+
+    private var statusIsFailure: Bool {
+        if case .failed = emailStatus { return true }
+        return false
+    }
+
+    private func sendReportEmail() {
+        guard emailStatus != .sending else { return }
+        let address = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard TVReportEmail.looksLikeAddress(address) else {
+            emailStatus = .failed("Enter a full email address, like you@example.com.")
+            return
+        }
+        emailAddress = address
+        emailFieldFocused = false
+        emailStatus = .sending
+        let id = reportId
+        Task { @MainActor in
+            do {
+                try await TVReportEmail.send(reportId: id, email: address)
+                emailStatus = .sent(address)
+            } catch {
+                emailStatus = .failed(
+                    (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                )
+            }
+        }
+    }
+}
+
+/// tvOS cannot hand a PDF to a share sheet, so the Worker renders and mails the
+/// colour copy from the report already cached under `reportId`. Lives in the TV
+/// target because `ZenBuyAPIClient` is shared with the iPhone app.
+private enum TVReportEmail {
+    static func looksLikeAddress(_ value: String) -> Bool {
+        guard let at = value.firstIndex(of: "@"), at != value.startIndex else { return false }
+        let domain = value[value.index(after: at)...]
+        return !domain.contains("@") && domain.contains(".") && !domain.hasSuffix(".")
+    }
+
+    static func send(reportId: String, email: String) async throws {
+        var request = URLRequest(
+            url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/report/email")
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("tvos", forHTTPHeaderField: "X-ZenBuy-Client")
+        request.setValue(ZenBuyDeviceIdentity.current, forHTTPHeaderField: "X-ZenBuy-Device")
+        request.timeoutInterval = 90
+        request.httpBody = try JSONEncoder().encode(["reportId": reportId, "email": email])
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw ZenBuyAPIError.transport(URLError(.badServerResponse))
+            }
+            guard (200 ..< 300).contains(http.statusCode) else {
+                let message = (try? JSONDecoder().decode(APIErrorResponse.self, from: data))?.error
+                throw ZenBuyAPIError.http(status: http.statusCode, message: message)
+            }
+        } catch let error as ZenBuyAPIError {
+            throw error
+        } catch {
+            throw ZenBuyAPIError.transport(error)
         }
     }
 }

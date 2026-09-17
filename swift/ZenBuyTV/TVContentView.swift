@@ -31,7 +31,8 @@ struct TVContentView: View {
                         viewModel: viewModel.report,
                         onRunSimilar: { symbols, mode in
                             viewModel.startSimilarReport(symbols: symbols, mode: mode)
-                        }
+                        },
+                        onRestart: { restartFlow() }
                     )
                 case let .directiveDetail(id):
                     if let directive = viewModel.directive(for: id) {
@@ -47,6 +48,21 @@ struct TVContentView: View {
         .onChange(of: scenePhase) { _, phase in
             viewModel.handleScenePhase(phase)
         }
+    }
+
+    /// Restart from a finished report: drop the in-flow selection and land back
+    /// on the mode picker. The reset lives here rather than on `SearchViewModel`
+    /// because that type is shared with the iPhone app, which keeps its own
+    /// navigation.
+    private func restartFlow() {
+        viewModel.path.removeAll()
+        viewModel.picks = []
+        viewModel.discoverResults = []
+        viewModel.suggestions = []
+        viewModel.query = ""
+        viewModel.errorMessage = nil
+        viewModel.pathIntentChosen = false
+        viewModel.reopenWizard()
     }
 }
 

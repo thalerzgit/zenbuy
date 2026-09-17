@@ -20,7 +20,24 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 | Marketing version | `1.5` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 
-Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). No StoreKit / web unlock / PDF share on TV — living-room research uses the free weekly device quota.
+Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). No StoreKit / web unlock on TV — living-room research uses the free weekly device quota.
+
+## Remote-first flow (no Continue, no Back)
+
+Nothing on Apple TV asks for a second click to confirm a choice, and nothing offers a Back button.
+
+- **Single-choice steps auto-advance on select.** Clicking a card *is* the commit: mode picker (Find / Analyze), investment goal, profit window, and separate-vs-comparative all call their setter and `continueWizard()` in the same action. Every wizard option is valid on its own, so there is nothing for a Continue button to gate.
+- **Multi-select is confirmed by its primary action.** Ticker picks stay multi-select and advance only on **Generate report** — or immediately when a single suggestion is added and the selection is complete. Auto-advancing a running total would make the fourth pick impossible.
+- **Redoing a choice goes forward, not back.** "Change setup" on the unlocked screen reopens the wizard from step 1; **Restart** on a finished report clears the flow and returns to the mode picker. The Siri Remote's Menu button still pops a pushed screen — that is the system affordance, and the app draws no button for it.
+- **Removing a Continue button removes a focus anchor.** A wizard step's only focusable views are its own cards, so `TVBrowseView` parks focus on the next step's lead card (`wizardLeadFocus` + `.onChange` + `.defaultFocus`) whenever `wizardStep` changes. Skipping that leaves the remote dead on the new step.
+
+## Finished-report controls
+
+A completed report (`didFinishSuccessfully && !isStreaming`) draws the same bar at the **top and bottom** of the output: **Restart** plus an **Email PDF** share control (`square.and.arrow.up`).
+
+Email PDF opens an inline card next to the bar that was clicked — inline rather than an alert because focusing a tvOS text field is what raises the system keyboard. The address is remembered in `@AppStorage` so a second send is one click. Closing the card hands focus back to the share button it came from.
+
+tvOS has no share sheet, so the PDF is rendered **server-side**: the app posts `{ reportId, email }` to `POST /api/report/email` and the Worker renders the colour PDF from the report already in KV (`src/worker/report-pdf.ts`) and mails it through Resend. The report id is computed on device with the shared `ReportCacheKey.make`, which is the same key the Worker caches under. Requires the `RESEND_API_KEY` Worker secret and the `REPORT_EMAIL_FROM` var; without them the endpoint answers 503 and the TV shows "Emailing reports isn't switched on yet".
 
 ## 10-foot UI rules (ZenBuyTV only)
 
@@ -28,8 +45,8 @@ Never use `.buttonStyle(.bordered)` / `.borderedProminent` with `.tint(green)` o
 
 | Control | Style | Unfocused | Focused |
 |---------|-------|-----------|---------|
-| CTA (Continue, Generate report) | `.buttonStyle(.tvPrimary)` | green fill, white label | dark-green fill, white label, gold ring, lift |
-| Secondary (Change setup, Back) | `.buttonStyle(.tvSecondary)` | white fill, green border, dark-green label | same as focused primary |
+| CTA (Generate report, Restart, Send PDF) | `.buttonStyle(.tvPrimary)` | green fill, white label | dark-green fill, white label, gold ring, lift |
+| Secondary (Change setup, Email PDF) | `.buttonStyle(.tvSecondary)` | white fill, green border, dark-green label | same as focused primary |
 | Chip (About this goal, picks) | `.buttonStyle(.tvChip)` | white fill, green border, dark-green label | same as focused primary |
 | Wizard card | `.buttonStyle(.tvCard(selected:minHeight:))` | white (or pale green when selected) with dark text in every state | gold ring + lift |
 | Read-only report card | `TVFocusableCard` | white card | gold ring |
@@ -41,6 +58,7 @@ Other tvOS constraints baked into the target:
 - **Every row of a page needs `.tvFocusRow()`** (`frame(maxWidth: .infinity) + focusSection()`). tvOS moves focus geometrically: a swipe only lands on a focusable view sitting in the corridor directly in the direction of travel, and a move with nothing in that corridor is silently dropped — the remote stops working and the screen looks frozen. It bites whenever a trailing control (the summary bar's "Change setup", a right-hand card) sits above leading-aligned content, which is most of this app. A row-wide focus section accepts the move instead and hands focus to its nearest focusable child. Sections only catch moves that cross them, so the rows on both sides of a hop each need one.
 - A control that is `.disabled` while an async call runs is not focusable. Disabling the only CTA on screen during a request leaves the focus engine nowhere to go — keep the button enabled and guard its action.
 - Async results that add focusable views do not move focus. Park focus explicitly (`@FocusState` + `.onChange`, with `.defaultFocus` for first appearance) or the user is left on whatever the focus engine picked while the screen was still loading.
+- **Anything that removes the focused view has to say where focus goes next.** This covers auto-advance (the clicked card disappears), unlocking the wizard, and dismissing the inline email card. Give each candidate its own `@FocusState` value and set it in the same action.
 - Type comes from the `TVTheme` scale (explicit point sizes, body ≥ 29pt). Semantic styles are outsized on TV — `.title2` is 48pt and truncated card titles.
 - Cards get `lineLimit` + `minimumScaleFactor` + `fixedSize(vertical:)` and a `minHeight` so a row of cards is uniform and no title truncates.
 - A `ScrollView` whose content is all text does not scroll with the Siri Remote — long report sections must be focusable (`TVFocusableCard`).

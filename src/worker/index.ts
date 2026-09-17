@@ -58,6 +58,7 @@ import {
 } from "./research";
 import { openQuotaGate } from "./quota";
 import { legalPageResponse } from "./legal-pages";
+import { handleReportEmail } from "./report-email";
 import {
   handleAppleCallback,
   handleAppleSignIn,
@@ -1202,6 +1203,10 @@ export default {
 
     if (url.pathname === "/api/report" && request.method === "GET") {
       return handleGetReport(request, env);
+    }
+
+    if (url.pathname === "/api/report/email" && request.method === "POST") {
+      return handleReportEmail(request, env, json);
     }
 
     if (url.pathname === "/api/similar" && request.method === "GET") {
