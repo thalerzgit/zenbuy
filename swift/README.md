@@ -103,5 +103,5 @@ xcodebuild test \
 
 ## Versioning
 
-- Marketing version: `1.4` (`Config/Shared.xcconfig`)
+- Marketing version: `1.5` (`Config/Shared.xcconfig`)
 - Build number: CI stamps `CURRENT_PROJECT_VERSION` as `GITHUB_RUN_NUMBER + offset` (default offset `100`). Do not bump it for each upload.
