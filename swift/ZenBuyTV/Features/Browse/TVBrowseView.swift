@@ -1,8 +1,14 @@
 import SwiftUI
 
 struct TVBrowseView: View {
+    private enum BrowseFocus: Hashable {
+        case discover
+        case result(String)
+    }
+
     @Bindable var viewModel: SearchViewModel
     @FocusState private var tickerFieldFocused: Bool
+    @FocusState private var focus: BrowseFocus?
 
     private let goalColumns = [
         GridItem(.flexible(), spacing: TVTheme.columnGap),
@@ -52,6 +58,31 @@ struct TVBrowseView: View {
         .onAppear {
             viewModel.onUnlockedPathAppeared()
         }
+        .onChange(of: viewModel.wizardStep) { _, _ in
+            // Unlocking tears down the wizard's "Continue" button, so tvOS has
+            // to hand focus somewhere else. Claim the discover CTA instead of
+            // letting it fall to "Change setup" in the summary bar.
+            guard findScreenIsVisible else { return }
+            focus = .discover
+        }
+        .onChange(of: discoverSymbols) { _, symbols in
+            guard findScreenIsVisible, let first = symbols.first else { return }
+            focus = .result(first)
+        }
+    }
+
+    private var discoverSymbols: [String] {
+        viewModel.discoverResults.map(\.symbol)
+    }
+
+    /// Only the unlocked Find screen owns `focus`. A discover call can also
+    /// finish after the wizard is reopened or a report is pushed, and aiming
+    /// `@FocusState` at a view that is not on screen would drop focus instead
+    /// of moving it.
+    private var findScreenIsVisible: Bool {
+        viewModel.path.isEmpty
+            && viewModel.wizardStep == .unlocked
+            && viewModel.inputMode == .find
     }
 
     private var header: some View {
@@ -92,6 +123,7 @@ struct TVBrowseView: View {
             RoundedRectangle(cornerRadius: TVTheme.cardRadius, style: .continuous)
                 .strokeBorder(ZenBuyTheme.green.opacity(0.4), lineWidth: 2)
         )
+        .tvFocusRow()
     }
 
     private var wizardNav: some View {
@@ -109,6 +141,7 @@ struct TVBrowseView: View {
             .disabled(!viewModel.canContinueWizard)
         }
         .padding(.top, 8)
+        .tvFocusRow()
     }
 
     private var pathIntent: some View {
@@ -130,6 +163,7 @@ struct TVBrowseView: View {
                 )
             }
         }
+        .tvFocusRow()
     }
 
     private func intentCard(mode: SearchInputMode, title: String, subtitle: String) -> some View {
@@ -192,6 +226,7 @@ struct TVBrowseView: View {
                 }
             }
         }
+        .tvFocusRow()
     }
 
     private var windowPicker: some View {
@@ -220,6 +255,7 @@ struct TVBrowseView: View {
                 }
             }
         }
+        .tvFocusRow()
     }
 
     @ViewBuilder
@@ -241,6 +277,7 @@ struct TVBrowseView: View {
             }
             .buttonStyle(.tvPrimary)
             .padding(.top, 8)
+            .tvFocusRow()
         }
     }
 
@@ -303,6 +340,7 @@ struct TVBrowseView: View {
                 .frame(maxWidth: TVTheme.readingMaxWidth, alignment: .leading)
             }
         }
+        .tvFocusRow()
     }
 
     private var findTickers: some View {
@@ -311,7 +349,11 @@ struct TVBrowseView: View {
                 .font(TVTheme.bodyFont)
                 .foregroundStyle(ZenBuyTheme.muted)
 
+            // Stays enabled while the call is in flight: a disabled button is
+            // not focusable, which left "Change setup" as the only control on
+            // the screen for the whole discover round trip.
             Button {
+                guard !viewModel.isDiscovering else { return }
                 viewModel.runDiscover()
             } label: {
                 HStack(spacing: 16) {
@@ -322,7 +364,7 @@ struct TVBrowseView: View {
                 }
             }
             .buttonStyle(.tvPrimary)
-            .disabled(viewModel.isDiscovering)
+            .focused($focus, equals: .discover)
 
             if !viewModel.discoverResults.isEmpty {
                 Text("Click a name to add or remove it, then generate.")
@@ -356,11 +398,14 @@ struct TVBrowseView: View {
                             }
                         }
                         .buttonStyle(.tvCard(selected: selected))
+                        .focused($focus, equals: .result(pick.symbol))
                     }
                 }
                 .frame(maxWidth: TVTheme.readingMaxWidth, alignment: .leading)
             }
         }
+        .tvFocusRow()
+        .defaultFocus($focus, .discover)
     }
 
     private var picksRow: some View {
@@ -384,5 +429,6 @@ struct TVBrowseView: View {
                 }
             }
         }
+        .tvFocusRow()
     }
 }

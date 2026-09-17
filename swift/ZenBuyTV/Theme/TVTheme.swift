@@ -33,10 +33,28 @@ enum TVTheme {
     static let badgeFont = Font.system(size: 28, weight: .bold)
 
     // Focus. One language across the target: the focused control darkens or
-    // rings, never lightens into the page, and lifts.
+    // rings, never lightens into the page, and lifts. Gold always means focus —
+    // a green ring cannot be told apart from the green border a *selected*
+    // card already carries, and every discover result arrives pre-selected.
     static let focusScale: CGFloat = 1.05
     static let focusRing: CGFloat = 8
     static let focusAnimation = Animation.easeOut(duration: 0.16)
+}
+
+extension View {
+    /// Full-width focus section for one row of the page.
+    ///
+    /// tvOS moves focus geometrically: a swipe only lands on a focusable view
+    /// that sits in the corridor directly in the direction of travel, and the
+    /// move is dropped when nothing is there — which reads as a frozen screen.
+    /// A row-wide section frame accepts that move instead and hands focus to
+    /// its nearest focusable child, so a trailing button and the
+    /// leading-aligned cards below it can still reach each other. Sections only
+    /// catch moves that cross them, so every row needs its own.
+    func tvFocusRow() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .focusSection()
+    }
 }
 
 /// Static (non-focusable) card surface.
@@ -52,7 +70,7 @@ struct TVCardSurface<Content: View>: View {
     }
 
     private var borderColor: Color {
-        if focused { return ZenBuyTheme.green }
+        if focused { return ZenBuyTheme.insightGold }
         return selected ? ZenBuyTheme.green : ZenBuyTheme.border
     }
 

@@ -28,12 +28,14 @@ struct TVReportModeView: View {
                     value: .comparative
                 )
             }
+            .tvFocusRow()
 
             Button("Continue") {
                 onSelect(mode)
             }
             .buttonStyle(.tvPrimary)
             .padding(.top, 8)
+            .tvFocusRow()
         }
         .padding(TVTheme.pagePadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
