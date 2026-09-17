@@ -66,6 +66,7 @@ import {
   handleUnlockWeb,
   resolveUnlock,
 } from "./unlock";
+import { isNativeAppleClient } from "./native-client";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -91,11 +92,6 @@ function clientIp(request: Request): string {
     request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
     "unknown"
   );
-}
-
-/** Native iOS app — Turnstile is web-only; rate limits still apply. */
-function isNativeIOSClient(request: Request): boolean {
-  return request.headers.get("X-ZenBuy-Client")?.toLowerCase() === "ios";
 }
 
 function cachedReportHasContent(report: CachedReport | null): boolean {
@@ -825,7 +821,7 @@ async function handleResearch(
   const unlock = await resolveUnlock(request, env);
   const subject = unlock.unlocked ? unlock.sub : null;
 
-  if (!isNativeIOSClient(request) && !unlock.unlocked) {
+  if (!isNativeAppleClient(request) && !unlock.unlocked) {
     const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
     if (!turnstileOk) {
       return json(

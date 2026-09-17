@@ -1,0 +1,11 @@
+#include "Shared.xcconfig"
+
+// tvOS target overrides — do not change the iPhone target.
+PRODUCT_NAME = ZenBuy
+PRODUCT_BUNDLE_IDENTIFIER = info.zenbuy.app
+SUPPORTED_PLATFORMS = appletvos appletvsimulator
+TARGETED_DEVICE_FAMILY = 3
+TVOS_DEPLOYMENT_TARGET = 17.0
+SDKROOT = appletvos
+ZENBUY_ENTITLEMENTS =
+CODE_SIGN_ENTITLEMENTS =

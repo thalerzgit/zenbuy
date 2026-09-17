@@ -8,9 +8,11 @@ Native SwiftUI iPhone app for ZenBuy — not a WebView wrapper. Shares the same 
 open swift/ZenBuy.xcodeproj
 ```
 
-1. Select the **ZenBuy** scheme and an iPhone simulator (or device).
+1. Select the **ZenBuy** scheme (iPhone) or **ZenBuyTV** (Apple TV simulator / device).
 2. Set your **Team** under Signing & Capabilities (or uncomment `DEVELOPMENT_TEAM` in `Config/Debug.xcconfig`).
 3. Press **Run** (⌘R).
+
+Apple TV uses the same Worker APIs and bundle id `info.zenbuy.app` (add the tvOS platform in App Store Connect). See [docs/TVOS_TESTFLIGHT.md](../docs/TVOS_TESTFLIGHT.md).
 
 ## Project layout
 
@@ -25,6 +27,7 @@ swift/
     Features/Search/      # Enter Tickers + Find Tickers
     Features/Report/      # Mode screen + native streaming report
     Resources/            # Assets, Privacy manifest
+  ZenBuyTV/               # tvOS target — Focus Engine / 10-foot browse + report
   ZenBuyTests/
   ZenBuyUITests/
 ```
@@ -38,7 +41,7 @@ swift/
 | `GET /api/config` | Public client config |
 | `POST /api/research` | SSE research stream |
 
-Default base URL: `https://zenbuy.info` (`Config/Shared.xcconfig`).
+Default base URL: `https://zenbuy.info` (`Config/Shared.xcconfig`). Native iOS sends `X-ZenBuy-Client: ios`; Apple TV sends `tvos`.
 
 To point at a local Worker during API work, uncomment `ZENBUY_API_BASE_URL` in `Config/Debug.xcconfig`.
 
@@ -57,7 +60,9 @@ Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, 
 
 ### Archive & upload
 
-Pushes that touch `swift/**` run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6):
+Pushes that touch iPhone Swift paths run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6). Apple TV paths run `.github/workflows/tvos-testflight.yml` (internal TestFlight only — see `docs/TVOS_TESTFLIGHT.md`).
+
+iOS jobs:
 
 1. **Validate rails** — ASC + Dist secrets, Xcode 26.6, ExportOptions (manual Dist) / scheme / team / bundle id.
 2. **Archive and upload** — import Dist p12 + App Store profile, archive with `CODE_SIGN_STYLE=Manual` (no `-allowProvisioningUpdates`), export+upload; invite `thalerz@me.com` **only after a successful upload**.
@@ -73,6 +78,7 @@ Repo Actions secrets required (stamp from Mini — never invent/commit keys or c
 | `ASC_DIST_P12_BASE64` | Apple Distribution .p12 (legacy 3DES — AES-PBES2 fails `security import`) |
 | `ASC_DIST_P12_PASSWORD` | Password for that p12 |
 | `ASC_PROFILE_APP_BASE64` | App Store profile **CI info.zenbuy.app AppStore** (no widget) |
+| `ASC_PROFILE_TVOS_BASE64` | tvOS App Store profile **CI info.zenbuy.app tvOS AppStore** |
 
 Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
 

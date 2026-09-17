@@ -144,7 +144,7 @@ final class ReportViewModel {
     private var sseTrace: [String] = []
     private var emptyContentRetries = 0
     private let maxEmptyContentRetries = 1
-    #if canImport(UIKit)
+    #if os(iOS)
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     #endif
 
@@ -601,7 +601,7 @@ final class ReportViewModel {
     }
 
     func prepareSharePDF(title: String) -> (url: URL, data: Data)? {
-        #if canImport(UIKit)
+        #if os(iOS)
         ReportVerboseLog.log("sharePDF attempt titleLen=\(title.count)")
         let key = [
             title,
@@ -644,7 +644,7 @@ final class ReportViewModel {
     }
 
     private func beginResearchBackgroundTask() {
-        #if canImport(UIKit)
+        #if os(iOS)
         endResearchBackgroundTask()
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "zenbuy.research") { [weak self] in
             Task { @MainActor in
@@ -656,7 +656,7 @@ final class ReportViewModel {
     }
 
     private func endResearchBackgroundTask() {
-        #if canImport(UIKit)
+        #if os(iOS)
         guard backgroundTask != .invalid else { return }
         UIApplication.shared.endBackgroundTask(backgroundTask)
         backgroundTask = .invalid
