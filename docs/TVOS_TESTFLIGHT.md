@@ -20,7 +20,7 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 | Marketing version | `1.5` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 
-Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). No StoreKit / web unlock on TV — living-room research uses the free weekly device quota.
+Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). Report allowances apply: the free weekly device quota until a purchase is redeemed, then the unlocked daily one — see [Spent allowance](#spent-allowance--the-unlock-panel).
 
 ## Remote-first flow (no Continue, no Back)
 
@@ -28,6 +28,7 @@ Nothing on Apple TV asks for a second click to confirm a choice, and nothing off
 
 - **Single-choice steps auto-advance on select.** Clicking a card *is* the commit: mode picker (Find / Analyze), investment goal, profit window, and separate-vs-comparative all call their setter and `continueWizard()` in the same action. Every wizard option is valid on its own, so there is nothing for a Continue button to gate.
 - **Multi-select is confirmed by its primary action.** Ticker picks stay multi-select and advance only on **Generate report** — or immediately when a single suggestion is added and the selection is complete. Auto-advancing a running total would make the fourth pick impossible.
+- **The selection is the top of the Analyze screen, above the search field's results.** `Selected n of 4` and **Generate report** are drawn before the suggestion list, not after it. A search for `IBM` returns more rows than a 1080p page holds (`IBM.TO`, `IBM.NE`, `IBM.DE`, `IBM.DU`, `IBM.MU`, `IBM.MX`…), so chips placed under that list are off screen at the one moment they matter: the click that adds a ticker. The same layout hid the *reason* clicks stopped landing — a full selection carried over from a Find run. Suggestion rows are toggles (click again to remove, matching discover rows) and a click that cannot add says why instead of doing nothing.
 - **Redoing a choice goes forward, not back.** "Change setup" on the unlocked screen reopens the wizard from step 1; **Restart** on a finished report clears the flow and returns to the mode picker. The Siri Remote's Menu button still pops a pushed screen — that is the system affordance, and the app draws no button for it.
 - **Removing a Continue button removes a focus anchor.** A wizard step's only focusable views are its own cards, so `TVBrowseView` parks focus on the next step's lead card (`wizardLeadFocus` + `.onChange` + `.defaultFocus`) whenever `wizardStep` changes. Skipping that leaves the remote dead on the new step.
 
@@ -38,6 +39,16 @@ A completed report (`didFinishSuccessfully && !isStreaming`) draws the same bar 
 Email PDF opens an inline card next to the bar that was clicked — inline rather than an alert because focusing a tvOS text field is what raises the system keyboard. The address is remembered in `@AppStorage` so a second send is one click. Closing the card hands focus back to the share button it came from.
 
 tvOS has no share sheet, so the PDF is rendered **server-side**: the app posts `{ reportId, email }` to `POST /api/report/email` and the Worker renders the colour PDF from the report already in KV (`src/worker/report-pdf.ts`) and mails it through Resend. The report id is computed on device with the shared `ReportCacheKey.make`, which is the same key the Worker caches under. Requires the `RESEND_API_KEY` Worker secret and the `REPORT_EMAIL_FROM` var; without them the endpoint answers 503 and the TV shows "Emailing reports isn't switched on yet".
+
+## Spent allowance — the unlock panel
+
+A refused report is HTTP 429 from `openQuotaGate`. `ZenBuyAPIClient` raises it as `ZenBuyAPIError.quota(code:message:)` rather than a plain `.http`, and `ReportViewModel` records it as `quotaBlock` — the one failure with a next step instead of a retry. `TVReportView` answers `.freeWeekly` with `TVUnlockView` and `.unlockedDaily` with a single **Try the report again** (buying cannot lift a cap that already applies to buyers). Either way the screen keeps at least one focusable control: the refusal used to be the only thing on it, which on Apple TV reads as a dead remote rather than as a limit.
+
+`TVUnlockView` draws the lifetime and monthly IAPs, **Restore purchase** and **Try the report again**, with `.defaultFocus` on the cheapest product. Unlocking calls `ReportViewModel.retryBlockedRequest()`, so the viewer lands on the report they asked for rather than back on the home screen.
+
+**Purchase alone unlocks the TV — `POST /api/unlock-app`.** `POST /api/unlock-web` requires Sign in with Apple because its job is to join a purchase to an Apple ID so the *website* recognises it. The TV has no browser to unlock, so it posts the same StoreKit 2 signed transactions (`AppTransaction` plus any Pro IAP) with no identity token, and the Worker mints a session keyed on the purchase: `txn:<originalTransactionId>`. Verification is the same `verifyAppleJws` / `entitlementFromTransaction` the web unlock runs — one billing path, a second door onto it. Because the subject is not an Apple `sub`, that token cannot unlock the website.
+
+**Complimentary `APPLE_ID_WHITELIST` access still needs Sign in with Apple,** which needs the `com.apple.developer.applesignin` entitlement on the tvOS distribution profile. The archive step reads the installed profile and enables the entitlement (and the `ZENBUY_SIWA` compilation condition that draws the button) only when the capability is really there, so the build stays green either way and the button is never shipped inert. To switch it on: enable Sign in with Apple on App ID `info.zenbuy.app`, regenerate `CI info.zenbuy.app tvOS AppStore`, refresh the `ASC_PROFILE_TVOS_BASE64` secret — the next build picks it up with no code change. `vars.TVOS_SIGN_IN_WITH_APPLE=0` forces it off.
 
 ## 10-foot UI rules (ZenBuyTV only)
 
@@ -67,7 +78,7 @@ Other tvOS constraints baked into the target:
 
 ## What the TV target compiles — and why guards are `#if os(iOS)`
 
-`ZenBuyTV` is not "the iPhone app on a TV". Its `Sources` phase is `ZenBuyTV/` plus an explicit shared list — `ZenBuy/Core/**`, the two view models, `ReportHTML(View)`, `ProcessingProgress`, `ProcessingPanelView`, `ZenBuyBrandMark`, `FlowLayout`. Every screen is a `TV*` view, so the iPhone screens stay out: `DirectiveDetailView` has `TVDirectiveDetailView`, `ReportStreamView`/`ReportModeView` have `TVReportView`/`TVReportModeView`, and `UnlockWebView` cannot exist there at all because tvOS has no WebKit.
+`ZenBuyTV` is not "the iPhone app on a TV". Its `Sources` phase is `ZenBuyTV/` plus an explicit shared list — `ZenBuy/Core/**` (including `ZenBuyStore` and `WebUnlockService`), the two view models, `ReportHTML(View)`, `ProcessingProgress`, `ProcessingPanelView`, `ZenBuyBrandMark`, `FlowLayout`. Every screen is a `TV*` view, so the iPhone screens stay out: `DirectiveDetailView` has `TVDirectiveDetailView`, `ReportStreamView`/`ReportModeView` have `TVReportView`/`TVReportModeView`, and `UnlockWebView` has `TVUnlockView` — the iPhone one leads with linking the purchase to the website, which is not a thing the TV can do.
 
 **`#if canImport(UIKit)` does not mean iOS.** tvOS ships UIKit, so that check is true on Apple TV and fences off nothing. Use it only for genuinely shared UIKit types (`ZenBuyTheme.UIKitPalette` is fine — `UIColor` exists on tvOS). Anything iOS-only needs `#if os(iOS)`:
 

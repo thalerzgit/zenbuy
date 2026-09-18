@@ -54,6 +54,9 @@ enum ZenBuyDeviceIdentity {
 enum ZenBuyAPIError: LocalizedError {
     case invalidURL
     case http(status: Int, message: String?)
+    /// HTTP 429 from the report allowance gate. Kept apart from `http` because
+    /// it is the one refusal with a next step — unlock — rather than a retry.
+    case quota(code: String?, message: String?)
     case decoding(Error)
     case transport(Error)
 
@@ -64,6 +67,9 @@ enum ZenBuyAPIError: LocalizedError {
         case let .http(status, message):
             if let message, !message.isEmpty { return message }
             return "Request failed (HTTP \(status))."
+        case let .quota(_, message):
+            if let message, !message.isEmpty { return message }
+            return "You've used this week's free reports."
         case let .decoding(error):
             return "Unexpected response: \(error.localizedDescription)"
         case let .transport(error):
@@ -275,8 +281,14 @@ final class ZenBuyAPIClient {
                         for try await chunk in bytes {
                             data.append(chunk)
                         }
-                        let message = (try? decoder.decode(APIErrorResponse.self, from: data))?.error
-                        throw ZenBuyAPIError.http(status: http.statusCode, message: message)
+                        let payload = try? decoder.decode(APIErrorResponse.self, from: data)
+                        if http.statusCode == 429 {
+                            throw ZenBuyAPIError.quota(
+                                code: payload?.code,
+                                message: payload?.error
+                            )
+                        }
+                        throw ZenBuyAPIError.http(status: http.statusCode, message: payload?.error)
                     }
 
                     let reader = SSEStreamReader(bytes: bytes)

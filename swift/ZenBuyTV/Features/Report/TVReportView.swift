@@ -25,6 +25,8 @@ struct TVReportView: View {
     let directive: String
     let profitHorizonYears: Int
     @Bindable var viewModel: ReportViewModel
+    let store: ZenBuyStore
+    let unlock: WebUnlockService
     var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
     var onRestart: () -> Void = {}
 
@@ -95,6 +97,26 @@ struct TVReportView: View {
                         .font(TVTheme.bodyFont)
                         .foregroundStyle(ZenBuyTheme.bear)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // The allowance gate is the one failure with a next step. Left
+                // as prose it is also the one screen on Apple TV with nothing
+                // focusable on it, which reads as a broken remote.
+                if let block = viewModel.quotaBlock {
+                    if block.unlockLifts {
+                        TVUnlockView(
+                            store: store,
+                            unlock: unlock,
+                            onUnlocked: { viewModel.retryBlockedRequest() },
+                            onRetry: { viewModel.retryBlockedRequest() }
+                        )
+                    } else {
+                        Button("Try the report again") {
+                            viewModel.retryBlockedRequest()
+                        }
+                        .buttonStyle(.tvPrimary)
+                        .tvFocusRow()
+                    }
                 }
 
                 if let warningMessage = viewModel.warningMessage {

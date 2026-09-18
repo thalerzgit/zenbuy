@@ -7,11 +7,17 @@ struct TVBrowseView: View {
         case window(String)
         case discover
         case result(String)
+        case suggestion(String)
+        case pick(String)
+        case generate
     }
 
     @Bindable var viewModel: SearchViewModel
     @FocusState private var tickerFieldFocused: Bool
     @FocusState private var focus: BrowseFocus?
+    /// Why a suggestion click did not add a ticker. The only refusal is a full
+    /// selection, which is otherwise a silent no-op.
+    @State private var selectionNotice: String?
 
     private let goalColumns = [
         GridItem(.flexible(), spacing: TVTheme.columnGap),
@@ -275,17 +281,25 @@ struct TVBrowseView: View {
         .defaultFocus($focus, wizardLeadFocus)
     }
 
+    /// Selection leads the screen. A search for "IBM" returns more rows than a
+    /// 1080p page can hold, so chips and Generate placed under that list are
+    /// off screen at the one moment they matter — the click that adds a ticker.
     @ViewBuilder
     private var unlockedPath: some View {
+        if !viewModel.picks.isEmpty {
+            selectionScope
+        }
+
         if viewModel.inputMode == .enter {
             enterTickers
         } else {
             findTickers
         }
+    }
 
-        if !viewModel.picks.isEmpty {
-            picksRow
-        }
+    @ViewBuilder
+    private var selectionScope: some View {
+        picksRow
 
         if viewModel.canGenerate {
             Button("Generate report") {
@@ -293,7 +307,7 @@ struct TVBrowseView: View {
                 viewModel.beginGenerate()
             }
             .buttonStyle(.tvPrimary)
-            .padding(.top, 8)
+            .focused($focus, equals: .generate)
             .tvFocusRow()
         }
     }
@@ -318,13 +332,14 @@ struct TVBrowseView: View {
                 )
                 .animation(TVTheme.focusAnimation, value: tickerFieldFocused)
                 .onChange(of: viewModel.query) { _, _ in
+                    selectionNotice = nil
                     viewModel.onQueryChanged()
                 }
                 .onSubmit {
                     tickerFieldFocused = false
                 }
 
-            Text("Select 1–4 tickers. Reports stream from zenbuy.info.")
+            Text("Select 1–\(SearchViewModel.maxPicks) tickers. Reports stream from zenbuy.info.")
                 .font(TVTheme.captionFont)
                 .foregroundStyle(ZenBuyTheme.muted)
 
@@ -336,9 +351,9 @@ struct TVBrowseView: View {
             if !viewModel.suggestions.isEmpty {
                 VStack(spacing: 16) {
                     ForEach(viewModel.suggestions) { result in
+                        let selected = viewModel.picks.contains(result)
                         Button {
-                            viewModel.addPick(result)
-                            tickerFieldFocused = false
+                            toggleSuggestion(result)
                         } label: {
                             HStack(spacing: 20) {
                                 Text(result.symbol)
@@ -349,15 +364,63 @@ struct TVBrowseView: View {
                                     .foregroundStyle(ZenBuyTheme.muted)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
+                                if selected {
+                                    Text("Selected")
+                                        .font(TVTheme.captionFont.weight(.semibold))
+                                        .foregroundStyle(ZenBuyTheme.greenDark)
+                                }
                             }
                         }
-                        .buttonStyle(.tvCard())
+                        .buttonStyle(.tvCard(selected: selected))
+                        .focused($focus, equals: .suggestion(result.symbol))
                     }
                 }
                 .frame(maxWidth: TVTheme.readingMaxWidth, alignment: .leading)
             }
         }
         .tvFocusRow()
+    }
+
+    /// A suggestion row is a toggle, like a discover row. Adding empties the
+    /// query and the list, so the click that lands a ticker also has to say
+    /// where focus goes — Generate, the step it just unlocked.
+    ///
+    /// A full selection is the one click that cannot add anything. It used to
+    /// return in silence from `addPick`, which is how four picks carried over
+    /// from a Find run read as a broken remote. Focus moves to the chips so the
+    /// scroll view carries the reason and the remedy into view together.
+    private func toggleSuggestion(_ result: SymbolResult) {
+        if viewModel.picks.contains(result) {
+            viewModel.removePick(result)
+            parkFocusAfterRemoval()
+            return
+        }
+        guard !viewModel.selectionIsFull else {
+            selectionNotice =
+                "\(result.symbol) needs a free slot — remove one of these \(SearchViewModel.maxPicks) first."
+            if let first = viewModel.picks.first {
+                focus = .pick(first.symbol)
+            }
+            return
+        }
+        selectionNotice = nil
+        viewModel.addPick(result)
+        tickerFieldFocused = false
+        focus = .generate
+    }
+
+    /// Removing the last chip takes Generate off screen with it.
+    private func parkFocusAfterRemoval() {
+        selectionNotice = nil
+        guard viewModel.picks.isEmpty else {
+            focus = .generate
+            return
+        }
+        if viewModel.inputMode == .find {
+            focus = .discover
+        } else if let first = viewModel.suggestions.first {
+            focus = .suggestion(first.symbol)
+        }
     }
 
     private var findTickers: some View {
@@ -427,13 +490,24 @@ struct TVBrowseView: View {
 
     private var picksRow: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Selected · click a symbol to remove it")
-                .font(TVTheme.eyebrowFont)
-                .foregroundStyle(ZenBuyTheme.muted)
+            Text(
+                "Selected \(viewModel.picks.count) of \(SearchViewModel.maxPicks) · click a symbol to remove it"
+            )
+            .font(TVTheme.eyebrowFont)
+            .foregroundStyle(ZenBuyTheme.muted)
+
+            if let selectionNotice {
+                Text(selectionNotice)
+                    .font(TVTheme.captionFont)
+                    .foregroundStyle(ZenBuyTheme.bear)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: 20) {
                 ForEach(viewModel.picks) { pick in
                     Button {
                         viewModel.removePick(pick)
+                        parkFocusAfterRemoval()
                     } label: {
                         HStack(spacing: 12) {
                             Text(pick.symbol)
@@ -442,6 +516,7 @@ struct TVBrowseView: View {
                         }
                     }
                     .buttonStyle(.tvChip)
+                    .focused($focus, equals: .pick(pick.symbol))
                     .accessibilityLabel("Remove \(pick.symbol)")
                 }
             }

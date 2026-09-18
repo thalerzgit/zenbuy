@@ -18,6 +18,9 @@
  *
  * `APPLE_ID_WHITELIST` is the one way past the App Store: an Apple ID listed
  * there is granted the same entitlement complimentarily, no purchase involved.
+ *
+ * `POST /api/unlock-app` is the Apple TV shape of step 1: StoreKit proof with
+ * no sign-in, which raises the app's own allowance but never the website's.
  */
 
 // Extension-qualified so `node --experimental-strip-types` can load this
@@ -25,6 +28,7 @@
 import type { AppleIdentity } from "./apple-id.ts";
 import { AppleAuthError, exchangeAuthorizationCode, verifyAppleIdToken } from "./apple-id.ts";
 import { AppleJwsError, verifyAppleJws } from "./apple-jws.ts";
+import { isNativeAppleClient } from "./native-client.ts";
 import {
   USER_FACING_APP_BAD_TOKEN,
   USER_FACING_APP_NO_PURCHASE,
@@ -88,6 +92,13 @@ export interface UnlockState {
 
 /** Product id recorded for a complimentary grant, in place of a real one. */
 export const COMPLIMENTARY_PRODUCT_ID = "whitelist";
+
+/**
+ * Subject namespace for a purchase proven by StoreKit alone — no Apple
+ * sign-in, so no Apple `sub`. Deliberately a different shape from a `sub` so
+ * an app-only session can never be mistaken for a website identity.
+ */
+const STOREKIT_SUBJECT_PREFIX = "txn:";
 
 function proProductIds(env: Env): string[] {
   return (env.APPLE_PRO_PRODUCT_IDS || DEFAULT_PRO_PRODUCT_IDS)
@@ -614,6 +625,93 @@ export function entitlementFromTransaction(
   };
 }
 
+function entitlementTtlSeconds(entitlement: Entitlement, now: number): number {
+  if (entitlement.expiresAt === null) return LIFETIME_TTL_SECONDS;
+  return Math.max(
+    60,
+    Math.ceil((entitlement.expiresAt - now) / 1000) + ENTITLEMENT_GRACE_SECONDS
+  );
+}
+
+/** Apple-signed transactions, reduced to the one entitlement worth storing. */
+async function bestEntitlementFromJws(
+  env: Env,
+  transactions: unknown,
+  now: number
+): Promise<Entitlement | null> {
+  const submitted = Array.isArray(transactions) ? transactions.slice(0, 20) : [];
+  const candidates: Entitlement[] = [];
+  for (const raw of submitted) {
+    if (typeof raw !== "string") continue;
+    try {
+      const accepted = entitlementFromTransaction(
+        env,
+        await verifyAppleJws<SignedTransaction>(raw),
+        now
+      );
+      if (accepted) candidates.push(accepted);
+    } catch (e) {
+      if (!(e instanceof AppleJwsError)) console.error("transaction verification failed", e);
+    }
+  }
+  return bestEntitlement(candidates);
+}
+
+/**
+ * `POST /api/unlock-app` — raise *this app's* report allowance from StoreKit
+ * alone.
+ *
+ * `POST /api/unlock-web` deliberately requires Sign in with Apple: its job is
+ * to join a purchase to an Apple ID so the *website* recognises it, and only an
+ * identity token can do that. Apple TV has neither half of that problem — there
+ * is no browser to unlock — and its Dist provisioning profile carries no Sign
+ * in with Apple capability, so demanding an identity token there strands a
+ * paying viewer on the free weekly allowance with nothing to click.
+ *
+ * Apple's signature over the StoreKit 2 JWS already proves the purchase, so the
+ * session is keyed on the purchase instead of on a person:
+ * `txn:<originalTransactionId>`. Verification is the same `verifyAppleJws` and
+ * `entitlementFromTransaction` the web unlock runs — this is a second door onto
+ * the existing entitlement store, not a second billing path. Because the
+ * subject is not an Apple `sub`, the token cannot unlock the website, and a
+ * complimentary whitelist grant still needs the sign-in route.
+ */
+export async function handleUnlockApp(request: Request, env: Env): Promise<Response> {
+  // Only the apps send StoreKit JWS, and a browser reaching here would be
+  // asking for a session it has no purchase to back.
+  if (!isNativeAppleClient(request)) {
+    return json({ error: "native client only" }, 403);
+  }
+
+  let body: { transactions?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad request" }, 400);
+  }
+
+  const now = Date.now();
+  const entitlement = await bestEntitlementFromJws(env, body.transactions, now);
+  const subject = entitlement?.originalTransactionId.trim()
+    ? `${STOREKIT_SUBJECT_PREFIX}${entitlement.originalTransactionId.trim()}`
+    : null;
+  if (!entitlement || !subject) {
+    return json({ error: "no active purchase" }, 402);
+  }
+
+  await env.CACHE.put(entitlementKey(subject), JSON.stringify(entitlement), {
+    expirationTtl: entitlementTtlSeconds(entitlement, now),
+  });
+
+  return json({
+    ok: true,
+    unlocked: true,
+    productId: entitlement.productId,
+    expiresAt: entitlement.expiresAt,
+    token: await createSession(env, subject),
+  });
+}
+
 /** Prefer a lifetime purchase, then the subscription that runs longest. */
 function bestEntitlement(candidates: Entitlement[]): Entitlement | null {
   return (
@@ -807,12 +905,8 @@ export async function completeUnlockWeb(
     return json({ error: "no active purchase" }, 402);
   }
 
-  const ttl =
-    entitlement.expiresAt === null
-      ? LIFETIME_TTL_SECONDS
-      : Math.max(60, Math.ceil((entitlement.expiresAt - now) / 1000) + ENTITLEMENT_GRACE_SECONDS);
   await env.CACHE.put(entitlementKey(identity.sub), JSON.stringify(entitlement), {
-    expirationTtl: ttl,
+    expirationTtl: entitlementTtlSeconds(entitlement, now),
   });
 
   const sessionId = await createSession(env, identity.sub);

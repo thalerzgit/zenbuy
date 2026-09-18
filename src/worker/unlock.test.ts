@@ -7,6 +7,7 @@ import {
   completeUnlockWeb,
   emailForWhitelist,
   entitlementFromTransaction,
+  handleUnlockApp,
   isNormalEmail,
   isPaidAppTransaction,
   isWhitelisted,
@@ -442,4 +443,68 @@ test("a lapsed subscription is not treated as a complimentary grant", async () =
   const state = await resolveUnlock(signedIn(kv), envWith(kv));
   assert.equal(state.unlocked, false);
   assert.equal(state.complimentary, false);
+});
+
+/**
+ * `POST /api/unlock-app` is the Apple TV route: StoreKit proof with no Apple
+ * sign-in. Accepting a real JWS needs Apple's signature, which belongs to
+ * `apple-jws.test.ts`; what is pinned here is that the route refuses everything
+ * it should, and that the session it would mint is a purchase — never a
+ * complimentary bypass and never a website identity.
+ */
+function unlockAppRequest(body: unknown, client = "tvos"): Request {
+  return new Request("https://zenbuy.info/api/unlock-app", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-ZenBuy-Client": client },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+test("unlock-app refuses a browser — only the native apps hold StoreKit proof", async () => {
+  const response = await handleUnlockApp(
+    unlockAppRequest({ transactions: [] }, "web"),
+    purchaseEnv()
+  );
+  assert.equal(response.status, 403);
+});
+
+test("unlock-app without a usable transaction is 402, not a session", async () => {
+  const kv = fakeKv();
+  const env = purchaseEnv(kv);
+
+  assert.equal((await handleUnlockApp(unlockAppRequest("not json"), env)).status, 400);
+  assert.equal((await handleUnlockApp(unlockAppRequest({}), env)).status, 402);
+  assert.equal(
+    (await handleUnlockApp(unlockAppRequest({ transactions: [42] }), env)).status,
+    402
+  );
+  assert.equal(kv.store.size, 0);
+});
+
+test("a StoreKit-only session earns the purchased allowance, not a complimentary one", async () => {
+  const kv = fakeKv();
+  const subject = "txn:2000000012345678";
+  kv.store.set(`apple:session:${SESSION}`, subject);
+  kv.store.set(
+    `apple:entitlement:${subject}`,
+    JSON.stringify({
+      productId: "info.zenbuy.app.lifetime",
+      originalTransactionId: "2000000012345678",
+      expiresAt: null,
+      environment: "Production",
+      updatedAt: Date.now(),
+    })
+  );
+
+  const request = new Request("https://zenbuy.info/api/research", {
+    headers: { authorization: `Bearer ${SESSION}` },
+  });
+  // A `txn:` subject is not an Apple `sub`, so it matches neither an email
+  // entry nor a `sub:` entry — a purchase is counted against the daily
+  // allowance rather than slipping into the uncounted complimentary one.
+  const env = envWith(kv, `thalerz@me.com,sub:${SUB}`);
+  const state = await resolveUnlock(request, env);
+  assert.equal(state.unlocked, true);
+  assert.equal(state.complimentary, false);
+  assert.equal(state.sub, subject);
 });

@@ -61,6 +61,23 @@ Until that variable is `1`, the TestFlight workflow archives without the
 entitlement and stays green — the app builds and ships, and only the Sign in
 with Apple button is inert.
 
+### 1.5 Regenerate the CI tvOS provisioning profile
+
+Apple TV needs the same capability for the same reason, on its own profile.
+
+1. **Profiles → `CI info.zenbuy.app tvOS AppStore` → Edit → Save**.
+2. Download it, `base64` it and replace the GitHub secret **`ASC_PROFILE_TVOS_BASE64`**.
+
+There is no variable to set afterwards: `tvos-testflight.yml` reads
+`Entitlements:com.apple.developer.applesignin` out of the profile it installs and
+switches both the entitlement and the `ZENBUY_SIWA` compilation condition on by
+itself, so the Sign in with Apple button is drawn only once it can actually work.
+`vars.TVOS_SIGN_IN_WITH_APPLE=0` forces it off.
+
+Sign in with Apple is only how a *complimentary* `APPLE_ID_WHITELIST` Apple ID
+unlocks the TV. A purchased or restored unlock does not need it — see
+`POST /api/unlock-app` below.
+
 ---
 
 ## 2. Cloudflare Worker
@@ -131,6 +148,33 @@ an email.
 Finding someone's `sub` when the email is hidden: have them sign in once, then
 look for the newest `apple:entitlement:*` key, or read it from the
 `apple:session:*` value tied to their sign-in.
+
+### Purchase-only unlock — `POST /api/unlock-app`
+
+`POST /api/unlock-web` requires an identity token because its job is to join a
+purchase to an Apple ID so the **website** recognises it, and only Sign in with
+Apple can do that. Apple TV has neither half of that problem: there is no
+browser to unlock, and its distribution profile may not carry the Sign in with
+Apple capability yet. Requiring a sign-in there stranded a paying viewer on the
+free weekly allowance with nothing to click.
+
+So a native client may post its StoreKit 2 signed transactions on their own:
+
+```jsonc
+POST /api/unlock-app
+X-ZenBuy-Client: tvos        // or ios; a browser gets 403
+{ "transactions": ["<AppTransaction JWS>", "<IAP JWS>"] }
+→ { "ok": true, "unlocked": true, "productId": "...", "token": "<session>" }
+```
+
+Apple's signature over the JWS is the proof, verified by the same
+`verifyAppleJws` / `entitlementFromTransaction` the web unlock uses — one
+billing path, a second door onto it. The entitlement and session are keyed on
+the purchase rather than a person: **`txn:<originalTransactionId>`**. That is a
+different namespace from an Apple `sub`, so the token raises the app's own
+report allowance and nothing else — it cannot unlock the website, and it cannot
+match an `APPLE_ID_WHITELIST` entry into the uncounted complimentary allowance.
+Complimentary access remains a sign-in.
 
 ---
 

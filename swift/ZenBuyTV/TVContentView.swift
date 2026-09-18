@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TVContentView: View {
     @Bindable var viewModel: SearchViewModel
+    let store: ZenBuyStore
+    let unlock: WebUnlockService
     @AppStorage("zenbuy.tv.onboarding.v1") private var didOnboard = false
     @Environment(\.scenePhase) private var scenePhase
 
@@ -29,6 +31,8 @@ struct TVContentView: View {
                         directive: viewModel.selectedDirectiveId,
                         profitHorizonYears: viewModel.profitHorizonYears,
                         viewModel: viewModel.report,
+                        store: store,
+                        unlock: unlock,
                         onRunSimilar: { symbols, mode in
                             viewModel.startSimilarReport(symbols: symbols, mode: mode)
                         },
@@ -47,6 +51,11 @@ struct TVContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             viewModel.handleScenePhase(phase)
+        }
+        .task {
+            // A purchase made on another device, or a lapsed subscription,
+            // decides whether this Apple TV is on the unlocked allowance.
+            await unlock.refresh()
         }
     }
 
@@ -68,6 +77,10 @@ struct TVContentView: View {
 
 #Preview {
     let api = ZenBuyAPIClient()
-    TVContentView(viewModel: SearchViewModel(api: api))
-        .environment(api)
+    TVContentView(
+        viewModel: SearchViewModel(api: api),
+        store: ZenBuyStore(),
+        unlock: WebUnlockService()
+    )
+    .environment(api)
 }
