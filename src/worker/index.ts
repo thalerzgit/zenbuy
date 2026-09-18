@@ -64,6 +64,7 @@ import {
   handleAppleSignIn,
   handleMe,
   handleUnlink,
+  handleUnlockApp,
   handleUnlockWeb,
   resolveUnlock,
 } from "./unlock";
@@ -1185,6 +1186,11 @@ export default {
     if (url.pathname === "/api/unlock-web") {
       return request.method === "POST"
         ? handleUnlockWeb(request, env)
+        : json({ error: "method not allowed" }, 405);
+    }
+    if (url.pathname === "/api/unlock-app") {
+      return request.method === "POST"
+        ? handleUnlockApp(request, env)
         : json({ error: "method not allowed" }, 405);
     }
 

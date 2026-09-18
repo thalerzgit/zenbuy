@@ -306,6 +306,40 @@ jobs:
           echo "Installed profile '${NAME}' (${UUID})."
           rm -f "${RUNNER_TEMP}/dist-raw.p12" "${RUNNER_TEMP}/dist.p12" "${RUNNER_TEMP}/dist.pem" "${RUNNER_TEMP}/tvos.mobileprovision"
 
+      # Sign in with Apple claims complimentary APPLE_ID_WHITELIST access on TV.
+      # Archiving with the entitlement against a profile that does not carry the
+      # capability fails, so the profile itself decides: it is read here rather
+      # than trusted from a variable, and the button is compiled out until the
+      # capability is really there. Refresh ASC_PROFILE_TVOS_BASE64 after
+      # regenerating the profile and the next build picks it up on its own.
+      # vars.TVOS_SIGN_IN_WITH_APPLE=0 forces it off.
+      - name: Resolve Sign in with Apple entitlement
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          CAPABLE=0
+          if /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin' \
+            "${RUNNER_TEMP}/pp.plist" >/dev/null 2>&1; then
+            CAPABLE=1
+          fi
+          if [ "${{ vars.TVOS_SIGN_IN_WITH_APPLE }}" = "0" ]; then
+            CAPABLE=0
+            echo "Sign in with Apple forced OFF by vars.TVOS_SIGN_IN_WITH_APPLE=0."
+          fi
+          if [ "${CAPABLE}" = "1" ]; then
+            echo "TVOS_ENTITLEMENTS=ZenBuyTV/ZenBuyTV.entitlements" >> "${GITHUB_ENV}"
+            echo "TVOS_SWIFT_CONDITIONS=\$(inherited) ZENBUY_SIWA" >> "${GITHUB_ENV}"
+            echo "Sign in with Apple ON — '${TVOS_PROFILE_NAME}' carries the capability."
+          else
+            echo "TVOS_ENTITLEMENTS=" >> "${GITHUB_ENV}"
+            echo "TVOS_SWIFT_CONDITIONS=\$(inherited)" >> "${GITHUB_ENV}"
+            echo "Sign in with Apple OFF — '${TVOS_PROFILE_NAME}' has no applesignin"
+            echo "entitlement. Buy and Restore still unlock the TV allowance through"
+            echo "POST /api/unlock-app. To switch it on: enable Sign in with Apple on"
+            echo "App ID ${TVOS_BUNDLE_ID}, regenerate '${TVOS_PROFILE_NAME}', and refresh"
+            echo "the ASC_PROFILE_TVOS_BASE64 secret. See docs/APPLE_UNLOCK_SETUP.md."
+          fi
+
       - name: Archive
         run: |
           set -euo pipefail
@@ -327,7 +361,8 @@ jobs:
             DEVELOPMENT_TEAM="${TVOS_TEAM_ID}" \
             PROVISIONING_PROFILE_SPECIFIER="${TVOS_PROFILE_NAME}" \
             CURRENT_PROJECT_VERSION="${TVOS_BUILD_NUMBER}" \
-            CODE_SIGN_ENTITLEMENTS= \
+            CODE_SIGN_ENTITLEMENTS="${TVOS_ENTITLEMENTS}" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS="${TVOS_SWIFT_CONDITIONS}" \
             archive | beautify
 
       - name: Confirm archived Info.plist has tvOS icon + Top Shelf keys

@@ -10,6 +10,24 @@ struct ReportRequest: Equatable, Sendable {
     let profitHorizonYears: Int?
 }
 
+/// Why the allowance gate refused a report. The distinction matters because
+/// only the free allowance is lifted by unlocking — the unlocked daily cap
+/// applies to buyers too, and offering them a purchase would be a dead end of
+/// its own.
+enum ReportQuotaBlock: Equatable, Sendable {
+    case freeWeekly
+    case unlockedDaily
+
+    init?(error: Error) {
+        guard let api = error as? ZenBuyAPIError, case let .quota(code, _) = api else {
+            return nil
+        }
+        self = code == "pro_limit" ? .unlockedDaily : .freeWeekly
+    }
+
+    var unlockLifts: Bool { self == .freeWeekly }
+}
+
 enum ReportStreamPolicy {
     static let emptyFinishedReportMessage =
         "The report finished, but the content didn't arrive or failed to render. Try Generate again."
@@ -121,6 +139,9 @@ final class ReportViewModel {
     var errorMessage: String?
     var warningMessage: String?
     var didFinishSuccessfully = false
+    /// Set when the allowance gate refused this report, so a client can offer
+    /// the way past it instead of only printing the refusal.
+    private(set) var quotaBlock: ReportQuotaBlock?
     /// Successor reports hide "Show more like this" to avoid rabbit holes.
     private(set) var allowSimilar = true
     private(set) var similarSymbols: [String] = []
@@ -275,6 +296,7 @@ final class ReportViewModel {
         badges = nil
         errorMessage = nil
         warningMessage = nil
+        quotaBlock = nil
         didFinishSuccessfully = false
         isStreaming = true
         lastFlush = .distantPast
@@ -429,11 +451,20 @@ final class ReportViewModel {
                 resume(request)
                 return
             }
+            quotaBlock = ReportQuotaBlock(error: error)
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             processing.fail()
             isStreaming = false
             endResearchBackgroundTask()
         }
+    }
+
+    /// Re-run the report the allowance gate refused. The request is unchanged —
+    /// only the allowance moved, so this is the whole of "continue where you
+    /// left off" after an unlock.
+    func retryBlockedRequest() {
+        guard let request = activeRequest else { return }
+        start(request)
     }
 
     private func recoverOrFinish(

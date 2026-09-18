@@ -24,6 +24,11 @@ final class WebUnlockService {
 
     private static let log = Logger(subsystem: "info.zenbuy.app", category: "unlock")
     private static let keychainAccount = "web-unlock-session"
+    #if os(tvOS)
+    private static let clientValue = "tvos"
+    #else
+    private static let clientValue = "ios"
+    #endif
 
     private(set) var status: Status = .unknown
     private(set) var isWorking = false
@@ -46,7 +51,7 @@ final class WebUnlockService {
         }
 
         var request = URLRequest(url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/me"))
-        request.setValue("ios", forHTTPHeaderField: "X-ZenBuy-Client")
+        request.setValue(Self.clientValue, forHTTPHeaderField: "X-ZenBuy-Client")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         do {
@@ -86,7 +91,7 @@ final class WebUnlockService {
         )
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("ios", forHTTPHeaderField: "X-ZenBuy-Client")
+        request.setValue(Self.clientValue, forHTTPHeaderField: "X-ZenBuy-Client")
         request.httpBody = try? JSONEncoder().encode(
             UnlockRequest(
                 identityToken: identityToken,
@@ -112,11 +117,63 @@ final class WebUnlockService {
         }
     }
 
+    /// Raise this app's report allowance from the purchase alone.
+    ///
+    /// `link(credential:store:)` is the route that also unlocks the website, and
+    /// it needs Sign in with Apple to do so. Apple TV has no website to unlock
+    /// and no Sign in with Apple capability on its distribution profile, so this
+    /// posts the same signed transactions to `POST /api/unlock-app` and keeps
+    /// the session token it returns. Nothing here can grant complimentary
+    /// whitelist access — that is an Apple ID fact, not a purchase fact.
+    ///
+    /// - Returns: `true` once a session token is held.
+    func redeemPurchase(store: ZenBuyStore) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+
+        let transactions = await store.entitlementJWS()
+        guard !transactions.isEmpty else {
+            errorMessage = Self.noPurchaseMessage
+            return false
+        }
+
+        var request = URLRequest(
+            url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/unlock-app")
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.clientValue, forHTTPHeaderField: "X-ZenBuy-Client")
+        request.httpBody = try? JSONEncoder().encode(RedeemRequest(transactions: transactions))
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                errorMessage = status == 402
+                    ? Self.noPurchaseMessage
+                    : "Checking that purchase failed (HTTP \(status)). Try again in a moment."
+                return false
+            }
+            let unlock = try JSONDecoder().decode(UnlockResponse.self, from: data)
+            Keychain.write(unlock.token, account: Self.keychainAccount)
+            sessionToken = unlock.token
+            return true
+        } catch {
+            Self.log.error("redeem failed: \(error.localizedDescription, privacy: .public)")
+            errorMessage = "Couldn't reach ZenBuy to check that purchase. Check your connection and try again."
+            return false
+        }
+    }
+
     /// Sign this device out. The App Store purchase is untouched.
     func clearSession() {
         Keychain.delete(Self.keychainAccount)
         sessionToken = nil
     }
+
+    static let noPurchaseMessage =
+        "No ZenBuy purchase on this Apple ID yet. Buy above, or restore if you bought it already."
 
     private static func message(forStatus status: Int) -> String {
         switch status {
@@ -145,6 +202,10 @@ final class WebUnlockService {
             try container.encode(transactions, forKey: .transactions)
             try container.encodeIfPresent(email, forKey: .email)
         }
+    }
+
+    private struct RedeemRequest: Encodable {
+        let transactions: [String]
     }
 
     private struct UnlockResponse: Decodable {
