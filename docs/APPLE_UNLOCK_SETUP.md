@@ -61,18 +61,26 @@ Until that variable is `1`, the TestFlight workflow archives without the
 entitlement and stays green — the app builds and ships, and only the Sign in
 with Apple button is inert.
 
-### 1.5 Regenerate the CI tvOS provisioning profile
+### 1.5 The CI tvOS provisioning profile — already done
 
 Apple TV needs the same capability for the same reason, on its own profile.
+`CI info.zenbuy.app tvOS AppStore` already carries it: tvOS build 5008 logged
+`Sign in with Apple ON` and archived with the entitlement.
 
-1. **Profiles → `CI info.zenbuy.app tvOS AppStore` → Edit → Save**.
-2. Download it, `base64` it and replace the GitHub secret **`ASC_PROFILE_TVOS_BASE64`**.
-
-There is no variable to set afterwards: `tvos-testflight.yml` reads
+There is no variable to set: `tvos-testflight.yml` reads
 `Entitlements:com.apple.developer.applesignin` out of the profile it installs and
 switches both the entitlement and the `ZENBUY_SIWA` compilation condition on by
 itself, so the Sign in with Apple button is drawn only once it can actually work.
 `vars.TVOS_SIGN_IN_WITH_APPLE=0` forces it off.
+
+If the profile is ever regenerated without the capability, the archive stays
+green and the TV falls back to Buy / Restore. To restore it:
+
+1. **Profiles → `CI info.zenbuy.app tvOS AppStore` → Edit → Save**.
+2. Download it, `base64` it and replace the GitHub secret **`ASC_PROFILE_TVOS_BASE64`**.
+
+Note that the iPhone target is the one still waiting on step 1.4 — the two
+profiles are separate, and `IOS_SIGN_IN_WITH_APPLE` gates iOS on its own.
 
 Sign in with Apple is only how a *complimentary* `APPLE_ID_WHITELIST` Apple ID
 unlocks the TV. A purchased or restored unlock does not need it — see
