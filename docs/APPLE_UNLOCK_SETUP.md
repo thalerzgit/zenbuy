@@ -82,8 +82,10 @@ green and the TV falls back to Buy / Restore. To restore it:
 Note that the iPhone target is the one still waiting on step 1.4 — the two
 profiles are separate, and `IOS_SIGN_IN_WITH_APPLE` gates iOS on its own.
 
-Sign in with Apple is only how a *complimentary* `APPLE_ID_WHITELIST` Apple ID
-unlocks the TV. A purchased or restored unlock does not need it — see
+Sign in with Apple is how a *complimentary* `APPLE_ID_WHITELIST` Apple ID
+unlocks the TV, and how an Apple ID already linked on iPhone / zenbuy.info
+attaches to this Apple TV. Restore cannot see that grant. A purchased or
+restored StoreKit entitlement does not need sign-in — see
 `POST /api/unlock-app` below.
 
 ---
@@ -160,11 +162,11 @@ look for the newest `apple:entitlement:*` key, or read it from the
 ### Purchase-only unlock — `POST /api/unlock-app`
 
 `POST /api/unlock-web` requires an identity token because its job is to join a
-purchase to an Apple ID so the **website** recognises it, and only Sign in with
-Apple can do that. Apple TV has neither half of that problem: there is no
-browser to unlock, and its distribution profile may not carry the Sign in with
-Apple capability yet. Requiring a sign-in there stranded a paying viewer on the
-free weekly allowance with nothing to click.
+purchase — or a complimentary whitelist grant — to an Apple ID so the
+**website** recognises it, and only Sign in with Apple can do that. Apple TV
+uses that same door for complimentary / already-linked Apple IDs. Requiring a
+sign-in for a *purchase* stranded a paying viewer on the free weekly allowance
+with nothing to click.
 
 So a native client may post its StoreKit 2 signed transactions on their own:
 
