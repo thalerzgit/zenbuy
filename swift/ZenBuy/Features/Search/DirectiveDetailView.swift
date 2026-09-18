@@ -26,7 +26,13 @@ struct DirectiveDetailView: View {
         }
         .background(ZenBuyTheme.background)
         .navigationTitle(directive.label)
+        // Apple TV browses directives through TVDirectiveDetailView, so this
+        // screen is iOS-only — but the modifier does not exist on tvOS, so it
+        // stays fenced rather than breaking the TV target if the file is ever
+        // shared. See docs/TVOS_TESTFLIGHT.md.
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
     @ViewBuilder
