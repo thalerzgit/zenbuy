@@ -63,6 +63,9 @@ enum SearchRoute: Hashable {
 @Observable
 @MainActor
 final class SearchViewModel {
+    /// A report compares at most four tickers, so the selection is capped.
+    static let maxPicks = 4
+
     var query = ""
     var suggestions: [SymbolResult] = []
     var picks: [SymbolResult] = []
@@ -114,7 +117,11 @@ final class SearchViewModel {
     }
 
     var canGenerate: Bool {
-        !picks.isEmpty && picks.count <= 4
+        !picks.isEmpty && picks.count <= Self.maxPicks
+    }
+
+    var selectionIsFull: Bool {
+        picks.count >= Self.maxPicks
     }
 
     var canContinueWizard: Bool {
@@ -164,7 +171,7 @@ final class SearchViewModel {
     }
 
     func addPick(_ result: SymbolResult) {
-        guard picks.count < 4 else { return }
+        guard picks.count < Self.maxPicks else { return }
         guard !picks.contains(result) else { return }
         picks.append(result)
         query = ""
