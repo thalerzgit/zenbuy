@@ -392,9 +392,18 @@ jobs:
           fi
 
   # ASC API only — no Dist p12, no profiles, no xcodebuild, no Dev certs.
+  #
+  # A tvOS fix sometimes has to touch a shared iOS source (a platform guard),
+  # which matches this workflow's paths even though iOS behaviour is unchanged.
+  # Such a push carries [no-appstore] so the build still archives and reaches
+  # TestFlight, but the App Store queue is left alone — this job retracts an
+  # in-flight review to attach the new build, and losing that queue position
+  # for a compile-time-only change is not a trade worth making. Keep the marker
+  # in the commit message when merging; without it review is submitted as usual.
   submit_review:
     name: Submit App Store review
     needs: upload
+    if: ${{ !contains(join(github.event.commits.*.message, ' '), '[no-appstore]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:

@@ -1,5 +1,9 @@
 import Foundation
-#if canImport(UIKit)
+// `canImport(UIKit)` is true on tvOS, so it cannot fence off the share sheet —
+// UIActivityViewController and NSItemProvider.suggestedName are iOS-only. Apple
+// TV mails its report from the Worker instead (docs/TVOS_TESTFLIGHT.md), so the
+// renderer is gated on the platform, matching ReportViewModel.prepareSharePDF.
+#if os(iOS)
 import UIKit
 import UniformTypeIdentifiers
 #endif
@@ -23,7 +27,7 @@ enum ReportPDFValidation {
     }
 }
 
-#if canImport(UIKit)
+#if os(iOS)
 private typealias Palette = ZenBuyTheme.UIKitPalette
 
 /// Builds a local PDF from the native report model (not a webview screenshot).

@@ -65,6 +65,23 @@ Other tvOS constraints baked into the target:
 - Page backgrounds use `.ignoresSafeArea()`; without it the tvOS overscan inset shows through as black gutters.
 - `Link` cannot open a browser on tvOS; report citations render as plain chips.
 
+## What the TV target compiles — and why guards are `#if os(iOS)`
+
+`ZenBuyTV` is not "the iPhone app on a TV". Its `Sources` phase is `ZenBuyTV/` plus an explicit shared list — `ZenBuy/Core/**`, the two view models, `ReportHTML(View)`, `ProcessingProgress`, `ProcessingPanelView`, `ZenBuyBrandMark`, `FlowLayout`. Every screen is a `TV*` view, so the iPhone screens stay out: `DirectiveDetailView` has `TVDirectiveDetailView`, `ReportStreamView`/`ReportModeView` have `TVReportView`/`TVReportModeView`, and `UnlockWebView` cannot exist there at all because tvOS has no WebKit.
+
+**`#if canImport(UIKit)` does not mean iOS.** tvOS ships UIKit, so that check is true on Apple TV and fences off nothing. Use it only for genuinely shared UIKit types (`ZenBuyTheme.UIKitPalette` is fine — `UIColor` exists on tvOS). Anything iOS-only needs `#if os(iOS)`:
+
+| API | tvOS |
+|-----|------|
+| `navigationBarTitleDisplayMode` | unavailable — the TV target draws its own titles |
+| `UIActivityViewController`, `NSItemProvider.suggestedName` | unavailable — no share sheet; TV mails the PDF from the Worker |
+| `UIApplication.beginBackgroundTask` | unavailable |
+| `WebKit` | module does not exist |
+
+So an iPhone-only file carries its guards anyway, even though membership already keeps it off Apple TV. Target membership is one checkbox in Xcode's File inspector and an accidental tick is invisible in the iOS build — `ReportPDFExporter.swift` and `DirectiveDetailView.swift` were once ticked into `ZenBuyTV` in a local `project.pbxproj` and the Apple TV scheme failed with three "unavailable in tvOS" errors while `main` stayed green. Guarded files degrade to a no-op instead of breaking the build. If the TV scheme ever fails this way, check `git status` on `swift/ZenBuy.xcodeproj/project.pbxproj` before changing any code.
+
+`ios-testflight.yml` matches `swift/**` minus the TV-only paths, so a guard added to a shared iOS file archives the iPhone app and submits it for App Store review. When the change is compile-time only, put `[no-appstore]` in the commit message: the build still reaches TestFlight, but `submit_review` is skipped so an in-flight review keeps its queue position.
+
 ## Hard Dist rules (same as iOS)
 
 - Never `-allowProvisioningUpdates`
