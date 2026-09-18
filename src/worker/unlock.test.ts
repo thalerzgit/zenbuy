@@ -468,6 +468,17 @@ test("unlock-app refuses a browser — only the native apps hold StoreKit proof"
   assert.equal(response.status, 403);
 });
 
+test("unlock-app cannot grant complimentary whitelist without StoreKit", async () => {
+  const kv = fakeKv();
+  const env = purchaseEnv(kv, {
+    APPLE_ID_WHITELIST: "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com",
+  });
+  const response = await handleUnlockApp(unlockAppRequest({ transactions: [] }), env);
+  assert.equal(response.status, 402);
+  assert.deepEqual(await response.json(), { error: "no active purchase" });
+  assert.equal(kv.store.size, 0);
+});
+
 test("unlock-app without a usable transaction is 402, not a session", async () => {
   const kv = fakeKv();
   const env = purchaseEnv(kv);

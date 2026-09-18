@@ -27,7 +27,12 @@ final class ZenBuyStore {
     private(set) var isRestoring = false
     var errorMessage: String?
 
-    var hasPurchase: Bool { !ownedProductIDs.isEmpty || ownsAppDownload }
+    var hasPurchase: Bool {
+        UnlockLinkPolicy.hasPurchase(
+            ownedProductIDs: ownedProductIDs,
+            ownsAppDownload: ownsAppDownload
+        )
+    }
 
     init() {
         // Renewals, refunds, Ask to Buy approvals and purchases made on
@@ -128,10 +133,17 @@ final class ZenBuyStore {
         }
 
         await refreshEntitlements()
+        // AppTransaction can lag one beat after `AppStore.sync()` on tvOS.
         if !hasPurchase {
-            errorMessage = "No ZenBuy purchase found on this Apple ID. If you bought with a different one, sign in to that Apple ID in Settings first."
+            try? await Task.sleep(for: .milliseconds(250))
+            await refreshEntitlements()
         }
-        return hasPurchase
+        if !hasPurchase {
+            errorMessage = UnlockLinkPolicy.restoreEmptyMessage(
+                signInAvailable: UnlockLinkPolicy.signInAvailable
+            )
+        }
+        return UnlockLinkPolicy.shouldRedeemAfterRestore(hasPurchase: hasPurchase)
     }
 
     /// Apple-signed transactions for everything currently owned, exactly as
@@ -139,18 +151,18 @@ final class ZenBuyStore {
     ///
     /// The paid App Store download is `AppTransaction`, not an IAP, so it
     /// never appears in `Transaction.currentEntitlements`. Both go in the
-    /// same `transactions` array `POST /api/unlock-web` already accepts.
+    /// same `transactions` array `POST /api/unlock-app` / `unlock-web` accept.
     func entitlementJWS() async -> [String] {
-        var tokens: [String] = []
-        if let appJWS = await appTransactionJWS() {
-            tokens.append(appJWS)
-        }
+        var iap: [String] = []
         for await entitlement in Transaction.currentEntitlements {
             guard case let .verified(transaction) = entitlement else { continue }
             if transaction.revocationDate != nil { continue }
-            tokens.append(entitlement.jwsRepresentation)
+            iap.append(entitlement.jwsRepresentation)
         }
-        return tokens
+        return UnlockLinkPolicy.entitlementJWS(
+            appTransaction: await appTransactionJWS(),
+            iapTransactions: iap
+        )
     }
 
     /// StoreKit 2 signed proof of the paid app download, when Apple has one.

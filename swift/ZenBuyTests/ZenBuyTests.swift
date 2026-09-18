@@ -969,6 +969,75 @@ final class ZenBuyTests: XCTestCase {
     }
     #endif
 
+    func testUnlockLinkPolicyTreatsPaidAppDownloadAsPurchase() {
+        XCTAssertFalse(UnlockLinkPolicy.hasPurchase(ownedProductIDs: [], ownsAppDownload: false))
+        XCTAssertTrue(UnlockLinkPolicy.hasPurchase(ownedProductIDs: [], ownsAppDownload: true))
+        XCTAssertTrue(
+            UnlockLinkPolicy.hasPurchase(
+                ownedProductIDs: ["info.zenbuy.app.pro.monthly"],
+                ownsAppDownload: false
+            )
+        )
+        XCTAssertTrue(
+            UnlockLinkPolicy.hasPurchase(
+                ownedProductIDs: ["info.zenbuy.app.lifetime"],
+                ownsAppDownload: true
+            )
+        )
+    }
+
+    func testUnlockLinkPolicyPostsAppTransactionThenIAP() {
+        XCTAssertEqual(UnlockLinkPolicy.entitlementJWS(appTransaction: nil, iapTransactions: []), [])
+        XCTAssertEqual(
+            UnlockLinkPolicy.entitlementJWS(appTransaction: "", iapTransactions: ["", "iap-a"]),
+            ["iap-a"]
+        )
+        XCTAssertEqual(
+            UnlockLinkPolicy.entitlementJWS(
+                appTransaction: "app-jws",
+                iapTransactions: ["monthly-jws", "lifetime-jws"]
+            ),
+            ["app-jws", "monthly-jws", "lifetime-jws"]
+        )
+    }
+
+    func testUnlockLinkPolicyRedeemOnlyAfterStoreKitPurchase() {
+        XCTAssertFalse(UnlockLinkPolicy.shouldRedeemAfterRestore(hasPurchase: false))
+        XCTAssertTrue(UnlockLinkPolicy.shouldRedeemAfterRestore(hasPurchase: true))
+    }
+
+    func testUnlockLinkPolicyLeadsComplimentaryUsersToSignIn() {
+        XCTAssertEqual(
+            UnlockLinkPolicy.leadControl(signInAvailable: true, firstProductID: "info.zenbuy.app.pro.monthly"),
+            .signIn
+        )
+        XCTAssertEqual(
+            UnlockLinkPolicy.leadControl(signInAvailable: false, firstProductID: "info.zenbuy.app.pro.monthly"),
+            .product("info.zenbuy.app.pro.monthly")
+        )
+        XCTAssertEqual(
+            UnlockLinkPolicy.leadControl(signInAvailable: false, firstProductID: nil),
+            .restore
+        )
+        XCTAssertEqual(
+            UnlockLinkPolicy.leadControl(signInAvailable: false, firstProductID: ""),
+            .restore
+        )
+    }
+
+    func testUnlockLinkPolicyRestoreEmptyCopyNamesTheWorkingPath() {
+        let withSignIn = UnlockLinkPolicy.restoreEmptyMessage(signInAvailable: true)
+        XCTAssertTrue(withSignIn.contains("Sign in with Apple"))
+        XCTAssertTrue(withSignIn.contains("Monthly"))
+        XCTAssertTrue(withSignIn.contains("Users & Accounts"))
+        XCTAssertFalse(withSignIn.contains("No ZenBuy purchase found on this Apple ID"))
+
+        let withoutSignIn = UnlockLinkPolicy.restoreEmptyMessage(signInAvailable: false)
+        XCTAssertTrue(withoutSignIn.contains("Monthly"))
+        XCTAssertTrue(withoutSignIn.contains("Users & Accounts"))
+        XCTAssertFalse(withoutSignIn.contains("Sign in with Apple"))
+    }
+
     private func resetWizardDefaults() {
         UserDefaults.standard.removeObject(forKey: "zenbuy:input-mode:v1")
         UserDefaults.standard.removeObject(forKey: "zenbuy:wizard-complete:v1")

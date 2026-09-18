@@ -3,24 +3,28 @@ import AuthenticationServices
 #endif
 import StoreKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The way past the report allowance, drawn where the refusal appears.
 ///
-/// The Worker answers a spent allowance with HTTP 429 and a sentence of prose.
-/// On Apple TV that sentence used to be the whole screen — no control, so no
-/// focusable view, so a remote that did nothing. This panel is the next step:
-/// buy, restore, or (once the distribution profile carries the capability)
-/// sign in for complimentary access. Unlocking re-runs the report that was
-/// refused, so the viewer lands on the thing they asked for rather than on a
-/// home screen.
+/// Two link paths, both on this Apple TV's Apple ID:
 ///
-/// The iPhone equivalent is `UnlockWebView`, which cannot be reused: it leads
-/// with linking the purchase to the website — the TV has no browser to unlock —
-/// and it is built from `navigationBarTitleDisplayMode` and tap-sized rows.
+/// 1. **Sign in with Apple** — complimentary `APPLE_ID_WHITELIST` access, or
+///    the same Apple ID already linked on iPhone / zenbuy.info. Restore cannot
+///    see that grant; it is not a StoreKit entitlement.
+/// 2. **Buy / Restore** — Monthly and Buy once charge the Apple ID signed into
+///    this Apple TV. Restore syncs StoreKit and redeems IAP entitlements and
+///    the paid App Store download (`AppTransaction`) via `POST /api/unlock-app`.
+///
+/// Sign in with Apple is compiled in only when the Dist profile carries the
+/// capability (`ZENBUY_SIWA`). The control is a TV-styled button, not Apple's
+/// `SignInWithAppleButton`, so it stays visible and focusable on the Siri Remote.
 struct TVUnlockView: View {
     private enum UnlockFocus: Hashable {
-        case product(String)
         case signIn
+        case product(String)
         case restore
         case retry
     }
@@ -32,19 +36,33 @@ struct TVUnlockView: View {
     let onRetry: () -> Void
 
     @FocusState private var focus: UnlockFocus?
+    #if ZENBUY_SIWA
+    @State private var appleSignIn = AppleIDSignInSession()
+    @State private var isSigningIn = false
+    #endif
 
     private var isWorking: Bool {
-        unlock.isWorking || store.isRestoring || store.purchasingProductID != nil
+        unlock.isWorking || store.isRestoring || store.purchasingProductID != nil || isLinkingAppleID
     }
 
-    /// Lead control: the cheapest thing to buy, else whatever else can be
-    /// clicked. tvOS drops focus rather than guessing, so this is never nil by
-    /// accident — Restore is always on screen.
+    /// Sign-in in flight — Restore should not steal that spinner.
+    private var isLinkingAppleID: Bool {
+        #if ZENBUY_SIWA
+        isSigningIn
+        #else
+        false
+        #endif
+    }
+
     private var leadFocus: UnlockFocus {
-        if let first = store.products.first {
-            return .product(first.id)
+        switch UnlockLinkPolicy.leadControl(
+            signInAvailable: UnlockLinkPolicy.signInAvailable,
+            firstProductID: store.products.first?.id
+        ) {
+        case .signIn: return .signIn
+        case let .product(id): return .product(id)
+        case .restore: return .restore
         }
-        return .restore
     }
 
     var body: some View {
@@ -53,13 +71,13 @@ struct TVUnlockView: View {
                 .font(TVTheme.titleFont)
                 .foregroundStyle(ZenBuyTheme.ink)
 
-            Text("One ZenBuy purchase covers this Apple TV, your iPhone and zenbuy.info — 25 reports a day instead of the free three a week.")
+            Text("Link this Apple TV to the same Apple ID you use on iPhone and zenbuy.info. Complimentary access signs in. A Monthly or Buy once purchase charges the Apple ID signed into this Apple TV.")
                 .font(TVTheme.bodyFont)
                 .foregroundStyle(ZenBuyTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
-            productRows
             signInRow
+            productRows
             secondaryRow
 
             if let message = store.errorMessage ?? unlock.errorMessage {
@@ -69,7 +87,7 @@ struct TVUnlockView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("Payment is charged to your Apple ID. The monthly plan renews until cancelled in Settings → Users & Accounts → Subscriptions.")
+            Text("Payment is charged to the Apple ID signed into this Apple TV. The monthly plan renews until cancelled in Settings → Users & Accounts → Subscriptions.")
                 .font(TVTheme.captionFont)
                 .foregroundStyle(ZenBuyTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -85,86 +103,101 @@ struct TVUnlockView: View {
         .defaultFocus($focus, leadFocus)
         .task {
             await store.loadIfNeeded()
-            // Prices arrive after the panel does, and an async result never
-            // moves tvOS focus on its own. Only the fallback lead is taken
-            // over — a viewer who already moved to Restore keeps it.
-            guard focus == nil || focus == UnlockFocus.restore else { return }
-            if let first = store.products.first {
-                focus = .product(first.id)
+            // Prices arrive after the panel does. Do not steal focus from Sign
+            // in with Apple — that is the complimentary / already-linked path.
+            guard focus == nil || focus == UnlockFocus.restore || focus == UnlockFocus.retry
+            else { return }
+            if case let .product(id) = leadFocus {
+                focus = .product(id)
             }
         }
     }
 
-    @ViewBuilder
-    private var productRows: some View {
-        if store.products.isEmpty {
-            if store.isLoadingProducts {
-                HStack(spacing: 16) {
-                    ProgressView().tint(ZenBuyTheme.green)
-                    Text("Asking the App Store for prices…")
-                        .font(TVTheme.captionFont)
-                        .foregroundStyle(ZenBuyTheme.muted)
-                }
-            } else {
-                Text("The App Store didn't answer with prices. Restore below if you already bought ZenBuy, or try again in a moment.")
-                    .font(TVTheme.captionFont)
-                    .foregroundStyle(ZenBuyTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else {
-            HStack(spacing: 24) {
-                ForEach(store.products, id: \.id) { product in
-                    // Stays enabled while a purchase is in flight: a disabled
-                    // button is not focusable on tvOS, and `buy` guards itself.
-                    Button {
-                        buy(product)
-                    } label: {
-                        HStack(spacing: 16) {
-                            if store.purchasingProductID == product.id {
-                                ProgressView()
-                            }
-                            Text("\(Self.title(for: product)) · \(product.displayPrice)")
-                        }
-                    }
-                    .buttonStyle(
-                        TVActionButtonStyle(
-                            kind: product.id == ZenBuyStore.lifetimeProductID ? .primary : .secondary
-                        )
-                    )
-                    .focused($focus, equals: .product(product.id))
-                }
-            }
-            .tvFocusRow()
-        }
-    }
-
-    /// Complimentary `APPLE_ID_WHITELIST` access is an Apple ID fact, so only a
-    /// sign-in can claim it.
-    ///
-    /// Drawn only when the distribution profile carries the Sign in with Apple
-    /// capability, which the archive step checks and turns into `ZENBUY_SIWA`.
-    /// Without the entitlement Apple refuses the request outright, and a button
-    /// that cannot work is the dead end this whole panel exists to remove.
+    /// Complimentary / already-linked path. Drawn only when the Dist profile
+    /// carries Sign in with Apple, which the archive step turns into `ZENBUY_SIWA`.
     @ViewBuilder
     private var signInRow: some View {
         #if ZENBUY_SIWA
         VStack(alignment: .leading, spacing: 12) {
-            Text("Given complimentary access? Sign in with the Apple ID it was granted to.")
+            Text("Already unlocked on iPhone or zenbuy.info?")
+                .font(TVTheme.sectionTitleFont)
+                .foregroundStyle(ZenBuyTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Sign in with the Apple ID that already has complimentary access or a linked purchase. Restore cannot see that — it only finds App Store purchases on this Apple ID.")
                 .font(TVTheme.captionFont)
                 .foregroundStyle(ZenBuyTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                handleSignIn(result)
+            Button {
+                startSignIn()
+            } label: {
+                HStack(spacing: 16) {
+                    if isSigningIn {
+                        ProgressView()
+                    }
+                    Text("Sign in with Apple")
+                }
             }
-            .signInWithAppleButtonStyle(.black)
-            .frame(maxWidth: 620, minHeight: 80)
+            .buttonStyle(.tvPrimary)
             .focused($focus, equals: .signIn)
         }
         .tvFocusRow()
         #endif
+    }
+
+    @ViewBuilder
+    private var productRows: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(UnlockLinkPolicy.signInAvailable ? "Or buy on this Apple TV" : "Buy on this Apple TV")
+                .font(TVTheme.sectionTitleFont)
+                .foregroundStyle(ZenBuyTheme.ink)
+
+            Text("Monthly and Buy once charge the Apple ID signed into this Apple TV — 25 reports a day instead of the free three a week.")
+                .font(TVTheme.captionFont)
+                .foregroundStyle(ZenBuyTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if store.products.isEmpty {
+                if store.isLoadingProducts {
+                    HStack(spacing: 16) {
+                        ProgressView().tint(ZenBuyTheme.green)
+                        Text("Asking the App Store for prices…")
+                            .font(TVTheme.captionFont)
+                            .foregroundStyle(ZenBuyTheme.muted)
+                    }
+                } else {
+                    Text("The App Store didn't answer with prices. Restore below if you already bought ZenBuy on this Apple ID, or try again in a moment.")
+                        .font(TVTheme.captionFont)
+                        .foregroundStyle(ZenBuyTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 24) {
+                    ForEach(store.products, id: \.id) { product in
+                        // Stays enabled while a purchase is in flight: a disabled
+                        // button is not focusable on tvOS, and `buy` guards itself.
+                        Button {
+                            buy(product)
+                        } label: {
+                            HStack(spacing: 16) {
+                                if store.purchasingProductID == product.id {
+                                    ProgressView()
+                                }
+                                Text("\(Self.title(for: product)) · \(product.displayPrice)")
+                            }
+                        }
+                        .buttonStyle(
+                            TVActionButtonStyle(
+                                kind: product.id == ZenBuyStore.lifetimeProductID ? .primary : .secondary
+                            )
+                        )
+                        .focused($focus, equals: .product(product.id))
+                    }
+                }
+            }
+        }
+        .tvFocusRow()
     }
 
     private var secondaryRow: some View {
@@ -173,7 +206,7 @@ struct TVUnlockView: View {
                 restore()
             } label: {
                 HStack(spacing: 16) {
-                    if store.isRestoring || unlock.isWorking {
+                    if store.isRestoring || (unlock.isWorking && store.purchasingProductID == nil && !isLinkingAppleID) {
                         ProgressView()
                     }
                     Text("Restore purchase")
@@ -219,25 +252,79 @@ struct TVUnlockView: View {
     }
 
     #if ZENBUY_SIWA
-    private func handleSignIn(_ result: Result<ASAuthorization, Error>) {
-        switch result {
-        case let .success(authorization):
-            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential
-            else {
-                unlock.errorMessage = "That sign-in didn't return an Apple ID. Try again."
-                return
-            }
-            Task {
+    private func startSignIn() {
+        guard !isWorking, !isSigningIn else { return }
+        isSigningIn = true
+        Task {
+            defer { isSigningIn = false }
+            do {
+                let credential = try await appleSignIn.perform()
                 await unlock.link(credential: credential, store: store)
                 guard unlock.status == .unlocked else { return }
                 onUnlocked()
+            } catch {
+                if (error as? ASAuthorizationError)?.code == .canceled { return }
+                unlock.errorMessage = "Sign in with Apple didn't complete. Try again."
             }
-
-        case let .failure(error):
-            // Cancelling is a normal choice, not an error worth reporting.
-            if (error as? ASAuthorizationError)?.code == .canceled { return }
-            unlock.errorMessage = "Sign in with Apple didn't complete. Try again."
         }
     }
     #endif
 }
+
+#if ZENBUY_SIWA
+/// tvOS-safe Sign in with Apple. Apple's `SignInWithAppleButton` can fail to
+/// draw or take focus on the 10-foot UI; this session is a normal TV button
+/// plus `ASAuthorizationController`.
+@MainActor
+final class AppleIDSignInSession: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    private var continuation: CheckedContinuation<ASAuthorizationAppleIDCredential, Error>?
+    private var controller: ASAuthorizationController?
+
+    func perform() async throws -> ASAuthorizationAppleIDCredential {
+        if continuation != nil {
+            throw ASAuthorizationError(.unknown)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let request = ASAuthorizationAppleIDProvider().createRequest()
+            request.requestedScopes = [.fullName, .email]
+            let controller = ASAuthorizationController(authorizationRequests: [request])
+            controller.delegate = self
+            controller.presentationContextProvider = self
+            self.controller = controller
+            controller.performRequests()
+        }
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        self.controller = nil
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            continuation?.resume(throwing: ASAuthorizationError(.unknown))
+            continuation = nil
+            return
+        }
+        continuation?.resume(returning: credential)
+        continuation = nil
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        self.controller = nil
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        #if canImport(UIKit)
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        return windows.first(where: \.isKeyWindow) ?? windows.first ?? ASPresentationAnchor()
+        #else
+        ASPresentationAnchor()
+        #endif
+    }
+}
+#endif

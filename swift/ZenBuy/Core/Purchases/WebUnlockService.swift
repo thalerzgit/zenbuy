@@ -120,10 +120,9 @@ final class WebUnlockService {
     /// Raise this app's report allowance from the purchase alone.
     ///
     /// `link(credential:store:)` is the route that also unlocks the website, and
-    /// it needs Sign in with Apple to do so. Apple TV has no website to unlock
-    /// and no Sign in with Apple capability on its distribution profile, so this
-    /// posts the same signed transactions to `POST /api/unlock-app` and keeps
-    /// the session token it returns. Nothing here can grant complimentary
+    /// it needs Sign in with Apple to do so. Apple TV posts the same signed
+    /// transactions to `POST /api/unlock-app` (AppTransaction + Pro IAP) and
+    /// keeps the session token it returns. Nothing here can grant complimentary
     /// whitelist access — that is an Apple ID fact, not a purchase fact.
     ///
     /// - Returns: `true` once a session token is held.
@@ -134,7 +133,9 @@ final class WebUnlockService {
 
         let transactions = await store.entitlementJWS()
         guard !transactions.isEmpty else {
-            errorMessage = Self.noPurchaseMessage
+            errorMessage = UnlockLinkPolicy.restoreEmptyMessage(
+                signInAvailable: UnlockLinkPolicy.signInAvailable
+            )
             return false
         }
 
@@ -151,7 +152,9 @@ final class WebUnlockService {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard status == 200 else {
                 errorMessage = status == 402
-                    ? Self.noPurchaseMessage
+                    ? UnlockLinkPolicy.restoreEmptyMessage(
+                        signInAvailable: UnlockLinkPolicy.signInAvailable
+                    )
                     : "Checking that purchase failed (HTTP \(status)). Try again in a moment."
                 return false
             }
@@ -172,8 +175,7 @@ final class WebUnlockService {
         sessionToken = nil
     }
 
-    static let noPurchaseMessage =
-        "No ZenBuy purchase on this Apple ID yet. Buy above, or restore if you bought it already."
+    static let noPurchaseMessage = UnlockLinkPolicy.restoreEmptyMessage(signInAvailable: false)
 
     private static func message(forStatus status: Int) -> String {
         switch status {

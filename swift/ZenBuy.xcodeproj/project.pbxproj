@@ -35,6 +35,7 @@
 		A1000000000000000000001F /* ReportVerboseLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001F /* ReportVerboseLog.swift */; };
 		A10000000000000000000020 /* ZenBuyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ZenBuyStore.swift */; };
 		A10000000000000000000021 /* WebUnlockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* WebUnlockService.swift */; };
+		A10000000000000000000025 /* UnlockLinkPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* UnlockLinkPolicy.swift */; };
 		A10000000000000000000022 /* UnlockWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* UnlockWebView.swift */; };
 		A1000000000000000000000E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000000F /* ZenBuyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* ZenBuyTests.swift */; };
@@ -68,6 +69,7 @@
 		A21000000000000000000011 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* FlowLayout.swift */; };
 		A21000000000000000000012 /* ZenBuyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ZenBuyStore.swift */; };
 		A21000000000000000000013 /* WebUnlockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* WebUnlockService.swift */; };
+		A21000000000000000000014 /* UnlockLinkPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* UnlockLinkPolicy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -122,6 +124,7 @@
 		B10000000000000000000014 /* ZenBuyBrandMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyBrandMark.swift; sourceTree = "<group>"; };
 		B10000000000000000000020 /* ZenBuyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000021 /* WebUnlockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUnlockService.swift; sourceTree = "<group>"; };
+		B10000000000000000000025 /* UnlockLinkPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockLinkPolicy.swift; sourceTree = "<group>"; };
 		B10000000000000000000022 /* UnlockWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockWebView.swift; sourceTree = "<group>"; };
 		B10000000000000000000023 /* ZenBuy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZenBuy.entitlements; sourceTree = "<group>"; };
 		F10000000000000000000001 /* ZenBuy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZenBuy.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -340,6 +343,7 @@
 			children = (
 				B10000000000000000000020 /* ZenBuyStore.swift */,
 				B10000000000000000000021 /* WebUnlockService.swift */,
+				B10000000000000000000025 /* UnlockLinkPolicy.swift */,
 			);
 			path = Purchases;
 			sourceTree = "<group>";
@@ -616,6 +620,7 @@
 				A1000000000000000000001F /* ReportVerboseLog.swift in Sources */,
 				A10000000000000000000020 /* ZenBuyStore.swift in Sources */,
 				A10000000000000000000021 /* WebUnlockService.swift in Sources */,
+				A10000000000000000000025 /* UnlockLinkPolicy.swift in Sources */,
 				A10000000000000000000022 /* UnlockWebView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -667,6 +672,7 @@
 				A21000000000000000000011 /* FlowLayout.swift in Sources */,
 				A21000000000000000000012 /* ZenBuyStore.swift in Sources */,
 				A21000000000000000000013 /* WebUnlockService.swift in Sources */,
+				A21000000000000000000014 /* UnlockLinkPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

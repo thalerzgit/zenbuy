@@ -19,8 +19,9 @@
  * `APPLE_ID_WHITELIST` is the one way past the App Store: an Apple ID listed
  * there is granted the same entitlement complimentarily, no purchase involved.
  *
- * `POST /api/unlock-app` is the Apple TV shape of step 1: StoreKit proof with
+ * `POST /api/unlock-app` is the Apple TV purchase door: StoreKit proof with
  * no sign-in, which raises the app's own allowance but never the website's.
+ * Complimentary whitelist access still needs Sign in with Apple.
  */
 
 // Extension-qualified so `node --experimental-strip-types` can load this
@@ -662,11 +663,11 @@ async function bestEntitlementFromJws(
  * alone.
  *
  * `POST /api/unlock-web` deliberately requires Sign in with Apple: its job is
- * to join a purchase to an Apple ID so the *website* recognises it, and only an
- * identity token can do that. Apple TV has neither half of that problem — there
- * is no browser to unlock — and its Dist provisioning profile carries no Sign
- * in with Apple capability, so demanding an identity token there strands a
- * paying viewer on the free weekly allowance with nothing to click.
+ * to join a purchase (or a complimentary whitelist grant) to an Apple ID so
+ * the website recognises it, and only an identity token can do that. Apple TV
+ * uses that same door for complimentary / already-linked Apple IDs. Paying
+ * viewers post StoreKit JWS here instead — demanding an identity token for a
+ * purchase stranded them on the free weekly allowance.
  *
  * Apple's signature over the StoreKit 2 JWS already proves the purchase, so the
  * session is keyed on the purchase instead of on a person:
