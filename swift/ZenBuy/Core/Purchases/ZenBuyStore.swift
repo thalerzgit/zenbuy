@@ -205,11 +205,11 @@ final class ZenBuyStore {
     }
 
     private static func environmentName(_ environment: AppStore.Environment) -> String {
-        switch environment {
-        case .production: return "Production"
-        case .sandbox: return "Sandbox"
-        case .xcode: return "Xcode"
-        @unknown default: return String(describing: environment)
-        }
+        // Equality, not a switch: Xcode 26's AppStore.Environment is not an
+        // exhaustive enum (archive failed: "switch must be exhaustive").
+        if environment == .sandbox { return "Sandbox" }
+        if environment == .xcode { return "Xcode" }
+        if environment == .production { return "Production" }
+        return String(describing: environment)
     }
 }
