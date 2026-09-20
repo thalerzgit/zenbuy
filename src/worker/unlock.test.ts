@@ -13,6 +13,7 @@ import {
   isPaidAppTransaction,
   isTestFlightAppTransaction,
   isWhitelisted,
+  normalizeEmail,
   resolveUnlock,
   testFlightEntitlementFromTransaction,
   TESTFLIGHT_PRODUCT_ID,
@@ -299,6 +300,15 @@ test("empty email still 402", async () => {
 
 test("a display name is not a whitelist identity", () => {
   assert.equal(isNormalEmail("Not An Email"), false);
+  assert.equal(isNormalEmail("gary.morgenthaler@iCloud.com"), true);
+  assert.equal(isNormalEmail("gary.morgenthaler＠iCloud.com"), true);
+  assert.equal(isNormalEmail("gary.morgenthaler@iCloud\u3002com"), true);
+  assert.equal(isNormalEmail("\u200Bgary.morgenthaler@iCloud.com\u00A0"), true);
+  assert.equal(normalizeEmail("gary.morgenthaler＠iCloud\u3002com"), "gary.morgenthaler@iCloud.com");
+  assert.equal(
+    emailForWhitelist(undefined, "\u200Bgary.morgenthaler@iCloud.com\u00A0"),
+    "gary.morgenthaler@iCloud.com"
+  );
   assert.equal(emailForWhitelist(undefined, "Not An Email"), undefined);
   const env = envWith(fakeKv(), "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
   assert.equal(

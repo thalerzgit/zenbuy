@@ -15,7 +15,7 @@ import {
   RATE_LIMIT_TTL_SECONDS,
   type CachedReport,
 } from "./cache.ts";
-import { isNormalEmail } from "./unlock.ts";
+import { isNormalEmail, normalizeEmail } from "./unlock.ts";
 import { renderReportPdf, reportPdfFilename } from "./report-pdf.ts";
 
 /** Emails per device per rolling day. Generous for one household, useless for a spammer. */
@@ -39,7 +39,7 @@ export function parseReportEmailRequest(
 ): ReportEmailRequest | ReportEmailRejection {
   const raw = (body ?? {}) as { reportId?: unknown; email?: unknown };
   const reportId = typeof raw.reportId === "string" ? raw.reportId.trim() : "";
-  const email = typeof raw.email === "string" ? raw.email.trim() : "";
+  const email = typeof raw.email === "string" ? normalizeEmail(raw.email) : "";
 
   if (!reportId.startsWith("report:") || reportId.length > 200) {
     return {
