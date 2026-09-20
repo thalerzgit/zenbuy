@@ -9,7 +9,7 @@
  *   status          Latest TV_OS versions + Dist builds
  *   wait-valid      Wait until the stamped Dist build is VALID
  *
- * Never CREATE Bundle IDs or apps via API. Justin does that in ASC UI.
+ * Never CREATE Bundle IDs or apps via API. Create those in Apple Developer / App Store Connect UI.
  * Internal TestFlight is enough — this tool does not submit App Store review.
  */
 import { readFileSync } from "node:fs";

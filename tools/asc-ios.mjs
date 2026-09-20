@@ -9,7 +9,7 @@
  *   status          Print latest iOS versions, Dist builds, and review submissions
  *   submit-review   Wait VALID, retract in-flight review, submit latest Dist build
  *
- * Justin creates Bundle ID + ASC app in Apple Developer / App Store Connect UI.
+ * Create the Bundle ID + ASC app in Apple Developer / App Store Connect UI.
  * Admin ASC API key cannot CREATE apps — do not attempt API create.
  * submit-review is ASC REST only (no signing, no Dev certs).
  */
@@ -107,7 +107,7 @@ async function findBundleId(identifier) {
   return data.data?.[0] ?? null;
 }
 
-/** READ-ONLY: never POST Bundle ID or apps. Justin creates those in the ASC UI. */
+/** READ-ONLY: never POST Bundle ID or apps. Create those in the ASC UI. */
 async function ensureApp() {
   const bundleId = process.env.ASC_BUNDLE_ID || "info.zenbuy.app";
 
@@ -130,7 +130,7 @@ async function ensureApp() {
   console.error(`::error::No App Store Connect app for ${bundleId}.`);
   console.error(`Bundle ID status: ${bundleNote}.`);
   console.error(
-    "BLOCKER: Justin must create Bundle ID + ASC app in Apple Developer / App Store Connect UI first."
+    "BLOCKER: create the Bundle ID + ASC app in Apple Developer / App Store Connect UI first."
   );
   console.error(
     "  • Identifiers → App IDs → info.zenbuy.app (iOS)"
@@ -200,7 +200,7 @@ async function inviteTester() {
   if (!app) {
     console.error(`::error::No ASC app for ${bundleId}.`);
     console.error(
-      "BLOCKER: Justin must create Bundle ID + ASC app in App Store Connect UI first, then re-run TestFlight."
+      "BLOCKER: create the Bundle ID + ASC app in App Store Connect UI first, then re-run TestFlight."
     );
     process.exit(1);
   }
