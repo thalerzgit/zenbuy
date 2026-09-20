@@ -1006,6 +1006,22 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertTrue(UnlockLinkPolicy.shouldRedeemAfterRestore(hasPurchase: true))
     }
 
+    func testUnlockLinkPolicyDetectsTestFlightSandboxNotProduction() {
+        XCTAssertTrue(UnlockLinkPolicy.isTestFlightEnvironment("Sandbox"))
+        XCTAssertTrue(UnlockLinkPolicy.isTestFlightEnvironment("sandbox"))
+        XCTAssertTrue(UnlockLinkPolicy.isTestFlightEnvironment("Xcode"))
+        XCTAssertTrue(UnlockLinkPolicy.isTestFlightEnvironment("ProductionSandbox"))
+        XCTAssertTrue(UnlockLinkPolicy.isTestFlightEnvironment("ProductionVPPSandbox"))
+        XCTAssertFalse(UnlockLinkPolicy.isTestFlightEnvironment("Production"))
+        XCTAssertFalse(UnlockLinkPolicy.isTestFlightEnvironment(nil))
+        XCTAssertFalse(UnlockLinkPolicy.isTestFlightEnvironment(""))
+        XCTAssertTrue(UnlockLinkPolicy.hidesPaywall(isTestFlight: true))
+        XCTAssertFalse(UnlockLinkPolicy.hidesPaywall(isTestFlight: false))
+        XCTAssertTrue(UnlockLinkPolicy.shouldRedeemTestFlight(isTestFlight: true, hasSession: false))
+        XCTAssertFalse(UnlockLinkPolicy.shouldRedeemTestFlight(isTestFlight: true, hasSession: true))
+        XCTAssertFalse(UnlockLinkPolicy.shouldRedeemTestFlight(isTestFlight: false, hasSession: false))
+    }
+
     func testUnlockLinkPolicyLeadsComplimentaryUsersToSignIn() {
         XCTAssertEqual(
             UnlockLinkPolicy.leadControl(signInAvailable: true, firstProductID: "info.zenbuy.app.pro.monthly"),

@@ -8,10 +8,14 @@ import {
   emailForWhitelist,
   entitlementFromTransaction,
   handleUnlockApp,
+  isComplimentaryProductId,
   isNormalEmail,
   isPaidAppTransaction,
+  isTestFlightAppTransaction,
   isWhitelisted,
   resolveUnlock,
+  testFlightEntitlementFromTransaction,
+  TESTFLIGHT_PRODUCT_ID,
   type Entitlement,
   type SignedTransaction,
 } from "./unlock.ts";
@@ -393,13 +397,63 @@ test("a Production paid-app transaction is accepted even when sandbox is blocked
   );
 });
 
-test("APPLE_ALLOW_SANDBOX=1 still accepts a sandbox paid-app transaction", () => {
+test("a sandbox AppTransaction is TestFlight complimentary, not a paid download", () => {
   const env = purchaseEnv();
   const now = Date.now();
+  const sandboxDownload = paidAppDownload({ receiptType: "ProductionSandbox" });
+  assert.equal(isPaidAppTransaction(env, sandboxDownload), false);
+  assert.equal(acceptTransaction(env, sandboxDownload, now), false);
+  assert.equal(isTestFlightAppTransaction(env, sandboxDownload), true);
+  const grant = testFlightEntitlementFromTransaction(env, sandboxDownload, now);
+  assert.equal(grant?.productId, TESTFLIGHT_PRODUCT_ID);
+  assert.equal(grant?.environment, "Sandbox");
+  assert.equal(grant?.expiresAt, null);
+  assert.equal(isComplimentaryProductId(grant?.productId), true);
+});
+
+test("TestFlight complimentary still works when sandbox purchases are blocked", () => {
+  const env = purchaseEnv(fakeKv(), { APPLE_ALLOW_SANDBOX: "0" });
+  const now = Date.now();
+  const sandboxDownload = paidAppDownload({ receiptType: "ProductionSandbox" });
+  assert.equal(acceptTransaction(env, sandboxDownload, now), false);
+  assert.equal(isTestFlightAppTransaction(env, sandboxDownload), true);
   assert.equal(
-    acceptTransaction(env, paidAppDownload({ receiptType: "ProductionSandbox" }), now),
-    true
+    testFlightEntitlementFromTransaction(env, sandboxDownload, now)?.productId,
+    TESTFLIGHT_PRODUCT_ID
   );
+});
+
+test("a Production App Store download is never a TestFlight grant", () => {
+  const env = purchaseEnv();
+  assert.equal(isTestFlightAppTransaction(env, paidAppDownload()), false);
+  assert.equal(testFlightEntitlementFromTransaction(env, paidAppDownload(), Date.now()), null);
+});
+
+test("a TestFlight session is complimentary, not a counted purchase", async () => {
+  const kv = fakeKv();
+  const subject = "txn:0:1000000123456789";
+  kv.store.set(`apple:session:${SESSION}`, subject);
+  kv.store.set(
+    `apple:entitlement:${subject}`,
+    JSON.stringify({
+      productId: TESTFLIGHT_PRODUCT_ID,
+      originalTransactionId: "0:1000000123456789",
+      expiresAt: null,
+      environment: "Sandbox",
+      updatedAt: Date.now(),
+    })
+  );
+
+  const request = new Request("https://zenbuy.info/api/research", {
+    headers: {
+      authorization: `Bearer ${SESSION}`,
+      "X-ZenBuy-Client": "ios",
+    },
+  });
+  const state = await resolveUnlock(request, envWith(kv));
+  assert.equal(state.unlocked, true);
+  assert.equal(state.complimentary, true);
+  assert.equal(state.sub, subject);
 });
 
 test("complimentary still misses when Apple sends no whitelisted email", async () => {
@@ -490,6 +544,26 @@ test("unlock-app without a usable transaction is 402, not a session", async () =
     402
   );
   assert.equal(kv.store.size, 0);
+});
+
+test("a fake AppTransaction header does not unlock a native client", async () => {
+  const request = new Request("https://zenbuy.info/api/research", {
+    headers: {
+      "X-ZenBuy-Client": "ios",
+      "X-ZenBuy-App-Transaction": "not.a.jws",
+    },
+  });
+  const state = await resolveUnlock(request, purchaseEnv());
+  assert.equal(state.unlocked, false);
+  assert.equal(state.complimentary, false);
+});
+
+test("a browser cannot spoof TestFlight with an AppTransaction header", async () => {
+  const request = new Request("https://zenbuy.info/api/research", {
+    headers: { "X-ZenBuy-App-Transaction": "not.a.jws" },
+  });
+  const state = await resolveUnlock(request, purchaseEnv());
+  assert.equal(state.unlocked, false);
 });
 
 test("a StoreKit-only session earns the purchased allowance, not a complimentary one", async () => {

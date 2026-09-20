@@ -23,7 +23,7 @@ struct UnlockWebView: View {
 
                     if unlock.status == .unlocked {
                         unlockedCard
-                    } else {
+                    } else if !UnlockLinkPolicy.hidesPaywall(isTestFlight: store.isTestFlight) {
                         if !store.hasPurchase {
                             purchaseSection
                         }
@@ -36,8 +36,10 @@ struct UnlockWebView: View {
                             .foregroundStyle(ZenBuyTheme.bear)
                     }
 
-                    restoreButton
-                    finePrint
+                    if !UnlockLinkPolicy.hidesPaywall(isTestFlight: store.isTestFlight) {
+                        restoreButton
+                        finePrint
+                    }
                 }
                 .padding(20)
             }

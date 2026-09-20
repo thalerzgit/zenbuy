@@ -103,7 +103,13 @@ struct TVReportView: View {
                 // as prose it is also the one screen on Apple TV with nothing
                 // focusable on it, which reads as a broken remote.
                 if let block = viewModel.quotaBlock {
-                    if block.unlockLifts {
+                    if UnlockLinkPolicy.hidesPaywall(isTestFlight: store.isTestFlight) {
+                        Button("Try the report again") {
+                            viewModel.retryBlockedRequest()
+                        }
+                        .buttonStyle(.tvPrimary)
+                        .tvFocusRow()
+                    } else if block.unlockLifts {
                         TVUnlockView(
                             store: store,
                             unlock: unlock,
