@@ -29,7 +29,7 @@ test("emailDomainOnly never returns a local part", () => {
   assert.equal(emailDomainOnly("  Friend@Example.COM  "), "example.com");
   assert.equal(emailDomainOnly(undefined), null);
   assert.equal(emailDomainOnly(""), null);
-  assert.equal(emailDomainOnly("Justin Morgenthaler"), "(no-domain)");
+  assert.equal(emailDomainOnly("Not An Email"), "(no-domain)");
 });
 
 test("subPrefixOnly never returns the full Apple subject", () => {

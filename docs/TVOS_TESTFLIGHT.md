@@ -105,7 +105,7 @@ So an iPhone-only file carries its guards anyway, even though membership already
 - Never mint iOS/tvOS **Development** certificates on CI
 - Manual **Apple Distribution** `.p12` (OpenSSL-legacy 3DES) + a **tvOS App Store** profile
 
-## Justin checklist (ASC UI + secrets)
+## ASC UI + secrets checklist
 
 Admin ASC API **cannot CREATE apps**. If the Apple TV platform is missing, do this in the browser, then re-run **Actions → TestFlight tvOS**.
 

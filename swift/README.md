@@ -49,8 +49,8 @@ To point at a local Worker during API work, uncomment `ZENBUY_API_BASE_URL` in `
 
 | Item | Value / action |
 |------|----------------|
-| Bundle ID | `info.zenbuy.app` — **Justin creates in Apple Developer UI** (Identifiers → App IDs). Do **not** create via ASC API. |
-| ASC app | **Justin creates in App Store Connect UI** — name ZenBuy, bundle `info.zenbuy.app`, SKU `zenbuy-ios-001` |
+| Bundle ID | `info.zenbuy.app` — **create the Bundle ID in Apple Developer / App Store Connect** (Identifiers → App IDs). Do **not** create via ASC API. |
+| ASC app | **create the app in App Store Connect UI** — name ZenBuy, bundle `info.zenbuy.app`, SKU `zenbuy-ios-001` |
 | Category | Finance |
 | App icon | 1024×1024 PNG in `Assets.xcassets/AppIcon` |
 | Privacy | Policy URL: `https://zenbuy.info/privacy` (Worker HTML). `PrivacyInfo.xcprivacy` included; update if you add analytics |
@@ -82,7 +82,7 @@ Repo Actions secrets required (stamp from Mini — never invent/commit keys or c
 
 Optional var: `IOS_BUILD_NUMBER_OFFSET` (default `100`). Build number = `GITHUB_RUN_NUMBER + offset`.
 
-After Justin creates the ASC app: **Actions → TestFlight → Run workflow** (`workflow_dispatch`).
+After the ASC app exists: **Actions → TestFlight → Run workflow** (`workflow_dispatch`).
 
 Manual local archive:
 

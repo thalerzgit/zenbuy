@@ -140,8 +140,8 @@ struct TVCardButtonStyle: ButtonStyle {
 }
 
 /// Capsule controls. `.bordered` / `.borderedProminent` with a green `tint`
-/// rendered a green label on a green fill on tvOS — the empty pills Justin
-/// photographed — so fill and label are set explicitly per focus state.
+/// rendered a green label on a green fill on tvOS — empty-looking pills —
+/// so fill and label are set explicitly per focus state.
 struct TVActionButtonStyle: ButtonStyle {
     enum Kind {
         case primary
