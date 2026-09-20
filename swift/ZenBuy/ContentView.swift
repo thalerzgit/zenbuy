@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var viewModel: SearchViewModel
+    @Environment(ZenBuyStore.self) private var store
+    @Environment(WebUnlockService.self) private var unlock
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -37,6 +39,9 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             viewModel.handleScenePhase(phase)
+        }
+        .task {
+            await unlock.activate(store: store)
         }
     }
 }

@@ -91,6 +91,8 @@ final class ZenBuyAPIClient {
     private static let clientValue = "ios"
     #endif
     private static let deviceHeader = "X-ZenBuy-Device"
+    /// Attested sandbox AppTransaction JWS — Worker grants TestFlight complimentary.
+    private static let appTransactionHeader = "X-ZenBuy-App-Transaction"
 
     private let session: URLSession
     private let researchSession: URLSession
@@ -98,15 +100,19 @@ final class ZenBuyAPIClient {
     private let encoder: JSONEncoder
     /// Web-unlock session token, when the purchase has been linked.
     private let sessionToken: @MainActor () -> String?
+    /// TestFlight-only AppTransaction JWS. Production App Store sends nil.
+    private let appTransactionJWS: @MainActor () -> String?
 
     /// Search / config stay snappy. Research SSE uses a long-lived session because
     /// a single-ticker full report is ~85s; BOTTOM LINE sticky is streamed as soon
     /// as it is parseable (well before FUNDAMENTALS / done).
     init(
         session: URLSession? = nil,
-        sessionToken: @escaping @MainActor () -> String? = { nil }
+        sessionToken: @escaping @MainActor () -> String? = { nil },
+        appTransactionJWS: @escaping @MainActor () -> String? = { nil }
     ) {
         self.sessionToken = sessionToken
+        self.appTransactionJWS = appTransactionJWS
         if let session {
             self.session = session
             self.researchSession = session
@@ -142,6 +148,9 @@ final class ZenBuyAPIClient {
         request.setValue(ZenBuyDeviceIdentity.current, forHTTPHeaderField: Self.deviceHeader)
         if let token = sessionToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let jws = appTransactionJWS(), !jws.isEmpty {
+            request.setValue(jws, forHTTPHeaderField: Self.appTransactionHeader)
         }
     }
 

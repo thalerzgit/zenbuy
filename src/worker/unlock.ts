@@ -16,8 +16,14 @@
  * not purchase — which is why the website leads with a guide rather than a
  * bare sign-in button.
  *
- * `APPLE_ID_WHITELIST` is the one way past the App Store: an Apple ID listed
- * there is granted the same entitlement complimentarily, no purchase involved.
+ * `APPLE_ID_WHITELIST` is the named-person way past the App Store: an Apple ID
+ * listed there is granted the same entitlement complimentarily, no purchase.
+ *
+ * TestFlight Internal and External testers are a second complimentary path:
+ * a verified sandbox `AppTransaction` (Apple-signed JWS) unlocks the *app*
+ * for every tester, not a single Apple ID. Production App Store builds carry
+ * a Production `AppTransaction` and stay paid. This grant is independent of
+ * `APPLE_ALLOW_SANDBOX` (that flag is only for sandbox *purchases*).
  *
  * `POST /api/unlock-app` is the Apple TV purchase door: StoreKit proof with
  * no sign-in, which raises the app's own allowance but never the website's.
@@ -93,6 +99,15 @@ export interface UnlockState {
 
 /** Product id recorded for a complimentary grant, in place of a real one. */
 export const COMPLIMENTARY_PRODUCT_ID = "whitelist";
+/** Product id recorded for a TestFlight sandbox AppTransaction grant. */
+export const TESTFLIGHT_PRODUCT_ID = "testflight";
+
+/** Header carrying a StoreKit 2 AppTransaction JWS from the native apps. */
+export const APP_TRANSACTION_HEADER = "X-ZenBuy-App-Transaction";
+
+export function isComplimentaryProductId(productId: string | undefined): boolean {
+  return productId === COMPLIMENTARY_PRODUCT_ID || productId === TESTFLIGHT_PRODUCT_ID;
+}
 
 /**
  * Subject namespace for a purchase proven by StoreKit alone — no Apple
@@ -131,11 +146,49 @@ function isSandboxLike(environment: string | undefined): boolean {
   return environment === "Sandbox" || environment === "Xcode";
 }
 
-/** Paid App Store download — not one of the two optional Pro IAP ids. */
+/** Paid App Store download — Production only. Sandbox is TestFlight, not a sale. */
 export function isPaidAppTransaction(env: Env, transaction: SignedTransaction): boolean {
   if (transaction.bundleId !== bundleId(env)) return false;
+  if (isSandboxLike(transactionEnvironment(transaction))) return false;
   if (transaction.appTransactionId) return true;
   return transaction.productId === bundleId(env);
+}
+
+/**
+ * TestFlight (or Xcode) app download. Apple signs `receiptType` /
+ * `environment` as Sandbox — a production App Store build cannot mint this.
+ */
+export function isTestFlightAppTransaction(
+  env: Env,
+  transaction: SignedTransaction
+): boolean {
+  if (transaction.bundleId !== bundleId(env)) return false;
+  if (transaction.revocationDate) return false;
+  if (!isSandboxLike(transactionEnvironment(transaction))) return false;
+  if (transaction.productId && proProductIds(env).includes(transaction.productId)) {
+    return false;
+  }
+  return Boolean(transaction.appTransactionId) || transaction.productId === bundleId(env);
+}
+
+/** Complimentary app-only grant for a verified TestFlight AppTransaction. */
+export function testFlightEntitlementFromTransaction(
+  env: Env,
+  transaction: SignedTransaction,
+  now: number
+): Entitlement | null {
+  if (!isTestFlightAppTransaction(env, transaction)) return null;
+  return {
+    productId: TESTFLIGHT_PRODUCT_ID,
+    originalTransactionId:
+      transaction.appTransactionId ??
+      transaction.originalTransactionId ??
+      transaction.transactionId ??
+      "",
+    expiresAt: null,
+    environment: transactionEnvironment(transaction) ?? "Sandbox",
+    updatedAt: now,
+  };
 }
 
 function bundleId(env: Env): string {
@@ -387,18 +440,56 @@ export async function resolveUnlock(request: Request, env: Env): Promise<UnlockS
   const bearer = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
   const sessionId = bearer ?? readCookie(request, SESSION_COOKIE);
   const empty = { signedIn: false, unlocked: false, sub: null, complimentary: false };
-  if (!sessionId) return empty;
 
-  const sub = await env.CACHE.get(sessionKey(sessionId)).catch(() => null);
-  if (!sub) return empty;
+  let signedInUnlinked: UnlockState | null = null;
+  if (sessionId) {
+    const sub = await env.CACHE.get(sessionKey(sessionId)).catch(() => null);
+    if (sub) {
+      const entitlement = await readEntitlement(env, sub);
+      const complimentaryRecord =
+        isLive(entitlement) && isComplimentaryProductId(entitlement!.productId);
+      const purchased = isLive(entitlement) && !complimentaryRecord;
+      // A `sub:` entry added after this session was created applies immediately;
+      // an email entry cannot, because the address is never stored.
+      const complimentary = complimentaryRecord || isWhitelisted(env, { sub });
+      if (purchased || complimentary) {
+        return { signedIn: true, unlocked: true, sub, complimentary };
+      }
+      signedInUnlinked = { signedIn: true, unlocked: false, sub, complimentary: false };
+    }
+  }
 
-  const entitlement = await readEntitlement(env, sub);
-  const purchased = isLive(entitlement) && entitlement!.productId !== COMPLIMENTARY_PRODUCT_ID;
-  // A `sub:` entry added after this session was created applies immediately;
-  // an email entry cannot, because the address is never stored.
-  const complimentary = (isLive(entitlement) && !purchased) || isWhitelisted(env, { sub });
+  const testFlight = await complimentaryFromAppTransactionHeader(request, env);
+  if (testFlight) return testFlight;
 
-  return { signedIn: true, unlocked: purchased || complimentary, sub, complimentary };
+  return signedInUnlinked ?? empty;
+}
+
+/**
+ * Native TestFlight clients send a verified sandbox AppTransaction JWS.
+ * Production App Store builds have a Production receipt and do not match.
+ */
+export async function complimentaryFromAppTransactionHeader(
+  request: Request,
+  env: Env
+): Promise<UnlockState | null> {
+  if (!isNativeAppleClient(request)) return null;
+  const raw = request.headers.get(APP_TRANSACTION_HEADER)?.trim();
+  if (!raw) return null;
+  try {
+    const entitlement = testFlightEntitlementFromTransaction(
+      env,
+      await verifyAppleJws<SignedTransaction>(raw),
+      Date.now()
+    );
+    const subject = entitlement?.originalTransactionId.trim()
+      ? `${STOREKIT_SUBJECT_PREFIX}${entitlement.originalTransactionId.trim()}`
+      : null;
+    if (!entitlement || !subject) return null;
+    return { signedIn: true, unlocked: true, sub: subject, complimentary: true };
+  } catch {
+    return null;
+  }
 }
 
 async function createSession(env: Env, sub: string): Promise<string> {
@@ -658,6 +749,30 @@ async function bestEntitlementFromJws(
   return bestEntitlement(candidates);
 }
 
+/** Sandbox AppTransaction only — not gated by APPLE_ALLOW_SANDBOX. */
+async function bestTestFlightEntitlementFromJws(
+  env: Env,
+  transactions: unknown,
+  now: number
+): Promise<Entitlement | null> {
+  const submitted = Array.isArray(transactions) ? transactions.slice(0, 20) : [];
+  const candidates: Entitlement[] = [];
+  for (const raw of submitted) {
+    if (typeof raw !== "string") continue;
+    try {
+      const accepted = testFlightEntitlementFromTransaction(
+        env,
+        await verifyAppleJws<SignedTransaction>(raw),
+        now
+      );
+      if (accepted) candidates.push(accepted);
+    } catch (e) {
+      if (!(e instanceof AppleJwsError)) console.error("transaction verification failed", e);
+    }
+  }
+  return bestEntitlement(candidates);
+}
+
 /**
  * `POST /api/unlock-app` — raise *this app's* report allowance from StoreKit
  * alone.
@@ -676,6 +791,10 @@ async function bestEntitlementFromJws(
  * the existing entitlement store, not a second billing path. Because the
  * subject is not an Apple `sub`, the token cannot unlock the website, and a
  * complimentary whitelist grant still needs the sign-in route.
+ *
+ * A verified sandbox AppTransaction (TestFlight / Xcode) is a third door:
+ * complimentary app access for every tester, still keyed on `txn:`, never a
+ * website identity, and not gated by `APPLE_ALLOW_SANDBOX`.
  */
 export async function handleUnlockApp(request: Request, env: Env): Promise<Response> {
   // Only the apps send StoreKit JWS, and a browser reaching here would be
@@ -692,7 +811,9 @@ export async function handleUnlockApp(request: Request, env: Env): Promise<Respo
   }
 
   const now = Date.now();
-  const entitlement = await bestEntitlementFromJws(env, body.transactions, now);
+  const entitlement =
+    (await bestEntitlementFromJws(env, body.transactions, now)) ??
+    (await bestTestFlightEntitlementFromJws(env, body.transactions, now));
   const subject = entitlement?.originalTransactionId.trim()
     ? `${STOREKIT_SUBJECT_PREFIX}${entitlement.originalTransactionId.trim()}`
     : null;

@@ -53,9 +53,7 @@ struct TVContentView: View {
             viewModel.handleScenePhase(phase)
         }
         .task {
-            // A purchase made on another device, or a lapsed subscription,
-            // decides whether this Apple TV is on the unlocked allowance.
-            await unlock.refresh()
+            await unlock.activate(store: store)
         }
     }
 

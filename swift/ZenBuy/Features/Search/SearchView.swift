@@ -22,7 +22,11 @@ struct SearchView: View {
                         .padding(.vertical, 14)
                         .padding(.horizontal, 20)
                         .background(ZenBuyTheme.forestHeader)
-                        .overlay(alignment: .topTrailing) { unlockButton }
+                        .overlay(alignment: .topTrailing) {
+                            if !UnlockLinkPolicy.hidesPaywall(isTestFlight: store.isTestFlight) {
+                                unlockButton
+                            }
+                        }
 
                     VStack(alignment: .leading, spacing: 20) {
                         if viewModel.wizardStep != .unlocked {

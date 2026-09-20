@@ -31,6 +31,28 @@ enum UnlockLinkPolicy {
         !ownedProductIDs.isEmpty || ownsAppDownload
     }
 
+    /// StoreKit 2 `environment` / AppTransaction `receiptType` for TestFlight.
+    /// Production App Store builds report `Production` and stay paid.
+    static func isTestFlightEnvironment(_ environment: String?) -> Bool {
+        guard let environment, !environment.isEmpty else { return false }
+        switch environment.lowercased() {
+        case "sandbox", "xcode", "productionsandbox", "productionvppsandbox":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Hide subscribe / IAP / quota-spent purchase UI for every TF tester.
+    static func hidesPaywall(isTestFlight: Bool) -> Bool {
+        isTestFlight
+    }
+
+    /// Redeem the sandbox AppTransaction once so the Worker grants quota.
+    static func shouldRedeemTestFlight(isTestFlight: Bool, hasSession: Bool) -> Bool {
+        isTestFlight && !hasSession
+    }
+
     /// StoreKit 2 JWS in the order `POST /api/unlock-app` already accepts:
     /// paid-app download first, then each live Pro IAP.
     static func entitlementJWS(appTransaction: String?, iapTransactions: [String]) -> [String] {

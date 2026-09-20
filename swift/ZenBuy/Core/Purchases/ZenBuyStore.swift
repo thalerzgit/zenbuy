@@ -20,7 +20,12 @@ final class ZenBuyStore {
     private(set) var products: [Product] = []
     private(set) var ownedProductIDs: Set<String> = []
     /// Paid App Store download (`AppTransaction`), independent of the two IAPs.
+    /// False on TestFlight — a sandbox download is not a sale.
     private(set) var ownsAppDownload = false
+    /// Sandbox / Xcode AppTransaction. Production App Store stays false.
+    private(set) var isTestFlight = false
+    /// Apple-signed AppTransaction JWS when `isTestFlight`; sent to the Worker.
+    private(set) var testFlightTransactionJWS: String?
     private(set) var isLoadingProducts = false
     /// Product id currently being bought, so only that row shows a spinner.
     private(set) var purchasingProductID: String?
@@ -56,6 +61,10 @@ final class ZenBuyStore {
         isLoadingProducts = true
         defer { isLoadingProducts = false }
 
+        // Entitlements (including TestFlight) first — IAP prices must not
+        // delay complimentary sandbox detection.
+        await refreshEntitlements()
+
         do {
             let loaded = try await Product.products(
                 for: [Self.monthlyProductID, Self.lifetimeProductID]
@@ -66,8 +75,6 @@ final class ZenBuyStore {
             Self.log.error("product load failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = "The App Store didn't answer. Check your connection and try again."
         }
-
-        await refreshEntitlements()
     }
 
     func refreshEntitlements() async {
@@ -79,7 +86,12 @@ final class ZenBuyStore {
             owned.insert(transaction.productID)
         }
         ownedProductIDs = owned
-        ownsAppDownload = await appTransactionJWS() != nil
+        let app = await loadAppTransaction()
+        isTestFlight =
+            UnlockLinkPolicy.isTestFlightEnvironment(app.environment)
+            || Self.sandboxReceiptPresent
+        ownsAppDownload = app.jws != nil && !isTestFlight
+        testFlightTransactionJWS = isTestFlight ? app.jws : nil
     }
 
     /// - Returns: `true` when the purchase completed and is now owned.
@@ -160,20 +172,44 @@ final class ZenBuyStore {
             iap.append(entitlement.jwsRepresentation)
         }
         return UnlockLinkPolicy.entitlementJWS(
-            appTransaction: await appTransactionJWS(),
+            appTransaction: await loadAppTransaction().jws,
             iapTransactions: iap
         )
     }
 
-    /// StoreKit 2 signed proof of the paid app download, when Apple has one.
-    private func appTransactionJWS() async -> String? {
+    private struct LoadedAppTransaction {
+        var jws: String?
+        var environment: String?
+    }
+
+    /// `sandboxReceipt` is the pre-StoreKit-2 TestFlight signal.
+    private static var sandboxReceiptPresent: Bool {
+        Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
+
+    /// StoreKit 2 signed proof of the app download, plus its Apple environment.
+    private func loadAppTransaction() async -> LoadedAppTransaction {
         do {
             let result = try await AppTransaction.shared
-            guard case .verified = result else { return nil }
-            return result.jwsRepresentation
+            guard case let .verified(transaction) = result else {
+                return LoadedAppTransaction()
+            }
+            return LoadedAppTransaction(
+                jws: result.jwsRepresentation,
+                environment: Self.environmentName(transaction.environment)
+            )
         } catch {
             Self.log.notice("app transaction unavailable: \(error.localizedDescription, privacy: .public)")
-            return nil
+            return LoadedAppTransaction()
+        }
+    }
+
+    private static func environmentName(_ environment: AppStore.Environment) -> String {
+        switch environment {
+        case .production: return "Production"
+        case .sandbox: return "Sandbox"
+        case .xcode: return "Xcode"
+        @unknown default: return String(describing: environment)
         }
     }
 }

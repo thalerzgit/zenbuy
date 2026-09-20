@@ -43,6 +43,20 @@ final class WebUnlockService {
         status = sessionToken == nil ? .locked : .unknown
     }
 
+    /// Load StoreKit, redeem a TestFlight sandbox AppTransaction, or confirm
+    /// an existing session. Production App Store stays on the paid path.
+    func activate(store: ZenBuyStore) async {
+        await store.loadIfNeeded()
+        if UnlockLinkPolicy.shouldRedeemTestFlight(
+            isTestFlight: store.isTestFlight,
+            hasSession: sessionToken != nil
+        ) {
+            _ = await redeemPurchase(store: store, quiet: true)
+        } else {
+            await refresh()
+        }
+    }
+
     /// Confirm with the Worker that the stored token still unlocks anything.
     func refresh() async {
         guard let token = sessionToken else {
@@ -126,16 +140,19 @@ final class WebUnlockService {
     /// whitelist access — that is an Apple ID fact, not a purchase fact.
     ///
     /// - Returns: `true` once a session token is held.
-    func redeemPurchase(store: ZenBuyStore) async -> Bool {
+    /// - Parameter quiet: Launch-time TestFlight redeem — no restore-empty alert.
+    func redeemPurchase(store: ZenBuyStore, quiet: Bool = false) async -> Bool {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
 
         let transactions = await store.entitlementJWS()
         guard !transactions.isEmpty else {
-            errorMessage = UnlockLinkPolicy.restoreEmptyMessage(
-                signInAvailable: UnlockLinkPolicy.signInAvailable
-            )
+            if !quiet {
+                errorMessage = UnlockLinkPolicy.restoreEmptyMessage(
+                    signInAvailable: UnlockLinkPolicy.signInAvailable
+                )
+            }
             return false
         }
 
