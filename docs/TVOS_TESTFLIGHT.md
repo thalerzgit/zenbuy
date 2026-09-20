@@ -17,7 +17,7 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 | ExportOptions | `swift/ExportOptions-tvos.plist` (manual Dist, upload) |
 | Dist workflow | `.github/workflows/tvos-testflight.yml` |
 | ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`) |
-| Marketing version | `1.5` from `swift/Config/Shared.xcconfig` |
+| Marketing version | `1.6` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 
 Client header: `X-ZenBuy-Client: tvos` (Worker skips Turnstile, same as iOS). Report allowances apply: the free weekly device quota until a purchase is redeemed, then the unlocked daily one — see [Spent allowance](#spent-allowance--the-unlock-panel).
