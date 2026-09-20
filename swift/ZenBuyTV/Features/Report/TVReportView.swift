@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct TVReportView: View {
     /// Restart and share are offered at both ends of a long report, so the two
@@ -30,7 +31,11 @@ struct TVReportView: View {
     var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
     var onRestart: () -> Void = {}
 
-    @AppStorage("zenbuy.tv.report.email.v1") private var emailAddress = ""
+    @AppStorage("zenbuy.tv.report.email.v1") private var storedEmail = ""
+    /// Live field value. `@AppStorage` plus a focused tvOS `TextField` can show
+    /// typed text while the persisted binding is still empty — Send must read
+    /// this draft after resigning focus, not UserDefaults.
+    @State private var emailDraft = ""
     @State private var openPanel: ControlBar?
     @State private var emailStatus: EmailStatus = .idle
     @FocusState private var emailFieldFocused: Bool
@@ -194,7 +199,12 @@ struct TVReportView: View {
                 .buttonStyle(.tvPrimary)
 
                 Button {
-                    openPanel = openPanel == bar ? nil : bar
+                    if openPanel == bar {
+                        openPanel = nil
+                    } else {
+                        seedEmailDraftIfNeeded()
+                        openPanel = bar
+                    }
                     emailStatus = .idle
                 } label: {
                     Label("Email PDF", systemImage: "square.and.arrow.up")
@@ -219,9 +229,15 @@ struct TVReportView: View {
                 .font(TVTheme.cardTitleFont)
                 .foregroundStyle(ZenBuyTheme.ink)
 
-            TextField("you@example.com", text: $emailAddress)
+            TextField("you@example.com", text: $emailDraft)
                 .font(TVTheme.bodyFont)
+                .textContentType(.emailAddress)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .focused($emailFieldFocused)
+                .submitLabel(.done)
+                .onSubmit { emailFieldFocused = false }
                 .frame(maxWidth: TVTheme.fieldMaxWidth)
                 .padding(6)
                 .overlay(
@@ -232,6 +248,7 @@ struct TVReportView: View {
                         )
                 )
                 .animation(TVTheme.focusAnimation, value: emailFieldFocused)
+                .onAppear { seedEmailDraftIfNeeded() }
 
             // Stays enabled while the mail is in flight: a disabled button is
             // not focusable on tvOS, and the send action guards itself.
@@ -294,18 +311,40 @@ struct TVReportView: View {
         return false
     }
 
+    private func seedEmailDraftIfNeeded() {
+        if emailDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            emailDraft = storedEmail
+        }
+    }
+
+    /// Drop first-responder so the TV keyboard commits its buffer before we
+    /// read `emailDraft`. Validating first was the Dist false-reject path:
+    /// the field still showed `gary.morgenthaler@iCloud.com` while the bound
+    /// string was empty.
+    private func resignEmailField() {
+        emailFieldFocused = false
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+
     private func sendReportEmail() {
         guard emailStatus != .sending else { return }
-        let address = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard TVReportEmail.looksLikeAddress(address) else {
-            emailStatus = .failed("Enter a full email address, like you@example.com.")
-            return
-        }
-        emailAddress = address
-        emailFieldFocused = false
-        emailStatus = .sending
-        let id = reportId
+        resignEmailField()
         Task { @MainActor in
+            await Task.yield()
+            let address = TVReportEmail.normalizeAddress(emailDraft)
+            guard TVReportEmail.looksLikeAddress(address) else {
+                emailStatus = .failed("Enter a full email address, like you@example.com.")
+                return
+            }
+            emailDraft = address
+            storedEmail = address
+            emailStatus = .sending
+            let id = reportId
             do {
                 try await TVReportEmail.send(reportId: id, email: address)
                 emailStatus = .sent(address)
@@ -322,10 +361,43 @@ struct TVReportView: View {
 /// colour copy from the report already cached under `reportId`. Lives in the TV
 /// target because `ZenBuyAPIClient` is shared with the iPhone app.
 private enum TVReportEmail {
+    /// Same folding as Worker `normalizeEmail` — NFKC, strip zero-width / NBSP,
+    /// map leftover fullwidth `@` / ideographic dots.
+    static func normalizeAddress(_ value: String) -> String {
+        let nfkc = value.precomposedStringWithCompatibilityMapping
+        var scalars = String.UnicodeScalarView()
+        scalars.reserveCapacity(nfkc.unicodeScalars.count)
+        for scalar in nfkc.unicodeScalars {
+            switch scalar.value {
+            case 0xFF20:
+                scalars.append(Unicode.Scalar(UInt32(0x40))!)
+            case 0x3002, 0xFF0E, 0xFF61:
+                scalars.append(Unicode.Scalar(UInt32(0x2E))!)
+            case 0x00A0, 0x202F, 0x2007, 0x00AD:
+                scalars.append(Unicode.Scalar(UInt32(0x20))!)
+            case 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF:
+                continue
+            default:
+                scalars.append(scalar)
+            }
+        }
+        return String(String.UnicodeScalarView(scalars))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Worker `isNormalEmail`: `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` after normalize.
     static func looksLikeAddress(_ value: String) -> Bool {
-        guard let at = value.firstIndex(of: "@"), at != value.startIndex else { return false }
-        let domain = value[value.index(after: at)...]
-        return !domain.contains("@") && domain.contains(".") && !domain.hasSuffix(".")
+        let email = normalizeAddress(value)
+        guard !email.isEmpty, email.count <= 254 else { return false }
+        guard let at = email.firstIndex(of: "@"), at != email.startIndex else { return false }
+        let local = email[..<at]
+        let domain = email[email.index(after: at)...]
+        guard !domain.isEmpty, !domain.contains("@") else { return false }
+        guard !local.contains(where: \.isWhitespace),
+              !domain.contains(where: \.isWhitespace)
+        else { return false }
+        guard let dot = domain.firstIndex(of: ".") else { return false }
+        return dot != domain.startIndex && domain.index(after: dot) != domain.endIndex
     }
 
     static func send(reportId: String, email: String) async throws {

@@ -280,15 +280,30 @@ export function isWhitelisted(env: Env, identity: AppleIdentity): boolean {
 }
 
 /**
+ * Fold TV-keyboard / paste lookalikes onto ASCII before validate-or-send.
+ * NFKC maps fullwidth `＠` / `．`; leftover zero-width, NBSP, and ideographic
+ * stops are stripped or rewritten so `gary.morgenthaler@iCloud.com` typed on
+ * Apple TV is the same string the Worker and Resend see.
+ */
+export function normalizeEmail(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/[\u00A0\u202F\u2007\u00AD]/g, " ")
+    .replace(/[\u3002\uFF61]/g, ".")
+    .trim();
+}
+
+/**
  * A normal email string — not a display name, not empty, not a `sub:`.
- * Used only to decide whether a client-supplied address may be shown to
- * `isWhitelisted` when the identity token omitted the claim.
+ * Used to decide whether a client-supplied address may be shown to
+ * `isWhitelisted` when the identity token omitted the claim, and by
+ * `POST /api/report/email`.
  */
 export function isNormalEmail(value: unknown): value is string {
   if (typeof value !== "string") return false;
-  const email = value.trim();
   // One @, no spaces, a dot in the domain. Rejects "Not An Email".
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 }
 
 /**
@@ -304,8 +319,10 @@ export function emailForWhitelist(
 ): string | undefined {
   const fromToken = tokenEmail?.trim();
   if (fromToken) return fromToken;
-  if (!isNormalEmail(clientEmail)) return undefined;
-  return clientEmail.trim();
+  if (typeof clientEmail !== "string" || !isNormalEmail(clientEmail)) {
+    return undefined;
+  }
+  return normalizeEmail(clientEmail);
 }
 
 function complimentaryEntitlement(now: number): Entitlement {

@@ -133,6 +133,15 @@ test("parseReportEmailRequest rejects anything but a real report id and address"
     const rejected = parseReportEmailRequest({ reportId: "report:separate:growth:NVDA", email });
     assert.equal((rejected as { code: string }).code, "bad_email");
   }
+
+  const tvLookalike = parseReportEmailRequest({
+    reportId: "report:separate:growth:h7:NVDA",
+    email: "\u200Bgary.morgenthaler＠iCloud\u3002com\u00A0",
+  });
+  assert.deepEqual(tvLookalike, {
+    reportId: "report:separate:growth:h7:NVDA",
+    email: "gary.morgenthaler@iCloud.com",
+  });
 });
 
 test("report email subject and body carry the tickers and verdict", () => {
