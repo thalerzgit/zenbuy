@@ -287,7 +287,7 @@ export function isWhitelisted(env: Env, identity: AppleIdentity): boolean {
 export function isNormalEmail(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const email = value.trim();
-  // One @, no spaces, a dot in the domain. Rejects "Justin Morgenthaler".
+  // One @, no spaces, a dot in the domain. Rejects "Not An Email".
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 

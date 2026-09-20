@@ -117,7 +117,7 @@ npm run deploy
 
 SwiftUI iPhone app plus an Apple TV target (`ZenBuyTV`) in `swift/` (not a WebView). Pushes to `main` that touch iPhone Swift paths run **TestFlight** (`.github/workflows/ios-testflight.yml`). tvOS paths run **TestFlight tvOS** (`.github/workflows/tvos-testflight.yml`) — Dist archive + upload + internal invite, no App Store review. Both use `macos-26` / Xcode 26.6 and manual Distribution signing. See [docs/TVOS_TESTFLIGHT.md](docs/TVOS_TESTFLIGHT.md).
 
-**Blockers before first iOS upload:** (1) stamp `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` on this repo from Mini; (2) Justin creates Bundle ID + ASC app for `info.zenbuy.app` in Apple Developer / App Store Connect UI (API key cannot CREATE apps — CI never tries). Then `workflow_dispatch` TestFlight to invite `thalerz@me.com`. See `swift/README.md`.
+**Blockers before first iOS upload:** (1) stamp `ASC_ISSUER_ID` / `ASC_KEY_ID` / `ASC_PRIVATE_KEY` on this repo from Mini; (2) create the Bundle ID + ASC app for `info.zenbuy.app` in Apple Developer / App Store Connect (API key cannot CREATE apps — CI never tries). Then `workflow_dispatch` TestFlight to invite `thalerz@me.com`. See `swift/README.md`.
 
 **Apple TV blockers:** add the Apple TV platform on that same app, stamp `ASC_PROFILE_TVOS_BASE64` (`CI info.zenbuy.app tvOS AppStore`). See [docs/TVOS_TESTFLIGHT.md](docs/TVOS_TESTFLIGHT.md).
 

@@ -298,13 +298,13 @@ test("empty email still 402", async () => {
 });
 
 test("a display name is not a whitelist identity", () => {
-  assert.equal(isNormalEmail("Justin Morgenthaler"), false);
-  assert.equal(emailForWhitelist(undefined, "Justin Morgenthaler"), undefined);
+  assert.equal(isNormalEmail("Not An Email"), false);
+  assert.equal(emailForWhitelist(undefined, "Not An Email"), undefined);
   const env = envWith(fakeKv(), "tdmorgenthaler@icloud.com,thalerz@me.com,thalerz@icloud.com");
   assert.equal(
     isWhitelisted(env, {
       sub: SUB,
-      email: emailForWhitelist(undefined, "Justin Morgenthaler"),
+      email: emailForWhitelist(undefined, "Not An Email"),
     }),
     false
   );
@@ -468,7 +468,7 @@ test("complimentary still misses when Apple sends no whitelisted email", async (
   };
   let response: Response;
   try {
-    response = await completeUnlockWeb(unlockRequest(), env, { sub: SUB }, [], "Justin Morgenthaler");
+    response = await completeUnlockWeb(unlockRequest(), env, { sub: SUB }, [], "Not An Email");
   } finally {
     console.log = original;
   }
@@ -476,7 +476,7 @@ test("complimentary still misses when Apple sends no whitelisted email", async (
   assert.deepEqual(await response.json(), { error: "no active purchase" });
   assert.equal(storedEntitlement(kv), null);
   const joined = lines.join("\n");
-  assert.equal(joined.includes("Justin Morgenthaler"), false);
+  assert.equal(joined.includes("Not An Email"), false);
   assert.equal(joined.includes("thalerz@me.com"), false);
   assert.equal(joined.includes(SUB), false);
 });
