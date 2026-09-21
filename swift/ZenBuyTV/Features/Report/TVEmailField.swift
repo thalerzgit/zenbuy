@@ -7,6 +7,7 @@ import UIKit
 /// is still empty — that was the Dist false-reject. This store is written on
 /// every `.editingChanged` and flushed on `textFieldDidEndEditing`, so Send
 /// reads what the keyboard actually committed, not a late SwiftUI binding.
+@MainActor
 final class TVEmailFieldStore {
     var currentText = ""
     weak var textField: UITextField?
@@ -79,6 +80,7 @@ struct TVEmailTextField: UIViewRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, UITextFieldDelegate {
         var text: Binding<String>
         var store: TVEmailFieldStore
