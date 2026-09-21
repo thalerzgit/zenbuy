@@ -19,6 +19,7 @@ struct TVReportView: View {
 
     private enum ReportFocus: Hashable {
         case share(ControlBar)
+        case send(ControlBar)
     }
 
     let symbols: [String]
@@ -39,6 +40,9 @@ struct TVReportView: View {
     @State private var emailStatus: EmailStatus = .idle
     @FocusState private var emailFieldFocused: Bool
     @FocusState private var focus: ReportFocus?
+    /// Blocks `becomeFirstResponder` while we park on Send PDF so a SwiftUI
+    /// focus bounce cannot re-present the system email sheet.
+    @State private var suppressFieldResponder = false
 
     private var title: String { symbols.joined(separator: ", ") }
     private var hasScorecard: Bool { !viewModel.scorecardHTML.isEmpty }
@@ -199,12 +203,10 @@ struct TVReportView: View {
 
                 Button {
                     if openPanel == bar {
-                        openPanel = nil
+                        closeEmailPanel(returningTo: bar)
                     } else {
-                        seedEmailDraftIfNeeded()
-                        openPanel = bar
+                        openEmailPanel(bar)
                     }
-                    emailStatus = .idle
                 } label: {
                     Label("Email PDF", systemImage: "square.and.arrow.up")
                 }
@@ -228,10 +230,22 @@ struct TVReportView: View {
                 .font(TVTheme.cardTitleFont)
                 .foregroundStyle(ZenBuyTheme.ink)
 
-            TVEmailTextField(text: $emailDraft, store: emailField)
+            TVEmailTextField(text: $emailDraft, store: emailField) {
+                applyEmailPanelLanding(bar, afterFieldEnded: true)
+            }
                 .focused($emailFieldFocused)
                 .onChange(of: emailFieldFocused) { _, focused in
-                    if focused {
+                    guard TVEmailPanelPolicy.shouldBecomeFirstResponder(
+                        fieldFocused: focused,
+                        suppressResponder: suppressFieldResponder
+                    ) else {
+                        if focused, suppressFieldResponder {
+                            emailFieldFocused = false
+                            emailField.resignFirstResponder()
+                        }
+                        return
+                    }
+                    if emailField.textField?.isFirstResponder != true {
                         emailField.textField?.becomeFirstResponder()
                     }
                 }
@@ -245,7 +259,6 @@ struct TVReportView: View {
                         )
                 )
                 .animation(TVTheme.focusAnimation, value: emailFieldFocused)
-                .onAppear { seedEmailDraftIfNeeded() }
 
             // Stays enabled while the mail is in flight: a disabled button is
             // not focusable on tvOS, and the send action guards itself.
@@ -261,12 +274,12 @@ struct TVReportView: View {
                     }
                 }
                 .buttonStyle(.tvPrimary)
+                .focused($focus, equals: .send(bar))
 
                 // Closing removes the focused button, so hand focus back to the
                 // control that opened the panel rather than letting tvOS drop it.
                 Button("Close") {
-                    openPanel = nil
-                    focus = .share(bar)
+                    closeEmailPanel(returningTo: bar)
                 }
                 .buttonStyle(.tvSecondary)
             }
@@ -288,6 +301,10 @@ struct TVReportView: View {
                 .strokeBorder(ZenBuyTheme.border, lineWidth: 2)
         )
         .tvFocusRow()
+        .onAppear {
+            seedEmailDraftIfNeeded()
+            applyEmailPanelLanding(bar, afterFieldEnded: false)
+        }
     }
 
     private var statusMessage: String? {
@@ -318,8 +335,50 @@ struct TVReportView: View {
         }
     }
 
+    private func openEmailPanel(_ bar: ControlBar) {
+        seedEmailDraftIfNeeded()
+        emailStatus = .idle
+        openPanel = bar
+    }
+
+    private func closeEmailPanel(returningTo bar: ControlBar) {
+        suppressFieldResponder = true
+        emailFieldFocused = false
+        emailField.resignFirstResponder()
+        openPanel = nil
+        focus = .share(bar)
+    }
+
+    /// Park on Send PDF when an address is already in the field so Email PDF
+    /// does not keep the gold ring and re-open the system sheet.
+    private func applyEmailPanelLanding(_ bar: ControlBar, afterFieldEnded: Bool) {
+        let live = emailField.captureLiveText()
+        let draft = live.isEmpty ? emailDraft : live
+        let landing = afterFieldEnded
+            ? TVEmailPanelPolicy.landingAfterFieldEnded(draft: draft)
+            : TVEmailPanelPolicy.landingAfterOpen(draft: draft, stored: storedEmail)
+        switch landing {
+        case .send:
+            suppressFieldResponder = true
+            emailFieldFocused = false
+            emailField.resignFirstResponder()
+            focus = .send(bar)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                if focus == .send(bar) {
+                    suppressFieldResponder = false
+                }
+            }
+        case .field:
+            suppressFieldResponder = false
+            focus = nil
+            emailFieldFocused = true
+        }
+    }
+
     private func sendReportEmail() {
         guard emailStatus != .sending else { return }
+        suppressFieldResponder = true
         emailFieldFocused = false
         emailField.resignFirstResponder()
         Task { @MainActor in

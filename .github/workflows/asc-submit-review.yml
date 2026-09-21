@@ -48,7 +48,7 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           TVOS_BUILD_NUMBER: ${{ inputs.tvos_build }}
-          ASC_WHATS_NEW: Email PDF now sends the address you typed on Apple TV. A valid iCloud address is no longer rejected as incomplete.
+          ASC_WHATS_NEW: Email PDF no longer loops the Previously-Used Emails sheet on Apple TV. Pick or type an address once, then Send PDF.
         run: |
           set -euo pipefail
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
@@ -77,7 +77,7 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           IOS_BUILD_NUMBER: ${{ inputs.ios_build }}
-          ASC_WHATS_NEW: Shared report-email address handling. A typed iCloud address is no longer false-rejected when mailing a report from Apple TV.
+          ASC_WHATS_NEW: Shared report-email handling used by Apple TV Email PDF. iPhone share-sheet mailing is unchanged.
         run: |
           set -euo pipefail
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"

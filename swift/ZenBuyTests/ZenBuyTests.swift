@@ -918,6 +918,54 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertTrue(ReportEmailAddress.emptyFieldMessage.contains("email field was empty"))
     }
 
+    func testTVEmailPanelPolicyParksOnSendWhenAddressExists() {
+        XCTAssertEqual(
+            TVEmailPanelPolicy.landingAfterOpen(
+                draft: "gary.morgenthaler@iCloud.com",
+                stored: ""
+            ),
+            .send
+        )
+        XCTAssertEqual(
+            TVEmailPanelPolicy.landingAfterOpen(
+                draft: "  ",
+                stored: "gary.morgenthaler@iCloud.com"
+            ),
+            .send
+        )
+        XCTAssertEqual(
+            TVEmailPanelPolicy.landingAfterOpen(draft: "", stored: ""),
+            .field
+        )
+        XCTAssertEqual(
+            TVEmailPanelPolicy.landingAfterOpen(draft: "\n", stored: "  "),
+            .field
+        )
+        XCTAssertEqual(
+            TVEmailPanelPolicy.landingAfterFieldEnded(draft: "gary.morgenthaler@iCloud.com"),
+            .send
+        )
+        XCTAssertEqual(TVEmailPanelPolicy.landingAfterFieldEnded(draft: "   "), .field)
+        XCTAssertTrue(
+            TVEmailPanelPolicy.shouldBecomeFirstResponder(
+                fieldFocused: true,
+                suppressResponder: false
+            )
+        )
+        XCTAssertFalse(
+            TVEmailPanelPolicy.shouldBecomeFirstResponder(
+                fieldFocused: true,
+                suppressResponder: true
+            )
+        )
+        XCTAssertFalse(
+            TVEmailPanelPolicy.shouldBecomeFirstResponder(
+                fieldFocused: false,
+                suppressResponder: false
+            )
+        )
+    }
+
     func testReportEmailRequestBodyUsesWorkerKeys() throws {
         let data = try ReportEmailAddress.requestBody(
             reportId: "report:separate:growth:h7:NVDA",
