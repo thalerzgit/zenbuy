@@ -1,0 +1,86 @@
+# ASC API only — attach a VALID Dist build and submit App Store review.
+# Use when TestFlight upload already succeeded and submit_review needs a retry
+# (no re-archive). Never signs, never mints certs.
+name: ASC submit review
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to submit
+        type: choice
+        options:
+          - both
+          - tvos
+          - ios
+        default: both
+      tvos_build:
+        description: tvOS Dist build number (empty = latest VALID on 1.6)
+        required: false
+        type: string
+      ios_build:
+        description: iOS Dist build number (empty = latest VALID on 1.6)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  submit_tvos:
+    name: Submit tvOS review
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'tvos' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Submit VALID tvOS Dist build
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          TVOS_BUILD_NUMBER: ${{ inputs.tvos_build }}
+          ASC_WHATS_NEW: Email PDF now sends the address you typed on Apple TV. A valid iCloud address is no longer rejected as incomplete.
+        run: |
+          set -euo pipefail
+          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          export ASC_MARKETING_VERSION="${MARKETING}"
+          echo "ASC API submit: marketing ${MARKETING} Dist tvOS build ${TVOS_BUILD_NUMBER:-latest VALID}."
+          node tools/asc-tvos.mjs submit-review
+
+  submit_ios:
+    name: Submit iOS review
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'ios' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Submit VALID iOS Dist build
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          IOS_BUILD_NUMBER: ${{ inputs.ios_build }}
+          ASC_WHATS_NEW: Shared report-email address handling. A typed iCloud address is no longer false-rejected when mailing a report from Apple TV.
+        run: |
+          set -euo pipefail
+          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          export ASC_MARKETING_VERSION="${MARKETING}"
+          echo "ASC API submit: marketing ${MARKETING} Dist iOS build ${IOS_BUILD_NUMBER:-latest VALID}."
+          node tools/asc-ios.mjs submit-review
