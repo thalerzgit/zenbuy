@@ -10,7 +10,7 @@
 #   1) Validate rails — ExportOptions (manual Dist) / scheme / team / secrets / Xcode.
 #   2) Archive and upload — import Dist p12 + App Store profile, archive with
 #      CODE_SIGN_STYLE=Manual (no -allowProvisioningUpdates), export+upload,
-#      then invite thalerz@me.com only after a successful upload.
+#      then ensure thalerz@me.com is in Internal Testers (quiet; no re-invite).
 #   3) Submit review — Ubuntu + ASC API only (no signing). Wait VALID, retract
 #      in-review if needed, attach latest Dist build, set What’s New, submit.
 name: TestFlight
@@ -22,6 +22,7 @@ on:
       - "swift/**"
       - ".github/workflows/ios-testflight.yml"
       - "tools/asc-ios.mjs"
+      - "tools/asc-tf-invite.mjs"
       - "tools/asc-listing.mjs"
       - "!swift/**/*.md"
       - "!swift/**/*.txt"
@@ -365,7 +366,7 @@ jobs:
           echo "Upload requested via ExportOptions destination=upload. Review submit is the following Ubuntu job."
           echo "uploaded=true" >> "${GITHUB_OUTPUT}"
 
-      - name: Invite internal TestFlight tester
+      - name: Ensure internal tester (quiet)
         if: success() && steps.export_upload.outputs.uploaded == 'true'
         continue-on-error: true
         working-directory: ${{ github.workspace }}

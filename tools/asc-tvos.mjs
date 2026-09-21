@@ -5,7 +5,7 @@
  *
  * Commands:
  *   ensure-app      READ-ONLY: app exists AND Apple TV / TV_OS platform is present
- *   invite-tester   Internal TestFlight group + email (list groups client-side)
+ *   invite-tester   Quiet ensure: assign Dist tvOS build; invite only if email is missing from the group
  *   status          Latest TV_OS versions + Dist builds
  *   wait-valid      Wait until the stamped Dist build is VALID
  *   submit-review   Wait VALID, retract in-flight TV review, submit latest Dist build
@@ -25,6 +25,7 @@ import {
   uploadAppleTvScreenshot,
   waitForEditableVersion,
 } from "./asc-listing.mjs";
+import { assignLatestDistBuild, ensureQuietTester } from "./asc-tf-invite.mjs";
 
 const API = "https://api.appstoreconnect.apple.com";
 const DEFAULT_BUNDLE = "info.zenbuy.app";
@@ -258,57 +259,8 @@ async function inviteTester() {
   }
 
   const group = await findOrCreateInternalGroup(app.id, groupName);
-  let tester = await findTester(email);
-
-  if (!tester) {
-    console.log(`Creating beta tester ${email}…`);
-    try {
-      const created = await asc("/v1/betaTesters", {
-        method: "POST",
-        body: {
-          data: {
-            type: "betaTesters",
-            attributes: {
-              email,
-              firstName: "Cyber",
-              lastName: "Man",
-            },
-            relationships: {
-              betaGroups: {
-                data: [{ type: "betaGroups", id: group.id }],
-              },
-            },
-          },
-        },
-      });
-      tester = created.data;
-      console.log(`Created tester ${tester.id} and added to ${groupName}`);
-      return tester;
-    } catch (err) {
-      if (err.status !== 409) throw err;
-      tester = await findTester(email);
-      if (!tester) throw err;
-    }
-  }
-
-  console.log(`Adding existing tester ${tester.id} to group…`);
-  try {
-    await asc(`/v1/betaGroups/${group.id}/relationships/betaTesters`, {
-      method: "POST",
-      body: {
-        data: [{ type: "betaTesters", id: tester.id }],
-      },
-    });
-    console.log(`Tester ${email} is in ${group.attributes?.name || groupName}.`);
-  } catch (err) {
-    const detail = String(err.message || "");
-    if (err.status === 409 || /already/i.test(detail)) {
-      console.log(`Tester ${email} already in group.`);
-      return tester;
-    }
-    throw err;
-  }
-  return tester;
+  await assignLatestDistBuild(asc, { appId: app.id, group, platform: "TV_OS" });
+  return ensureQuietTester(asc, { email, group, groupName, findTester });
 }
 
 function sleep(ms) {
