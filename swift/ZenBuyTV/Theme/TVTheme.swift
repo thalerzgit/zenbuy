@@ -18,6 +18,9 @@ enum TVTheme {
     static let hintColumnWidth: CGFloat = 640
     static let fieldMaxWidth: CGFloat = 1100
     static let readingMaxWidth: CGFloat = 1240
+    /// Dist Apple TV icon is 400×240; this height keeps the ZB mark readable
+    /// at 10 feet without crowding the wizard cards.
+    static let brandIconHeight: CGFloat = 76
 
     // Type. Body copy stays at or above the 29pt tvOS floor.
     static let heroFont = Font.system(size: 62, weight: .bold)
@@ -218,5 +221,26 @@ extension ButtonStyle where Self == TVActionButtonStyle {
 extension ButtonStyle where Self == TVCardButtonStyle {
     static func tvCard(selected: Bool = false, minHeight: CGFloat? = nil) -> TVCardButtonStyle {
         TVCardButtonStyle(selected: selected, minHeight: minHeight)
+    }
+}
+
+/// Top-left lockup for TV chrome. Uses the Dist Apple TV icon art (ZB +
+/// candles), not the older in-app lens mark. Not focusable — it is chrome.
+struct TVBrandHeader: View {
+    var onDark: Bool = true
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 20) {
+            Image("BrandIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(height: TVTheme.brandIconHeight)
+                .accessibilityHidden(true)
+            Text("ZenBuy")
+                .font(TVTheme.cardTitleFont)
+                .foregroundStyle(onDark ? Color.white : ZenBuyTheme.ink)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("ZenBuy")
     }
 }

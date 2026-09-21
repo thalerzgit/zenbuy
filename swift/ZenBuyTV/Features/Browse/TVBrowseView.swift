@@ -27,7 +27,6 @@ struct TVBrowseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
             ScrollView {
                 VStack(alignment: .leading, spacing: TVTheme.stackSpacing) {
                     if viewModel.wizardStep != .unlocked {
@@ -118,19 +117,6 @@ struct TVBrowseView: View {
         viewModel.path.isEmpty
             && viewModel.wizardStep == .unlocked
             && viewModel.inputMode == .find
-    }
-
-    private var header: some View {
-        HStack {
-            ZenBuyBrandHeader(onDark: true, compact: true)
-            Spacer()
-            Text("Apple TV")
-                .font(TVTheme.eyebrowFont)
-                .foregroundStyle(ZenBuyTheme.insightGold)
-        }
-        .padding(.horizontal, TVTheme.pagePadding)
-        .padding(.vertical, 20)
-        .background(ZenBuyTheme.forestHeader.ignoresSafeArea(edges: [.top, .horizontal]))
     }
 
     private var wizardChrome: some View {
