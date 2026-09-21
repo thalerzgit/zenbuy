@@ -499,7 +499,7 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           TVOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
-          ASC_WHATS_NEW: Email PDF no longer loops the Previously-Used Emails sheet on Apple TV. Pick or type an address once, then Send PDF.
+          ASC_WHATS_NEW: Opening the app now always starts at What do you want to do? — Find stocks or Analyze tickers you know — before style and profit window.
         run: |
           set -euo pipefail
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"

@@ -21,7 +21,13 @@ struct ZenBuyTVApp: App {
         self.unlock = unlock
         apiClient = api
         self.store = store
-        _searchViewModel = State(initialValue: SearchViewModel(api: api))
+        // iPhone restores a finished wizard so return visits skip ahead.
+        // Apple TV always opens on "What do you want to do?" — Find stocks
+        // or Analyze tickers you know. Stored style and horizon stay put
+        // for those later steps; they must not skip this first screen.
+        let search = SearchViewModel(api: api)
+        search.resetWizardForNewSession()
+        _searchViewModel = State(initialValue: search)
     }
 
     var body: some Scene {

@@ -68,15 +68,26 @@ struct TVContentView: View {
         viewModel.suggestions = []
         viewModel.query = ""
         viewModel.errorMessage = nil
-        viewModel.pathIntentChosen = false
-        viewModel.reopenWizard()
+        viewModel.resetWizardForNewSession()
+    }
+}
+
+extension SearchViewModel {
+    /// Apple TV cold launch and Restart: always land on "What do you want to
+    /// do?" even if a previous session persisted `wizard-complete`. Style and
+    /// horizon stay stored — they are the defaults on the later steps.
+    func resetWizardForNewSession() {
+        pathIntentChosen = false
+        reopenWizard()
     }
 }
 
 #Preview {
     let api = ZenBuyAPIClient()
-    TVContentView(
-        viewModel: SearchViewModel(api: api),
+    let viewModel = SearchViewModel(api: api)
+    viewModel.resetWizardForNewSession()
+    return TVContentView(
+        viewModel: viewModel,
         store: ZenBuyStore(),
         unlock: WebUnlockService()
     )
