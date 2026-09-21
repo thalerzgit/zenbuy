@@ -32,6 +32,8 @@ on:
       - "swift/ZenBuy/Components/FlowLayout.swift"
       - ".github/workflows/tvos-testflight.yml"
       - "tools/asc-tvos.mjs"
+      - "tools/asc-listing.mjs"
+      - "tools/store/**"
       - "!swift/**/*.md"
       - "!swift/**/*.txt"
   workflow_dispatch:

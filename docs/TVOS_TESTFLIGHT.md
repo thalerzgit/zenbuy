@@ -16,7 +16,7 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 | Info.plist keys | `swift/ZenBuyTV/Info.plist` merged via `TVOS.xcconfig` (`CFBundleIcons.CFBundlePrimaryIcon`, `TVTopShelfImage.TVTopShelfPrimaryImageWide`) |
 | ExportOptions | `swift/ExportOptions-tvos.plist` (manual Dist, upload) |
 | Dist workflow | `.github/workflows/tvos-testflight.yml` |
-| ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`, `submit-review`) |
+| ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`, `submit-review`) — submit fills required listing copy, privacy text, and `APP_APPLE_TV` screenshot via `tools/asc-listing.mjs` |
 | Marketing version | `1.6` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 

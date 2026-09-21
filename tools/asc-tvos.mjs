@@ -15,6 +15,13 @@
  */
 import { readFileSync } from "node:fs";
 import { createSign } from "node:crypto";
+import {
+  ensureVersionCopyright,
+  fillAppPrivacy,
+  fillVersionLocalization,
+  formatAssociatedErrors,
+  uploadAppleTvScreenshot,
+} from "./asc-listing.mjs";
 
 const API = "https://api.appstoreconnect.apple.com";
 const DEFAULT_BUNDLE = "info.zenbuy.app";
@@ -86,7 +93,7 @@ async function asc(path, { method = "GET", body } = {}) {
       json?.errors
         ?.map((e) => {
           const assoc = e.meta?.associatedErrors
-            ? ` associated=${JSON.stringify(e.meta.associatedErrors).slice(0, 500)}`
+            ? ` associated=${JSON.stringify(e.meta.associatedErrors).slice(0, 4000)}`
             : "";
           return `${e.detail || e.title}${assoc}`;
         })
@@ -726,7 +733,8 @@ async function submitVersionForReview(appId, versionId) {
     } else {
       if (/cannot be reviewed/i.test(detail)) {
         console.error(
-          "tvOS 1.6 listing is not review-ready. In App Store Connect, finish the Apple TV version (screenshots, description, privacy, age rating), then re-run Submit App Store review."
+          "tvOS listing is not review-ready after listing prep. Associated: " +
+            formatAssociatedErrors(err)
         );
       }
       throw err;
@@ -782,7 +790,7 @@ async function submitReview() {
   );
 
   await retractOpenReviews(app.id);
-  const version = await ensureAppStoreVersion(app.id, versionString);
+  let version = await ensureAppStoreVersion(app.id, versionString);
   const state = version.attributes?.appStoreState;
   if (!EDITABLE_VERSION_STATES.has(state) && state !== "PREPARE_FOR_SUBMISSION") {
     if (state === "WAITING_FOR_REVIEW" || state === "IN_REVIEW") {
@@ -800,6 +808,10 @@ async function submitReview() {
 
   await attachBuild(version.id, build.id);
   await markEncryptionExempt(build.id);
+  version = await ensureVersionCopyright(asc, version);
+  await fillAppPrivacy(asc, app.id);
+  await fillVersionLocalization(asc, app.id, version.id, { tvCopy: true });
+  await uploadAppleTvScreenshot(asc, version.id);
   await setWhatsNew(version.id, notes);
   await submitVersionForReview(app.id, version.id);
 }
