@@ -63,6 +63,13 @@ export function formatAssociatedErrors(err) {
   return (assoc || []).filter(Boolean).join(" | ").slice(0, 4000);
 }
 
+const EDITABLE_APP_INFO_STATES = new Set([
+  "PREPARE_FOR_SUBMISSION",
+  "DEVELOPER_REJECTED",
+  "REJECTED",
+  "METADATA_REJECTED",
+]);
+
 export async function fillAppPrivacy(asc, appId) {
   const infos = await asc(`/v1/apps/${appId}/appInfos?${new URLSearchParams({ limit: "10" })}`);
   const rows = infos.data || [];
@@ -71,39 +78,73 @@ export async function fillAppPrivacy(asc, appId) {
     return;
   }
 
-  const preferred = rows.filter((info) =>
-    ["PREPARE_FOR_SUBMISSION", "READY_FOR_SALE", "WAITING_FOR_REVIEW", "DEVELOPER_REJECTED"].includes(
-      info.attributes?.appStoreState
-    )
+  const targets = rows.filter((info) =>
+    EDITABLE_APP_INFO_STATES.has(info.attributes?.appStoreState)
   );
-  const targets = preferred.length ? preferred : rows;
+  if (!targets.length) {
+    console.log(
+      "No editable appInfo (PREPARE_FOR_SUBMISSION) — skipping privacyPolicyText patch."
+    );
+    return;
+  }
 
   for (const info of targets) {
+    const state = info.attributes?.appStoreState;
     const locs = await asc(`/v1/appInfos/${info.id}/appInfoLocalizations`);
     for (const loc of locs.data || []) {
       const attrs = loc.attributes || {};
-      const patch = {};
-      if (missingAttr(attrs.privacyPolicyText)) patch.privacyPolicyText = PRIVACY_POLICY_TEXT;
-      if (missingAttr(attrs.privacyPolicyUrl)) patch.privacyPolicyUrl = PRIVACY_URL;
-      if (!Object.keys(patch).length) {
-        console.log(
-          `App privacy already set for ${attrs.locale || loc.id} (${info.attributes?.appStoreState}).`
-        );
+      const attempts = [];
+      if (missingAttr(attrs.privacyPolicyText) || missingAttr(attrs.privacyPolicyUrl)) {
+        attempts.push({
+          privacyPolicyText: attrs.privacyPolicyText || PRIVACY_POLICY_TEXT,
+          privacyPolicyUrl: attrs.privacyPolicyUrl || PRIVACY_URL,
+        });
+      }
+      if (missingAttr(attrs.privacyPolicyUrl)) {
+        attempts.push({ privacyPolicyUrl: PRIVACY_URL });
+      }
+      if (missingAttr(attrs.privacyPolicyText)) {
+        attempts.push({ privacyPolicyText: PRIVACY_POLICY_TEXT });
+      }
+      if (!attempts.length) {
+        console.log(`App privacy already set for ${attrs.locale || loc.id} (${state}).`);
         continue;
       }
-      await asc(`/v1/appInfoLocalizations/${loc.id}`, {
-        method: "PATCH",
-        body: {
-          data: {
-            type: "appInfoLocalizations",
-            id: loc.id,
-            attributes: patch,
-          },
-        },
-      });
-      console.log(
-        `Set ${Object.keys(patch).join(", ")} on appInfo ${attrs.locale || loc.id} (${info.attributes?.appStoreState}).`
-      );
+
+      let patched = false;
+      for (const patch of attempts) {
+        try {
+          await asc(`/v1/appInfoLocalizations/${loc.id}`, {
+            method: "PATCH",
+            body: {
+              data: {
+                type: "appInfoLocalizations",
+                id: loc.id,
+                attributes: patch,
+              },
+            },
+          });
+          console.log(
+            `Set ${Object.keys(patch).join(", ")} on appInfo ${attrs.locale || loc.id} (${state}).`
+          );
+          patched = true;
+          break;
+        } catch (err) {
+          const detail = String(err.message || "");
+          if (err.status === 409 && /cannot be modified|current state/i.test(detail)) {
+            console.log(
+              `Skip privacy ${Object.keys(patch).join(", ")} on ${attrs.locale || loc.id} (${state}): not editable.`
+            );
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!patched) {
+        console.log(
+          `Could not edit privacy on ${attrs.locale || loc.id} (${state}); submit will report if it is still required.`
+        );
+      }
     }
   }
 }
