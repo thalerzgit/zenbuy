@@ -65,7 +65,7 @@ Pushes that touch iPhone Swift paths run `.github/workflows/ios-testflight.yml` 
 iOS jobs:
 
 1. **Validate rails** — ASC + Dist secrets, Xcode 26.6, ExportOptions (manual Dist) / scheme / team / bundle id.
-2. **Archive and upload** — import Dist p12 + App Store profile, archive with `CODE_SIGN_STYLE=Manual` (no `-allowProvisioningUpdates`), export+upload; invite `thalerz@me.com` **only after a successful upload**.
+2. **Archive and upload** — import Dist p12 + App Store profile, archive with `CODE_SIGN_STYLE=Manual` (no `-allowProvisioningUpdates`), export+upload; quiet-ensure `thalerz@me.com` in **Internal Quiet** after a successful upload (no re-invite; no routine assign-build — opt in with workflow_dispatch `assign_build`).
 3. **App Store review** — after the Dist build is `VALID`, `tools/asc-ios.mjs submit-review` retracts any in-flight iOS review, attaches the latest VALID build, sets What’s New, and submits. Ubuntu/ASC API only — never Dev certs, never `-allowProvisioningUpdates`.
 
 Automatic signing on ephemeral runners mints iOS Development certs and fails when the Apple account is at the 3-cert cap. CI uses **manual Distribution signing** only.

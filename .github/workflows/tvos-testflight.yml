@@ -7,7 +7,9 @@
 # Jobs:
 #   1) Validate rails — ExportOptions-tvos (manual Dist) / scheme / team / secrets.
 #   2) Archive and upload — Dist p12 + tvOS App Store profile, archive with
-#      CODE_SIGN_STYLE=Manual, export+upload, then quiet-ensure thalerz@me.com.
+#      CODE_SIGN_STYLE=Manual, export+upload, then quiet-ensure Internal Quiet.
+#      Do not assign-build on this happy path. workflow_dispatch assign_build=true
+#      is the only way to POST a Dist build onto Internal Quiet (never External).
 #   3) Wait VALID — Ubuntu + ASC API only (no signing).
 #   4) Submit review — Ubuntu + ASC API only (no signing). Skip only when the
 #      merge commit carries [no-appstore] (compile-time / no listing).
@@ -38,6 +40,14 @@ on:
       - "!swift/**/*.md"
       - "!swift/**/*.txt"
   workflow_dispatch:
+    inputs:
+      assign_build:
+        description: >
+          Assign the latest Dist tvOS build to Internal Quiet after upload.
+          Off by default so routine CI does not POST build→group (no TestFlight
+          email flood). Never assigns External groups.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -416,7 +426,7 @@ jobs:
           echo "Upload requested via ExportOptions-tvos destination=upload. No App Store review submit."
           echo "uploaded=true" >> "${GITHUB_OUTPUT}"
 
-      - name: Ensure internal tester (quiet)
+      - name: Ensure Internal Quiet tester (quiet)
         if: success() && steps.export_upload.outputs.uploaded == 'true'
         continue-on-error: true
         working-directory: ${{ github.workspace }}
@@ -426,8 +436,24 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           ASC_TESTER_EMAIL: thalerz@me.com
-          ASC_GROUP_NAME: Internal Testers
+          ASC_GROUP_NAME: Internal Quiet
+          ASC_GROUP_ID: 13d2bec7-2568-4bf3-91cc-5e99f48fdf17
         run: node tools/asc-tvos.mjs invite-tester
+
+      # Opt-in only. Routine push / default dispatch leaves Internal Quiet
+      # unassigned so Apple does not mail "new build" for every Dist upload.
+      - name: Assign Dist build to Internal Quiet
+        if: ${{ success() && steps.export_upload.outputs.uploaded == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.assign_build == 'true' }}
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          ASC_GROUP_NAME: Internal Quiet
+          ASC_GROUP_ID: 13d2bec7-2568-4bf3-91cc-5e99f48fdf17
+        run: node tools/asc-tvos.mjs assign-build
 
       - name: Remove secrets and CI keychain
         if: always()
