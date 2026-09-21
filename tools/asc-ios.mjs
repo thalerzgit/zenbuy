@@ -82,8 +82,14 @@ async function asc(path, { method = "GET", body } = {}) {
   }
   if (!res.ok) {
     const detail =
-      json?.errors?.map((e) => e.detail || e.title).join("; ") ||
-      text.slice(0, 400);
+      json?.errors
+        ?.map((e) => {
+          const assoc = e.meta?.associatedErrors
+            ? ` associated=${JSON.stringify(e.meta.associatedErrors).slice(0, 500)}`
+            : "";
+          return `${e.detail || e.title}${assoc}`;
+        })
+        .join("; ") || text.slice(0, 400);
     const err = new Error(`ASC ${method} ${path} → ${res.status}: ${detail}`);
     err.status = res.status;
     err.body = json;
@@ -344,16 +350,27 @@ async function retractOpenReviews(appId) {
   for (const sub of open) {
     const state = sub.attributes?.state;
     console.log(`Retracting review submission ${sub.id} (${state})…`);
-    await asc(`/v1/reviewSubmissions/${sub.id}`, {
-      method: "PATCH",
-      body: {
-        data: {
-          type: "reviewSubmissions",
-          id: sub.id,
-          attributes: { canceled: true },
+    try {
+      await asc(`/v1/reviewSubmissions/${sub.id}`, {
+        method: "PATCH",
+        body: {
+          data: {
+            type: "reviewSubmissions",
+            id: sub.id,
+            attributes: { canceled: true },
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      const detail = String(err.message || "");
+      if (err.status === 409 && /cancellable|canceled/i.test(detail)) {
+        console.log(
+          `iOS review ${sub.id} is not cancellable; submit will reuse it.`
+        );
+        continue;
+      }
+      throw err;
+    }
   }
 
   const deadline = Date.now() + 5 * 60 * 1000;
@@ -365,10 +382,20 @@ async function retractOpenReviews(appId) {
       console.log("In-flight review retracted.");
       return;
     }
-    console.log(
-      `Waiting for retract (${still.map((s) => s.attributes?.state).join(", ")})…`
-    );
+    const states = still.map((s) => s.attributes?.state).join(", ");
+    if (still.every((s) => s.attributes?.state === "READY_FOR_REVIEW")) {
+      console.log(`Leaving open iOS review(s) in place for reuse (${states}).`);
+      return;
+    }
+    console.log(`Waiting for retract (${states})…`);
     await sleep(15_000);
+  }
+  const leftover = (await listReviewSubmissions(appId)).filter((sub) =>
+    OPEN_REVIEW_STATES.has(sub.attributes?.state)
+  );
+  if (leftover.length) {
+    console.log("Open iOS review still present; submit will reuse it.");
+    return;
   }
   throw new Error("Timed out waiting for in-flight review retract to finish.");
 }
