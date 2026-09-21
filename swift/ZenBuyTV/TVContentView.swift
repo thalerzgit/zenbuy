@@ -8,43 +8,46 @@ struct TVContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack(path: $viewModel.path) {
-            Group {
-                if didOnboard {
-                    TVBrowseView(viewModel: viewModel)
-                } else {
-                    TVOnboardingView {
-                        didOnboard = true
+        VStack(spacing: 0) {
+            chrome
+            NavigationStack(path: $viewModel.path) {
+                Group {
+                    if didOnboard {
+                        TVBrowseView(viewModel: viewModel)
+                    } else {
+                        TVOnboardingView {
+                            didOnboard = true
+                        }
                     }
                 }
-            }
-            .navigationDestination(for: SearchRoute.self) { route in
-                switch route {
-                case .reportMode:
-                    TVReportModeView(picks: viewModel.picks) { mode in
-                        viewModel.confirmMode(mode)
-                    }
-                case .report:
-                    TVReportView(
-                        symbols: viewModel.picks.map(\.symbol),
-                        mode: viewModel.selectedMode,
-                        directive: viewModel.selectedDirectiveId,
-                        profitHorizonYears: viewModel.profitHorizonYears,
-                        viewModel: viewModel.report,
-                        store: store,
-                        unlock: unlock,
-                        onRunSimilar: { symbols, mode in
-                            viewModel.startSimilarReport(symbols: symbols, mode: mode)
-                        },
-                        onRestart: { restartFlow() }
-                    )
-                case let .directiveDetail(id):
-                    if let directive = viewModel.directive(for: id) {
-                        TVDirectiveDetailView(directive: directive)
-                    } else {
-                        Text("Strategy unavailable.")
-                            .font(TVTheme.bodyFont)
-                            .foregroundStyle(ZenBuyTheme.muted)
+                .navigationDestination(for: SearchRoute.self) { route in
+                    switch route {
+                    case .reportMode:
+                        TVReportModeView(picks: viewModel.picks) { mode in
+                            viewModel.confirmMode(mode)
+                        }
+                    case .report:
+                        TVReportView(
+                            symbols: viewModel.picks.map(\.symbol),
+                            mode: viewModel.selectedMode,
+                            directive: viewModel.selectedDirectiveId,
+                            profitHorizonYears: viewModel.profitHorizonYears,
+                            viewModel: viewModel.report,
+                            store: store,
+                            unlock: unlock,
+                            onRunSimilar: { symbols, mode in
+                                viewModel.startSimilarReport(symbols: symbols, mode: mode)
+                            },
+                            onRestart: { restartFlow() }
+                        )
+                    case let .directiveDetail(id):
+                        if let directive = viewModel.directive(for: id) {
+                            TVDirectiveDetailView(directive: directive)
+                        } else {
+                            Text("Strategy unavailable.")
+                                .font(TVTheme.bodyFont)
+                                .foregroundStyle(ZenBuyTheme.muted)
+                        }
                     }
                 }
             }
@@ -55,6 +58,18 @@ struct TVContentView: View {
         .task {
             await unlock.activate(store: store)
         }
+    }
+
+    /// Shared top chrome for every launched screen (home, wizard, report).
+    /// Dist ZB icon on the left; no platform badge.
+    private var chrome: some View {
+        HStack {
+            TVBrandHeader(onDark: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, TVTheme.pagePadding)
+        .padding(.vertical, 20)
+        .background(ZenBuyTheme.forestHeader.ignoresSafeArea(edges: [.top, .horizontal]))
     }
 
     /// Restart from a finished report: drop the in-flow selection and land back

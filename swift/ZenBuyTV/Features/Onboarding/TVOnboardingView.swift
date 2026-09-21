@@ -6,8 +6,6 @@ struct TVOnboardingView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 56) {
             VStack(alignment: .leading, spacing: 26) {
-                ZenBuyBrandHeader(onDark: false)
-
                 Text("Stock research on the big screen.")
                     .font(TVTheme.heroFont)
                     .foregroundStyle(ZenBuyTheme.ink)
