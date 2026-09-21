@@ -10,6 +10,7 @@ import {
 import {
   parseReportEmailRequest,
   reportEmailBody,
+  reportEmailRejectLog,
   reportEmailSubject,
 } from "./report-email.ts";
 
@@ -129,10 +130,36 @@ test("parseReportEmailRequest rejects anything but a real report id and address"
     assert.equal((parseReportEmailRequest(body) as { code: string }).code, "not_found");
   }
 
-  for (const email of ["", "nope", "a@b", "a b@c.co"]) {
+  for (const email of ["", "   ", undefined]) {
+    const rejected = parseReportEmailRequest({ reportId: "report:separate:growth:NVDA", email });
+    assert.equal((rejected as { code: string }).code, "missing_email");
+    assert.equal(
+      (rejected as { error: string }).error,
+      "The email address was missing from the request."
+    );
+  }
+  assert.equal(
+    (parseReportEmailRequest({ reportId: "report:separate:growth:NVDA" }) as { code: string }).code,
+    "missing_email"
+  );
+
+  for (const email of ["nope", "a@b", "a b@c.co"]) {
     const rejected = parseReportEmailRequest({ reportId: "report:separate:growth:NVDA", email });
     assert.equal((rejected as { code: string }).code, "bad_email");
+    assert.equal(
+      (rejected as { error: string }).error,
+      "Enter a full email address, like you@example.com."
+    );
   }
+
+  const justin = parseReportEmailRequest({
+    reportId: "report:separate:growth:h7:NVDA",
+    email: "gary.morgenthaler@iCloud.com",
+  });
+  assert.deepEqual(justin, {
+    reportId: "report:separate:growth:h7:NVDA",
+    email: "gary.morgenthaler@iCloud.com",
+  });
 
   const tvLookalike = parseReportEmailRequest({
     reportId: "report:separate:growth:h7:NVDA",
@@ -142,6 +169,15 @@ test("parseReportEmailRequest rejects anything but a real report id and address"
     reportId: "report:separate:growth:h7:NVDA",
     email: "gary.morgenthaler@iCloud.com",
   });
+});
+
+test("reportEmailRejectLog never includes the local part", () => {
+  const email = "gary.morgenthaler@iCloud.com";
+  assert.equal(reportEmailRejectLog("missing_email", email), "report_email missing_email");
+  const line = reportEmailRejectLog("bad_email", email);
+  assert.equal(line, `report_email bad_email length=${email.length} domain=icloud.com`);
+  assert.ok(!line.toLowerCase().includes("gary"));
+  assert.ok(!line.includes("morgenthaler"));
 });
 
 test("report email subject and body carry the tickers and verdict", () => {

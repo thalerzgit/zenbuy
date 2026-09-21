@@ -36,7 +36,7 @@ Nothing on Apple TV asks for a second click to confirm a choice, and nothing off
 
 A completed report (`didFinishSuccessfully && !isStreaming`) draws the same bar at the **top and bottom** of the output: **Restart** plus an **Email PDF** share control (`square.and.arrow.up`).
 
-Email PDF opens an inline card next to the bar that was clicked — inline rather than an alert because focusing a tvOS text field is what raises the system keyboard. The address is remembered in `@AppStorage` so a second send is one click. Closing the card hands focus back to the share button it came from.
+Email PDF opens an inline card next to the bar that was clicked — inline rather than an alert because focusing a tvOS text field is what raises the system keyboard. The field is a UIKit `UITextField` (`TVEmailTextField`); Send PDF reads the coordinator's `currentText` (updated on every `.editingChanged`), not a SwiftUI `TextField` binding. Empty-field, bad-format, and server errors use distinct copy. The address is remembered in `@AppStorage` so a second send is one click. Closing the card hands focus back to the share button it came from.
 
 tvOS has no share sheet, so the PDF is rendered **server-side**: the app posts `{ reportId, email }` to `POST /api/report/email` and the Worker renders the colour PDF from the report already in KV (`src/worker/report-pdf.ts`) and mails it through Resend. The report id is computed on device with the shared `ReportCacheKey.make`, which is the same key the Worker caches under. Requires the `RESEND_API_KEY` Worker secret and the `REPORT_EMAIL_FROM` var; without them the endpoint answers 503 and the TV shows "Emailing reports isn't switched on yet".
 

@@ -32,10 +32,9 @@ struct TVReportView: View {
     var onRestart: () -> Void = {}
 
     @AppStorage("zenbuy.tv.report.email.v1") private var storedEmail = ""
-    /// Live field value. `@AppStorage` plus a focused tvOS `TextField` can show
-    /// typed text while the persisted binding is still empty — Send must read
-    /// this draft after resigning focus, not UserDefaults.
+    /// Display / seed only. Send reads `emailField.currentText`, not this.
     @State private var emailDraft = ""
+    @State private var emailField = TVEmailFieldStore()
     @State private var openPanel: ControlBar?
     @State private var emailStatus: EmailStatus = .idle
     @FocusState private var emailFieldFocused: Bool
@@ -229,16 +228,14 @@ struct TVReportView: View {
                 .font(TVTheme.cardTitleFont)
                 .foregroundStyle(ZenBuyTheme.ink)
 
-            TextField("you@example.com", text: $emailDraft)
-                .font(TVTheme.bodyFont)
-                .textContentType(.emailAddress)
-                .keyboardType(.emailAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+            TVEmailTextField(text: $emailDraft, store: emailField)
                 .focused($emailFieldFocused)
-                .submitLabel(.done)
-                .onSubmit { emailFieldFocused = false }
-                .frame(maxWidth: TVTheme.fieldMaxWidth)
+                .onChange(of: emailFieldFocused) { _, focused in
+                    if focused {
+                        emailField.textField?.becomeFirstResponder()
+                    }
+                }
+                .frame(maxWidth: TVTheme.fieldMaxWidth, minHeight: 56)
                 .padding(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -315,30 +312,26 @@ struct TVReportView: View {
         if emailDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             emailDraft = storedEmail
         }
-    }
-
-    /// Drop first-responder so the TV keyboard commits its buffer before we
-    /// read `emailDraft`. Validating first was the Dist false-reject path:
-    /// the field still showed `gary.morgenthaler@iCloud.com` while the bound
-    /// string was empty.
-    private func resignEmailField() {
-        emailFieldFocused = false
-        UIApplication.shared.sendAction(
-            #selector(UIResponder.resignFirstResponder),
-            to: nil,
-            from: nil,
-            for: nil
-        )
+        if emailField.currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            emailField.currentText = emailDraft
+            emailField.textField?.text = emailDraft
+        }
     }
 
     private func sendReportEmail() {
         guard emailStatus != .sending else { return }
-        resignEmailField()
+        emailFieldFocused = false
+        emailField.resignFirstResponder()
         Task { @MainActor in
-            await Task.yield()
-            let address = TVReportEmail.normalizeAddress(emailDraft)
-            guard TVReportEmail.looksLikeAddress(address) else {
-                emailStatus = .failed("Enter a full email address, like you@example.com.")
+            try? await Task.sleep(for: .milliseconds(120))
+            let raw = emailField.captureLiveText()
+            let address = ReportEmailAddress.normalize(raw)
+            if address.isEmpty {
+                emailStatus = .failed(ReportEmailAddress.emptyFieldMessage)
+                return
+            }
+            guard ReportEmailAddress.looksLikeAddress(address) else {
+                emailStatus = .failed(ReportEmailAddress.invalidFormatMessage)
                 return
             }
             emailDraft = address
@@ -361,45 +354,6 @@ struct TVReportView: View {
 /// colour copy from the report already cached under `reportId`. Lives in the TV
 /// target because `ZenBuyAPIClient` is shared with the iPhone app.
 private enum TVReportEmail {
-    /// Same folding as Worker `normalizeEmail` — NFKC, strip zero-width / NBSP,
-    /// map leftover fullwidth `@` / ideographic dots.
-    static func normalizeAddress(_ value: String) -> String {
-        let nfkc = value.precomposedStringWithCompatibilityMapping
-        var scalars = String.UnicodeScalarView()
-        scalars.reserveCapacity(nfkc.unicodeScalars.count)
-        for scalar in nfkc.unicodeScalars {
-            switch scalar.value {
-            case 0xFF20:
-                scalars.append(Unicode.Scalar(UInt32(0x40))!)
-            case 0x3002, 0xFF0E, 0xFF61:
-                scalars.append(Unicode.Scalar(UInt32(0x2E))!)
-            case 0x00A0, 0x202F, 0x2007, 0x00AD:
-                scalars.append(Unicode.Scalar(UInt32(0x20))!)
-            case 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF:
-                continue
-            default:
-                scalars.append(scalar)
-            }
-        }
-        return String(String.UnicodeScalarView(scalars))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Worker `isNormalEmail`: `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` after normalize.
-    static func looksLikeAddress(_ value: String) -> Bool {
-        let email = normalizeAddress(value)
-        guard !email.isEmpty, email.count <= 254 else { return false }
-        guard let at = email.firstIndex(of: "@"), at != email.startIndex else { return false }
-        let local = email[..<at]
-        let domain = email[email.index(after: at)...]
-        guard !domain.isEmpty, !domain.contains("@") else { return false }
-        guard !local.contains(where: \.isWhitespace),
-              !domain.contains(where: \.isWhitespace)
-        else { return false }
-        guard let dot = domain.firstIndex(of: ".") else { return false }
-        return dot != domain.startIndex && domain.index(after: dot) != domain.endIndex
-    }
-
     static func send(reportId: String, email: String) async throws {
         var request = URLRequest(
             url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/report/email")
@@ -409,7 +363,7 @@ private enum TVReportEmail {
         request.setValue("tvos", forHTTPHeaderField: "X-ZenBuy-Client")
         request.setValue(ZenBuyDeviceIdentity.current, forHTTPHeaderField: "X-ZenBuy-Device")
         request.timeoutInterval = 90
-        request.httpBody = try JSONEncoder().encode(["reportId": reportId, "email": email])
+        request.httpBody = try ReportEmailAddress.requestBody(reportId: reportId, email: email)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

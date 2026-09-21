@@ -36,6 +36,7 @@
 		A10000000000000000000020 /* ZenBuyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ZenBuyStore.swift */; };
 		A10000000000000000000021 /* WebUnlockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* WebUnlockService.swift */; };
 		A10000000000000000000025 /* UnlockLinkPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* UnlockLinkPolicy.swift */; };
+		A10000000000000000000026 /* ReportEmailAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* ReportEmailAddress.swift */; };
 		A10000000000000000000022 /* UnlockWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* UnlockWebView.swift */; };
 		A1000000000000000000000E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000000F /* ZenBuyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* ZenBuyTests.swift */; };
@@ -47,6 +48,7 @@
 		A20000000000000000000004 /* TVBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* TVBrowseView.swift */; };
 		A20000000000000000000005 /* TVReportModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* TVReportModeView.swift */; };
 		A20000000000000000000006 /* TVReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* TVReportView.swift */; };
+		A2000000000000000000000C /* TVEmailField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000D /* TVEmailField.swift */; };
 		A20000000000000000000007 /* TVTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* TVTheme.swift */; };
 		A20000000000000000000008 /* TVDirectiveDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* TVDirectiveDetailView.swift */; };
 		A2000000000000000000000B /* TVUnlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000B /* TVUnlockView.swift */; };
@@ -70,6 +72,7 @@
 		A21000000000000000000012 /* ZenBuyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* ZenBuyStore.swift */; };
 		A21000000000000000000013 /* WebUnlockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* WebUnlockService.swift */; };
 		A21000000000000000000014 /* UnlockLinkPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* UnlockLinkPolicy.swift */; };
+		A21000000000000000000015 /* ReportEmailAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* ReportEmailAddress.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -125,6 +128,7 @@
 		B10000000000000000000020 /* ZenBuyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenBuyStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000021 /* WebUnlockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUnlockService.swift; sourceTree = "<group>"; };
 		B10000000000000000000025 /* UnlockLinkPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockLinkPolicy.swift; sourceTree = "<group>"; };
+		B10000000000000000000026 /* ReportEmailAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportEmailAddress.swift; sourceTree = "<group>"; };
 		B10000000000000000000022 /* UnlockWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockWebView.swift; sourceTree = "<group>"; };
 		B10000000000000000000023 /* ZenBuy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ZenBuy.entitlements; sourceTree = "<group>"; };
 		F10000000000000000000001 /* ZenBuy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZenBuy.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -137,6 +141,7 @@
 		B20000000000000000000004 /* TVBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVBrowseView.swift; sourceTree = "<group>"; };
 		B20000000000000000000005 /* TVReportModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVReportModeView.swift; sourceTree = "<group>"; };
 		B20000000000000000000006 /* TVReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVReportView.swift; sourceTree = "<group>"; };
+		B2000000000000000000000D /* TVEmailField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVEmailField.swift; sourceTree = "<group>"; };
 		B20000000000000000000007 /* TVTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVTheme.swift; sourceTree = "<group>"; };
 		B20000000000000000000008 /* TVDirectiveDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVDirectiveDetailView.swift; sourceTree = "<group>"; };
 		B20000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -251,6 +256,7 @@
 				H1000000000000000000000C /* Theme */,
 				H10000000000000000000010 /* Purchases */,
 				B1000000000000000000001F /* ReportVerboseLog.swift */,
+				B10000000000000000000026 /* ReportEmailAddress.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -403,6 +409,7 @@
 			children = (
 				B20000000000000000000005 /* TVReportModeView.swift */,
 				B20000000000000000000006 /* TVReportView.swift */,
+				B2000000000000000000000D /* TVEmailField.swift */,
 			);
 			path = Report;
 			sourceTree = "<group>";
@@ -621,6 +628,7 @@
 				A10000000000000000000020 /* ZenBuyStore.swift in Sources */,
 				A10000000000000000000021 /* WebUnlockService.swift in Sources */,
 				A10000000000000000000025 /* UnlockLinkPolicy.swift in Sources */,
+				A10000000000000000000026 /* ReportEmailAddress.swift in Sources */,
 				A10000000000000000000022 /* UnlockWebView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -652,6 +660,7 @@
 				A20000000000000000000004 /* TVBrowseView.swift in Sources */,
 				A20000000000000000000005 /* TVReportModeView.swift in Sources */,
 				A20000000000000000000006 /* TVReportView.swift in Sources */,
+				A2000000000000000000000C /* TVEmailField.swift in Sources */,
 				A20000000000000000000007 /* TVTheme.swift in Sources */,
 				A20000000000000000000008 /* TVDirectiveDetailView.swift in Sources */,
 				A2000000000000000000000B /* TVUnlockView.swift in Sources */,
@@ -673,6 +682,7 @@
 				A21000000000000000000012 /* ZenBuyStore.swift in Sources */,
 				A21000000000000000000013 /* WebUnlockService.swift in Sources */,
 				A21000000000000000000014 /* UnlockLinkPolicy.swift in Sources */,
+				A21000000000000000000015 /* ReportEmailAddress.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
