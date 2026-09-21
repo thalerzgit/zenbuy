@@ -16,10 +16,13 @@
 import { readFileSync } from "node:fs";
 import { createSign } from "node:crypto";
 import {
+  attachBuild,
+  EDITABLE_VERSION_STATES,
   ensureVersionCopyright,
   fillAppPrivacy,
   fillVersionLocalization,
   formatAssociatedErrors,
+  waitForEditableVersion,
 } from "./asc-listing.mjs";
 
 const API = "https://api.appstoreconnect.apple.com";
@@ -336,14 +339,6 @@ const OPEN_REVIEW_STATES = new Set([
   "UNRESOLVED_ISSUES",
 ]);
 
-const EDITABLE_VERSION_STATES = new Set([
-  "PREPARE_FOR_SUBMISSION",
-  "DEVELOPER_REJECTED",
-  "REJECTED",
-  "METADATA_REJECTED",
-  "INVALID_BINARY",
-]);
-
 async function retractOpenReviews(appId) {
   const open = (await listReviewSubmissions(appId)).filter((sub) =>
     OPEN_REVIEW_STATES.has(sub.attributes?.state)
@@ -519,16 +514,6 @@ async function ensureAppStoreVersion(appId, versionString) {
   });
   console.log(`Created App Store version ${versionString} (${created.data.id}).`);
   return created.data;
-}
-
-async function attachBuild(versionId, buildId) {
-  await asc(`/v1/appStoreVersions/${versionId}/relationships/build`, {
-    method: "PATCH",
-    body: {
-      data: { type: "builds", id: buildId },
-    },
-  });
-  console.log(`Attached Dist build ${buildId} to version ${versionId}.`);
 }
 
 async function markEncryptionExempt(buildId) {
@@ -735,22 +720,27 @@ async function submitReview() {
 
   await retractOpenReviews(app.id);
   let version = await ensureAppStoreVersion(app.id, versionString);
-  const state = version.attributes?.appStoreState;
-  if (!EDITABLE_VERSION_STATES.has(state) && state !== "PREPARE_FOR_SUBMISSION") {
-    if (state === "WAITING_FOR_REVIEW" || state === "IN_REVIEW") {
-      await retractOpenReviews(app.id);
-    } else if (
-      state === "PENDING_DEVELOPER_RELEASE" ||
-      state === "READY_FOR_SALE" ||
-      state === "PROCESSING_FOR_APP_STORE"
-    ) {
-      throw new Error(
-        `Version ${versionString} is already ${state}; not attaching a new review.`
-      );
-    }
+  let state = version.attributes?.appStoreState;
+  if (state === "WAITING_FOR_REVIEW" || state === "IN_REVIEW") {
+    await retractOpenReviews(app.id);
+    version = await waitForEditableVersion(asc, version, { label: "iOS version" });
+    state = version.attributes?.appStoreState;
+  } else if (
+    state === "PENDING_DEVELOPER_RELEASE" ||
+    state === "READY_FOR_SALE" ||
+    state === "PROCESSING_FOR_APP_STORE"
+  ) {
+    throw new Error(
+      `Version ${versionString} is already ${state}; not attaching a new review.`
+    );
+  }
+  if (!EDITABLE_VERSION_STATES.has(state)) {
+    throw new Error(
+      `Version ${versionString} is ${state}; cannot attach Dist build ${build.attributes?.version}.`
+    );
   }
 
-  await attachBuild(version.id, build.id);
+  await attachBuild(asc, version.id, build.id, { label: "Dist build" });
   await markEncryptionExempt(build.id);
   version = await ensureVersionCopyright(asc, version);
   await fillAppPrivacy(asc, app.id);

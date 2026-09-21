@@ -48,6 +48,85 @@ function missingAttr(value) {
   return !String(value || "").trim();
 }
 
+/** App Store version states that still accept a new Dist build. */
+export const EDITABLE_VERSION_STATES = new Set([
+  "PREPARE_FOR_SUBMISSION",
+  "DEVELOPER_REJECTED",
+  "REJECTED",
+  "METADATA_REJECTED",
+  "INVALID_BINARY",
+]);
+
+const LOCKED_REVIEW_VERSION_STATES = new Set([
+  "WAITING_FOR_REVIEW",
+  "IN_REVIEW",
+]);
+
+export async function versionBuildId(asc, versionId) {
+  try {
+    const payload = await asc(`/v1/appStoreVersions/${versionId}/build`);
+    return payload.data?.id || null;
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * After retracting WAITING_FOR_REVIEW, the version state lags. Attaching a
+ * new Dist build during that lag 409s ("pre-release build could not be added").
+ */
+export async function waitForEditableVersion(asc, version, { label = "version" } = {}) {
+  const versionId = version.id;
+  let current = version;
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const state = current.attributes?.appStoreState;
+    if (EDITABLE_VERSION_STATES.has(state)) {
+      console.log(`${label} ${versionId} is editable (${state}).`);
+      return current;
+    }
+    if (!LOCKED_REVIEW_VERSION_STATES.has(state)) {
+      console.log(`${label} ${versionId} state ${state} — not waiting further.`);
+      return current;
+    }
+    console.log(`Waiting for ${label} to leave ${state} after retract…`);
+    await sleep(15_000);
+    const payload = await asc(`/v1/appStoreVersions/${versionId}`);
+    current = payload.data;
+  }
+  throw new Error(
+    `Timed out waiting for ${label} ${versionId} to become editable after retract.`
+  );
+}
+
+export async function attachBuild(asc, versionId, buildId, { label = "Dist build" } = {}) {
+  const current = await versionBuildId(asc, versionId);
+  if (current === buildId) {
+    console.log(`${label} ${buildId} already attached to version ${versionId}.`);
+    return;
+  }
+  try {
+    await asc(`/v1/appStoreVersions/${versionId}/relationships/build`, {
+      method: "PATCH",
+      body: {
+        data: { type: "builds", id: buildId },
+      },
+    });
+    console.log(`Attached ${label} ${buildId} to version ${versionId}.`);
+  } catch (err) {
+    const detail = String(err.message || "");
+    if (err.status === 409 && /could not be added/i.test(detail)) {
+      const again = await versionBuildId(asc, versionId);
+      if (again === buildId) {
+        console.log(`${label} already attached after 409.`);
+        return;
+      }
+    }
+    throw err;
+  }
+}
+
 export function formatAssociatedErrors(err) {
   const assoc = err?.body?.errors?.flatMap((e) => {
     const rows = e.meta?.associatedErrors
