@@ -422,7 +422,7 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           IOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
-          ASC_WHATS_NEW: Report formatting polish for Grok as the primary research model. Tables, scorecard, and BOTTOM LINE stay readable on iPhone and PDF.
+          ASC_WHATS_NEW: Shared report-email address handling. A typed iCloud address is no longer false-rejected when mailing a report from Apple TV.
         run: |
           set -euo pipefail
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"

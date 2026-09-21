@@ -9,10 +9,10 @@ Part of the permanent standing process in `docs/STANDING_DEV_PROCESS.md`.
 
 When coding work for this project is ready to ship:
 
-1. **Commit & push** — conventional commits; feature branch → PR → merge to `main` as appropriate.
+1. **Commit & push** — conventional commits; feature branch → PR → **merge to `main`**.
 2. **Wait 2–3 minutes** — GitHub Actions Deploy (Wrangler → Cloudflare) must finish.
-3. **Verify** — commit on `main`; Actions green; Cloudflare environment correct (Workers/Pages, KV, D1, R2, DNS as applicable); production smoke-test matches intent.
-4. **Report** — End with **`LANDED!`** and the Step 10 A–E executive brief.
+3. **Verify** — commit on `main`; Actions green; Cloudflare environment correct (Workers/Pages, KV, D1, R2, DNS as applicable); Dist TestFlight **VALID** for shipped native platforms; **App Store review submitted** when a listing/train exists (skip `[no-appstore]` unless submit is impossible); production smoke-test matches intent.
+4. **Report** — End with **`LANDED!`** and the Step 10 A–E executive brief, including PR, TF VALID build #s, and ASC review state.
 
 If CI/deploy/smoke fails: do **not** LANDED — loop from Step 1 of the standing process.
 

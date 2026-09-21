@@ -83,12 +83,14 @@ The admin may work from:
 - For Mac-only operations (local Private Keys, ASC, Neo paths, desktop-only tools), instruct them to **open a local Cursor session** and ask **that** session to run the command in its **local sandbox**.
 - Prefer running cloud-capable commands **inside the cloud session** (git, `gh`, wrangler with cloud credentials, production HTTP checks).
 
-### Step 8 — Push, Actions, Cloudflare deploy
+### Step 8 — Push, Actions, Cloudflare deploy, Dist TestFlight, App Store review
 
-1. Push code changes to GitHub (feature branch → PR → merge to `main` as appropriate).
+1. Push code changes to GitHub (feature branch → PR → **merge to `main`**). A PR alone is not shipped.
 2. Wait **2–3 minutes** for landing.
-3. Confirm GitHub Actions **succeeded**, commit is on **`main`**, and the correct workflow deployed via **Wrangler** to Cloudflare.
+3. Confirm GitHub Actions **succeeded**, commit is on **`main`**, and the correct workflow deployed via **Wrangler** to Cloudflare (Worker/domain as the change needs).
 4. Validate Cloudflare applied changes in the correct environment (Workers/Pages, KV, D1, R2, DNS, bindings, etc.).
+5. **Dist TestFlight** for every native platform this change ships on: upload, then wait until the Dist build is **VALID**.
+6. **App Store review submit** for those same platforms when a listing / open train exists (tvOS and/or iOS). Do **not** use `[no-appstore]` unless ASC submit is impossible (no listing, no train). If the workflow needs an explicit submit job, add or run it. Skip only when there is literally no App Store product to submit to — then say so in LANDED.
 
 ### Step 9 — Production smoke-test & loop
 
@@ -105,10 +107,10 @@ When complete, end the prompt reply with **`LANDED!`** plus a concise executive 
 | **A)** | What was asked for |
 | **B)** | Steps taken to comply |
 | **C)** | Problems / resolutions (if any) |
-| **D)** | Final deployment elements |
+| **D)** | Final deployment elements — **PR**, **TF build #s VALID**, **ASC review state** (submitted / not applicable with reason) |
 | **E)** | What’s working and how it works now |
 
-Do **not** post `LANDED!` until Steps 8–9 are green.
+Do **not** post `LANDED!` until Steps 8–9 are green, including TF VALID and ASC review submit (or a stated N/A).
 
 ---
 

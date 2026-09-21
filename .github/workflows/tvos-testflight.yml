@@ -1,4 +1,5 @@
-# Archive ZenBuyTV, upload Dist to TestFlight (internal). No App Store review.
+# Archive ZenBuyTV, upload Dist to TestFlight, then submit the VALID build
+# for App Store review (retract any in-flight tvOS review first).
 #
 # Pattern: same Dist rails as iOS TestFlight — MANUAL App Store signing.
 # NEVER -allowProvisioningUpdates. NEVER mint Development certificates.
@@ -8,6 +9,8 @@
 #   2) Archive and upload — Dist p12 + tvOS App Store profile, archive with
 #      CODE_SIGN_STYLE=Manual, export+upload, invite thalerz@me.com after upload.
 #   3) Wait VALID — Ubuntu + ASC API only (no signing).
+#   4) Submit review — Ubuntu + ASC API only (no signing). Skip only when the
+#      merge commit carries [no-appstore] (compile-time / no listing).
 name: TestFlight tvOS
 
 on:
@@ -463,5 +466,39 @@ jobs:
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
           export ASC_MARKETING_VERSION="${MARKETING}"
           echo "ASC wait-valid: marketing ${MARKETING} Dist tvOS build ${TVOS_BUILD_NUMBER}."
-          echo "No signing on this job. No App Store review submit."
+          echo "No signing on this job."
           node tools/asc-tvos.mjs wait-valid
+
+  # ASC API only — no Dist p12, no profiles, no xcodebuild, no Dev certs.
+  # [no-appstore] skips this job so a compile-only / no-listing push can still
+  # reach TestFlight without retracting an in-flight TV review.
+  submit_review:
+    name: Submit App Store review
+    needs: upload
+    if: ${{ !contains(join(github.event.commits.*.message, ' '), '[no-appstore]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Wait VALID, retract in-review, submit latest Dist tvOS build
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          TVOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
+          ASC_WHATS_NEW: Email PDF now sends the address you typed on Apple TV. A valid iCloud address is no longer rejected as incomplete.
+        run: |
+          set -euo pipefail
+          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          export ASC_MARKETING_VERSION="${MARKETING}"
+          echo "ASC API submit: marketing ${MARKETING} Dist tvOS build ${TVOS_BUILD_NUMBER}."
+          echo "No signing on this job (Dist upload already finished)."
+          node tools/asc-tvos.mjs submit-review

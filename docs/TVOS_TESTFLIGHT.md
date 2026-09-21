@@ -2,7 +2,7 @@
 
 Native **tvOS** target `ZenBuyTV` in `swift/ZenBuy.xcodeproj`. Same Worker APIs as iPhone (`https://zenbuy.info`). Same bundle ID **`info.zenbuy.app`** — add the **Apple TV** platform to the existing ASC app (do not invent a second listing unless the App ID cannot take tvOS).
 
-Internal TestFlight only. CI never submits App Store review for tvOS.
+Dist TestFlight plus App Store review. After the Dist build is **VALID**, CI runs `tools/asc-tvos.mjs submit-review` unless the merge commit carries `[no-appstore]`.
 
 This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-26` runners.
 
@@ -16,7 +16,7 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 | Info.plist keys | `swift/ZenBuyTV/Info.plist` merged via `TVOS.xcconfig` (`CFBundleIcons.CFBundlePrimaryIcon`, `TVTopShelfImage.TVTopShelfPrimaryImageWide`) |
 | ExportOptions | `swift/ExportOptions-tvos.plist` (manual Dist, upload) |
 | Dist workflow | `.github/workflows/tvos-testflight.yml` |
-| ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`) |
+| ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`, `submit-review`) |
 | Marketing version | `1.6` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 
@@ -156,5 +156,6 @@ CI will:
 2. Archive `ZenBuyTV` for `generic/platform=tvOS` with manual Dist.
 3. Upload and invite **`thalerz@me.com`** (groups listed client-side — no `filter[name]` on betaGroups).
 4. Wait until the Dist build is **VALID**.
+5. Submit the VALID tvOS Dist build for App Store review (unless the merge carries `[no-appstore]`).
 
 Install from TestFlight on Apple TV (same Apple ID as the internal tester).

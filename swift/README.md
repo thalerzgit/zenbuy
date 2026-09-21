@@ -60,7 +60,7 @@ Admin ASC API key cannot `CREATE` apps; CI only **checks** that the app exists, 
 
 ### Archive & upload
 
-Pushes that touch iPhone Swift paths run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6). Apple TV paths run `.github/workflows/tvos-testflight.yml` (internal TestFlight only — see `docs/TVOS_TESTFLIGHT.md`).
+Pushes that touch iPhone Swift paths run `.github/workflows/ios-testflight.yml` on `macos-26` (Xcode 26.6). Apple TV paths run `.github/workflows/tvos-testflight.yml` (Dist TestFlight + App Store review — see `docs/TVOS_TESTFLIGHT.md`).
 
 iOS jobs:
 
