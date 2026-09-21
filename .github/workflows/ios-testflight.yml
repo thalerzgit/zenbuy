@@ -403,9 +403,9 @@ jobs:
   submit_review:
     name: Submit App Store review
     needs: upload
-    # Subject-line flag only (`fix(ios): [no-appstore] …`). A body that merely
-    # names the marker must not skip review. workflow_dispatch always submits.
-    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, ': [no-appstore]') }}
+    # Subject-line flag only. Quoted so YAML does not parse the token as a sequence.
+    # workflow_dispatch always submits.
+    if: "${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, ': [no-appstore]') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
