@@ -7,7 +7,7 @@
 # Jobs:
 #   1) Validate rails — ExportOptions-tvos (manual Dist) / scheme / team / secrets.
 #   2) Archive and upload — Dist p12 + tvOS App Store profile, archive with
-#      CODE_SIGN_STYLE=Manual, export+upload, invite thalerz@me.com after upload.
+#      CODE_SIGN_STYLE=Manual, export+upload, then quiet-ensure thalerz@me.com.
 #   3) Wait VALID — Ubuntu + ASC API only (no signing).
 #   4) Submit review — Ubuntu + ASC API only (no signing). Skip only when the
 #      merge commit carries [no-appstore] (compile-time / no listing).
@@ -32,6 +32,7 @@ on:
       - "swift/ZenBuy/Components/FlowLayout.swift"
       - ".github/workflows/tvos-testflight.yml"
       - "tools/asc-tvos.mjs"
+      - "tools/asc-tf-invite.mjs"
       - "tools/asc-listing.mjs"
       - "tools/store/**"
       - "!swift/**/*.md"
@@ -415,7 +416,7 @@ jobs:
           echo "Upload requested via ExportOptions-tvos destination=upload. No App Store review submit."
           echo "uploaded=true" >> "${GITHUB_OUTPUT}"
 
-      - name: Invite internal TestFlight tester
+      - name: Ensure internal tester (quiet)
         if: success() && steps.export_upload.outputs.uploaded == 'true'
         continue-on-error: true
         working-directory: ${{ github.workspace }}
