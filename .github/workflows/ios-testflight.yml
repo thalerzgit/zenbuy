@@ -425,7 +425,7 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           IOS_BUILD_NUMBER: ${{ needs.upload.outputs.build_number }}
-          ASC_WHATS_NEW: Shared report-email address handling. A typed iCloud address is no longer false-rejected when mailing a report from Apple TV.
+          ASC_WHATS_NEW: Shared report-email handling used by Apple TV Email PDF. iPhone share-sheet mailing is unchanged.
         run: |
           set -euo pipefail
           MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"

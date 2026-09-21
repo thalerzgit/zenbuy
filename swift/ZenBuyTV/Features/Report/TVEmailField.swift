@@ -33,18 +33,23 @@ final class TVEmailFieldStore {
 
 /// tvOS `UITextField` that keeps `store.currentText` in lockstep with the
 /// keyboard. Display `text` is only pushed while the field is not editing.
+///
+/// `textContentType` stays unset on purpose. `.emailAddress` is what summons
+/// the system “Previously-Used Emails” sheet; pairing that sheet with
+/// `becomeFirstResponder` on SwiftUI focus restore is the Email PDF loop.
 struct TVEmailTextField: UIViewRepresentable {
     @Binding var text: String
     let store: TVEmailFieldStore
+    var onEditingEnded: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, store: store)
+        Coordinator(text: $text, store: store, onEditingEnded: onEditingEnded)
     }
 
     func makeUIView(context: Context) -> UITextField {
         let field = UITextField()
         field.keyboardType = .emailAddress
-        field.textContentType = .emailAddress
+        field.textContentType = nil
         field.autocapitalizationType = .none
         field.autocorrectionType = .no
         field.spellCheckingType = .no
@@ -67,12 +72,14 @@ struct TVEmailTextField: UIViewRepresentable {
         store.currentText = text
         store.textField = field
         context.coordinator.store = store
+        context.coordinator.onEditingEnded = onEditingEnded
         return field
     }
 
     func updateUIView(_ field: UITextField, context: Context) {
         context.coordinator.text = $text
         context.coordinator.store = store
+        context.coordinator.onEditingEnded = onEditingEnded
         store.textField = field
         if !field.isFirstResponder, field.text != text {
             field.text = text
@@ -84,10 +91,12 @@ struct TVEmailTextField: UIViewRepresentable {
     final class Coordinator: NSObject, UITextFieldDelegate {
         var text: Binding<String>
         var store: TVEmailFieldStore
+        var onEditingEnded: () -> Void
 
-        init(text: Binding<String>, store: TVEmailFieldStore) {
+        init(text: Binding<String>, store: TVEmailFieldStore, onEditingEnded: @escaping () -> Void) {
             self.text = text
             self.store = store
+            self.onEditingEnded = onEditingEnded
         }
 
         @objc func editingChanged(_ field: UITextField) {
@@ -96,6 +105,7 @@ struct TVEmailTextField: UIViewRepresentable {
 
         func textFieldDidEndEditing(_ field: UITextField) {
             flush(field)
+            onEditingEnded()
         }
 
         func textFieldShouldReturn(_ field: UITextField) -> Bool {

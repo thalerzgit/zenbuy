@@ -54,3 +54,34 @@ enum ReportEmailAddress {
         try JSONEncoder().encode(["reportId": reportId, "email": email])
     }
 }
+
+/// Where the TV Email PDF panel parks the remote. Pure so `ZenBuyTests` can
+/// lock the picker-loop fix without a TV test target. iOS does not present
+/// this panel (it uses the share sheet).
+enum TVEmailPanelPolicy {
+    enum Landing: Equatable {
+        case field
+        case send
+    }
+
+    /// Opening Email PDF: Send if a draft or remembered address is already
+    /// there, otherwise the field so the viewer can type.
+    static func landingAfterOpen(draft: String, stored: String) -> Landing {
+        let seed = ReportEmailAddress.normalize(draft)
+        let fallback = ReportEmailAddress.normalize(stored)
+        return (seed.isEmpty ? fallback : seed).isEmpty ? .field : .send
+    }
+
+    /// Keyboard / system sheet dismissed: Send when the field has text so
+    /// focus does not bounce back onto Email PDF and re-present the sheet.
+    static func landingAfterFieldEnded(draft: String) -> Landing {
+        ReportEmailAddress.normalize(draft).isEmpty ? .field : .send
+    }
+
+    /// `becomeFirstResponder` only when SwiftUI focus is on the field and we
+    /// are not parking on Send. Re-entering first responder is what re-showed
+    /// Previously-Used Emails after an address was chosen.
+    static func shouldBecomeFirstResponder(fieldFocused: Bool, suppressResponder: Bool) -> Bool {
+        fieldFocused && !suppressResponder
+    }
+}
