@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * App Store Connect helper for ZenBuy tvOS (TestFlight only — no review submit).
+ * App Store Connect helper for ZenBuy tvOS (TestFlight + review submit).
  * Uses ASC_ISSUER_ID / ASC_KEY_ID / ASC_PRIVATE_KEY — never prints key material.
  *
  * Commands:
@@ -8,9 +8,10 @@
  *   invite-tester   Internal TestFlight group + email (list groups client-side)
  *   status          Latest TV_OS versions + Dist builds
  *   wait-valid      Wait until the stamped Dist build is VALID
+ *   submit-review   Wait VALID, retract in-flight TV review, submit latest Dist build
  *
  * Never CREATE Bundle IDs or apps via API. Create those in Apple Developer / App Store Connect UI.
- * Internal TestFlight is enough — this tool does not submit App Store review.
+ * submit-review is ASC REST only (no signing, no Dev certs).
  */
 import { readFileSync } from "node:fs";
 import { createSign } from "node:crypto";
@@ -451,6 +452,310 @@ async function waitValid() {
   );
 }
 
+function whatsNewText() {
+  return (
+    process.env.ASC_WHATS_NEW?.trim() ||
+    "Email PDF now sends the address you typed on Apple TV. A valid iCloud address is no longer rejected as incomplete."
+  );
+}
+
+async function listReviewSubmissions(appId) {
+  const q = new URLSearchParams({
+    "filter[app]": appId,
+    "filter[platform]": "TV_OS",
+    limit: "20",
+  });
+  const data = await asc(`/v1/reviewSubmissions?${q}`);
+  return data.data || [];
+}
+
+const OPEN_REVIEW_STATES = new Set([
+  "READY_FOR_REVIEW",
+  "WAITING_FOR_REVIEW",
+  "IN_REVIEW",
+  "UNRESOLVED_ISSUES",
+]);
+
+const EDITABLE_VERSION_STATES = new Set([
+  "PREPARE_FOR_SUBMISSION",
+  "DEVELOPER_REJECTED",
+  "REJECTED",
+  "METADATA_REJECTED",
+  "INVALID_BINARY",
+]);
+
+async function retractOpenReviews(appId) {
+  const open = (await listReviewSubmissions(appId)).filter((sub) =>
+    OPEN_REVIEW_STATES.has(sub.attributes?.state)
+  );
+  if (!open.length) {
+    console.log("No in-flight tvOS review submission to retract.");
+    return;
+  }
+
+  for (const sub of open) {
+    const state = sub.attributes?.state;
+    console.log(`Retracting tvOS review submission ${sub.id} (${state})…`);
+    await asc(`/v1/reviewSubmissions/${sub.id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          type: "reviewSubmissions",
+          id: sub.id,
+          attributes: { canceled: true },
+        },
+      },
+    });
+  }
+
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const still = (await listReviewSubmissions(appId)).filter((sub) =>
+      OPEN_REVIEW_STATES.has(sub.attributes?.state)
+    );
+    if (!still.length) {
+      console.log("In-flight tvOS review retracted.");
+      return;
+    }
+    console.log(
+      `Waiting for retract (${still.map((s) => s.attributes?.state).join(", ")})…`
+    );
+    await sleep(15_000);
+  }
+  throw new Error("Timed out waiting for in-flight tvOS review retract to finish.");
+}
+
+async function ensureAppStoreVersion(appId, versionString) {
+  const versions = await listTvVersions(appId);
+  const exact = versions.find((v) => v.attributes?.versionString === versionString);
+  if (exact) {
+    const state = exact.attributes?.appStoreState;
+    console.log(`tvOS App Store version ${versionString} exists (${state}).`);
+    return exact;
+  }
+
+  const editable = versions.find((v) =>
+    EDITABLE_VERSION_STATES.has(v.attributes?.appStoreState)
+  );
+  if (editable) {
+    const from = editable.attributes?.versionString;
+    console.log(
+      `Retargeting editable tvOS version ${from} (${editable.attributes?.appStoreState}) → ${versionString}…`
+    );
+    const patched = await asc(`/v1/appStoreVersions/${editable.id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          type: "appStoreVersions",
+          id: editable.id,
+          attributes: { versionString },
+        },
+      },
+    });
+    return patched.data;
+  }
+
+  const donor = versions.find((v) => v.attributes?.copyright);
+  const created = await asc("/v1/appStoreVersions", {
+    method: "POST",
+    body: {
+      data: {
+        type: "appStoreVersions",
+        attributes: {
+          platform: "TV_OS",
+          versionString,
+          ...(donor?.attributes?.copyright
+            ? { copyright: donor.attributes.copyright }
+            : {}),
+        },
+        relationships: {
+          app: { data: { type: "apps", id: appId } },
+        },
+      },
+    },
+  });
+  console.log(`Created tvOS App Store version ${versionString} (${created.data.id}).`);
+  return created.data;
+}
+
+async function attachBuild(versionId, buildId) {
+  await asc(`/v1/appStoreVersions/${versionId}/relationships/build`, {
+    method: "PATCH",
+    body: {
+      data: { type: "builds", id: buildId },
+    },
+  });
+  console.log(`Attached Dist tvOS build ${buildId} to version ${versionId}.`);
+}
+
+async function markEncryptionExempt(buildId) {
+  try {
+    await asc(`/v1/builds/${buildId}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          type: "builds",
+          id: buildId,
+          attributes: { usesNonExemptEncryption: false },
+        },
+      },
+    });
+    console.log("Export compliance: usesNonExemptEncryption=false.");
+  } catch (err) {
+    const detail = String(err.message || "");
+    if (err.status === 409 || /already/i.test(detail)) {
+      console.log("Export compliance already set.");
+      return;
+    }
+    throw err;
+  }
+}
+
+async function setWhatsNew(versionId, text) {
+  const locs = await asc(`/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`);
+  const rows = locs.data || [];
+  if (!rows.length) {
+    throw new Error("No tvOS App Store version localizations to set What’s New on.");
+  }
+  for (const loc of rows) {
+    await asc(`/v1/appStoreVersionLocalizations/${loc.id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          type: "appStoreVersionLocalizations",
+          id: loc.id,
+          attributes: { whatsNew: text },
+        },
+      },
+    });
+    console.log(`What’s New set for ${loc.attributes?.locale || loc.id}.`);
+  }
+}
+
+async function submitVersionForReview(appId, versionId) {
+  let submission;
+  try {
+    const created = await asc("/v1/reviewSubmissions", {
+      method: "POST",
+      body: {
+        data: {
+          type: "reviewSubmissions",
+          attributes: { platform: "TV_OS" },
+          relationships: {
+            app: { data: { type: "apps", id: appId } },
+          },
+        },
+      },
+    });
+    submission = created.data;
+    console.log(`Created tvOS review submission ${submission.id}.`);
+  } catch (err) {
+    if (err.status !== 409) throw err;
+    const existing = (await listReviewSubmissions(appId)).find((sub) =>
+      OPEN_REVIEW_STATES.has(sub.attributes?.state)
+    );
+    if (!existing) throw err;
+    submission = existing;
+    console.log(
+      `Reusing open tvOS review submission ${submission.id} (${submission.attributes?.state}).`
+    );
+  }
+
+  try {
+    await asc("/v1/reviewSubmissionItems", {
+      method: "POST",
+      body: {
+        data: {
+          type: "reviewSubmissionItems",
+          relationships: {
+            reviewSubmission: {
+              data: { type: "reviewSubmissions", id: submission.id },
+            },
+            appStoreVersion: {
+              data: { type: "appStoreVersions", id: versionId },
+            },
+          },
+        },
+      },
+    });
+    console.log(`Added tvOS version ${versionId} to review submission.`);
+  } catch (err) {
+    const detail = String(err.message || "");
+    if (err.status !== 409 && !/already/i.test(detail)) throw err;
+    console.log("tvOS version already on the review submission.");
+  }
+
+  const submitted = await asc(`/v1/reviewSubmissions/${submission.id}`, {
+    method: "PATCH",
+    body: {
+      data: {
+        type: "reviewSubmissions",
+        id: submission.id,
+        attributes: { submitted: true },
+      },
+    },
+  });
+  const state = submitted.data?.attributes?.state || "submitted";
+  console.log(`tvOS App Store review state: ${state} (submission ${submission.id}).`);
+  return submitted.data;
+}
+
+async function submitReview() {
+  const bundleId = process.env.ASC_BUNDLE_ID || DEFAULT_BUNDLE;
+  const versionString = marketingVersion();
+  const buildNumber = process.env.TVOS_BUILD_NUMBER?.trim() || "";
+  const notes = whatsNewText();
+
+  const app = await findApp(bundleId);
+  if (!app) {
+    printAscUiBlocker(bundleId, { hasApp: false, hasBundle: false });
+    process.exit(1);
+  }
+
+  const platform = await hasTvOsPlatform(app.id);
+  if (!platform.ok) {
+    console.error(`ASC iOS app exists (${app.id}) but no Apple TV / TV_OS platform.`);
+    printAscUiBlocker(bundleId, { hasApp: true, hasBundle: true });
+    process.exit(1);
+  }
+
+  console.log(
+    `Submit tvOS review for ${bundleId} marketing ${versionString}` +
+      (buildNumber ? ` Dist build ${buildNumber}` : " (latest VALID Dist)") +
+      "."
+  );
+
+  const { build, marketing } = await waitForValidBuild(app.id, {
+    versionString,
+    buildNumber,
+  });
+  console.log(
+    `VALID tvOS Dist build ${build.attributes?.version} on train ${marketing} (${build.id}).`
+  );
+
+  await retractOpenReviews(app.id);
+  const version = await ensureAppStoreVersion(app.id, versionString);
+  const state = version.attributes?.appStoreState;
+  if (!EDITABLE_VERSION_STATES.has(state) && state !== "PREPARE_FOR_SUBMISSION") {
+    if (state === "WAITING_FOR_REVIEW" || state === "IN_REVIEW") {
+      await retractOpenReviews(app.id);
+    } else if (
+      state === "PENDING_DEVELOPER_RELEASE" ||
+      state === "READY_FOR_SALE" ||
+      state === "PROCESSING_FOR_APP_STORE"
+    ) {
+      throw new Error(
+        `tvOS version ${versionString} is already ${state}; not attaching a new review.`
+      );
+    }
+  }
+
+  await attachBuild(version.id, build.id);
+  await markEncryptionExempt(build.id);
+  await setWhatsNew(version.id, notes);
+  await submitVersionForReview(app.id, version.id);
+}
+
 const cmd = process.argv[2];
 try {
   if (cmd === "ensure-app") {
@@ -461,9 +766,11 @@ try {
     await printStatus();
   } else if (cmd === "wait-valid") {
     await waitValid();
+  } else if (cmd === "submit-review") {
+    await submitReview();
   } else {
     console.error(
-      "Usage: node tools/asc-tvos.mjs <ensure-app|invite-tester|status|wait-valid>"
+      "Usage: node tools/asc-tvos.mjs <ensure-app|invite-tester|status|wait-valid|submit-review>"
     );
     process.exit(2);
   }
