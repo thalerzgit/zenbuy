@@ -16,6 +16,7 @@ import {
   type CachedReport,
 } from "./cache.ts";
 import { isNormalEmail, normalizeEmail } from "./unlock.ts";
+import { emailDomainOnly } from "./unlock-trace.ts";
 import { renderReportPdf, reportPdfFilename } from "./report-pdf.ts";
 
 /** Emails per device per rolling day. Generous for one household, useless for a spammer. */
@@ -34,12 +35,22 @@ export type ReportEmailRejection = {
   status: number;
 };
 
+/** RCA line for a rejected send — length + domain only, never the local part. */
+export function reportEmailRejectLog(
+  code: "missing_email" | "bad_email",
+  email: string
+): string {
+  if (code === "missing_email") return "report_email missing_email";
+  return `report_email bad_email length=${email.length} domain=${emailDomainOnly(email) ?? "(none)"}`;
+}
+
 export function parseReportEmailRequest(
   body: unknown
 ): ReportEmailRequest | ReportEmailRejection {
   const raw = (body ?? {}) as { reportId?: unknown; email?: unknown };
   const reportId = typeof raw.reportId === "string" ? raw.reportId.trim() : "";
-  const email = typeof raw.email === "string" ? normalizeEmail(raw.email) : "";
+  const rawEmail = typeof raw.email === "string" ? raw.email : null;
+  const email = rawEmail !== null ? normalizeEmail(rawEmail) : "";
 
   if (!reportId.startsWith("report:") || reportId.length > 200) {
     return {
@@ -48,7 +59,16 @@ export function parseReportEmailRequest(
       status: 404,
     };
   }
+  if (rawEmail === null || email.length === 0) {
+    console.log(reportEmailRejectLog("missing_email", email));
+    return {
+      error: "The email address was missing from the request.",
+      code: "missing_email",
+      status: 400,
+    };
+  }
   if (!isNormalEmail(email) || email.length > 254) {
+    console.log(reportEmailRejectLog("bad_email", email));
     return {
       error: "Enter a full email address, like you@example.com.",
       code: "bad_email",

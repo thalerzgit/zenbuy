@@ -892,6 +892,43 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertFalse(ReportStreamPolicy.shouldRetryEmptyStream(retryCount: 1))
     }
 
+    func testReportEmailAddressAcceptsJustinICloudAndLookalikes() {
+        XCTAssertTrue(ReportEmailAddress.looksLikeAddress("gary.morgenthaler@iCloud.com"))
+        XCTAssertEqual(
+            ReportEmailAddress.normalize("gary.morgenthaler@iCloud.com"),
+            "gary.morgenthaler@iCloud.com"
+        )
+        XCTAssertEqual(
+            ReportEmailAddress.normalize("\u{200B}gary.morgenthaler\u{FF20}iCloud\u{3002}com\u{00A0}"),
+            "gary.morgenthaler@iCloud.com"
+        )
+        XCTAssertTrue(
+            ReportEmailAddress.looksLikeAddress("\u{200B}gary.morgenthaler\u{FF20}iCloud\u{3002}com\u{00A0}")
+        )
+        XCTAssertFalse(ReportEmailAddress.looksLikeAddress(""))
+        XCTAssertFalse(ReportEmailAddress.looksLikeAddress("   "))
+        XCTAssertFalse(ReportEmailAddress.looksLikeAddress("nope"))
+        XCTAssertFalse(ReportEmailAddress.looksLikeAddress("a@b"))
+        XCTAssertFalse(ReportEmailAddress.looksLikeAddress("a b@c.co"))
+        XCTAssertNotEqual(ReportEmailAddress.emptyFieldMessage, ReportEmailAddress.invalidFormatMessage)
+        XCTAssertEqual(
+            ReportEmailAddress.invalidFormatMessage,
+            "Enter a full email address, like you@example.com."
+        )
+        XCTAssertTrue(ReportEmailAddress.emptyFieldMessage.contains("email field was empty"))
+    }
+
+    func testReportEmailRequestBodyUsesWorkerKeys() throws {
+        let data = try ReportEmailAddress.requestBody(
+            reportId: "report:separate:growth:h7:NVDA",
+            email: "gary.morgenthaler@iCloud.com"
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(Set(json.keys), Set(["reportId", "email"]))
+        XCTAssertEqual(json["reportId"], "report:separate:growth:h7:NVDA")
+        XCTAssertEqual(json["email"], "gary.morgenthaler@iCloud.com")
+    }
+
     func testReportPDFValidationRejectsEmptyAndRequiresPercentPDFHeader() {
         XCTAssertFalse(ReportPDFValidation.isValidPDF(Data()))
         XCTAssertFalse(ReportPDFValidation.isValidPDF(Data("%PD".utf8)))
