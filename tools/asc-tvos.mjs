@@ -615,20 +615,33 @@ async function setWhatsNew(versionId, text) {
   const locs = await asc(`/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`);
   const rows = locs.data || [];
   if (!rows.length) {
-    throw new Error("No tvOS App Store version localizations to set What’s New on.");
+    console.log("No tvOS localizations yet — skipping What’s New (first version often has none).");
+    return;
   }
   for (const loc of rows) {
-    await asc(`/v1/appStoreVersionLocalizations/${loc.id}`, {
-      method: "PATCH",
-      body: {
-        data: {
-          type: "appStoreVersionLocalizations",
-          id: loc.id,
-          attributes: { whatsNew: text },
+    try {
+      await asc(`/v1/appStoreVersionLocalizations/${loc.id}`, {
+        method: "PATCH",
+        body: {
+          data: {
+            type: "appStoreVersionLocalizations",
+            id: loc.id,
+            attributes: { whatsNew: text },
+          },
         },
-      },
-    });
-    console.log(`What’s New set for ${loc.attributes?.locale || loc.id}.`);
+      });
+      console.log(`What’s New set for ${loc.attributes?.locale || loc.id}.`);
+    } catch (err) {
+      const detail = String(err.message || "");
+      // First Apple TV version has no What’s New field.
+      if (err.status === 409 && /whatsNew|cannot be edited/i.test(detail)) {
+        console.log(
+          `What’s New not editable for ${loc.attributes?.locale || loc.id} (first tvOS version). Continuing.`
+        );
+        continue;
+      }
+      throw err;
+    }
   }
 }
 
@@ -681,8 +694,11 @@ async function submitVersionForReview(appId, versionId) {
     console.log(`Added tvOS version ${versionId} to review submission.`);
   } catch (err) {
     const detail = String(err.message || "");
-    if (err.status !== 409 && !/already/i.test(detail)) throw err;
-    console.log("tvOS version already on the review submission.");
+    if (err.status === 409 && /already/i.test(detail)) {
+      console.log("tvOS version already on the review submission.");
+    } else {
+      throw err;
+    }
   }
 
   const submitted = await asc(`/v1/reviewSubmissions/${submission.id}`, {

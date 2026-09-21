@@ -528,17 +528,28 @@ async function setWhatsNew(versionId, text) {
     throw new Error("No App Store version localizations to set What’s New on.");
   }
   for (const loc of rows) {
-    await asc(`/v1/appStoreVersionLocalizations/${loc.id}`, {
-      method: "PATCH",
-      body: {
-        data: {
-          type: "appStoreVersionLocalizations",
-          id: loc.id,
-          attributes: { whatsNew: text },
+    try {
+      await asc(`/v1/appStoreVersionLocalizations/${loc.id}`, {
+        method: "PATCH",
+        body: {
+          data: {
+            type: "appStoreVersionLocalizations",
+            id: loc.id,
+            attributes: { whatsNew: text },
+          },
         },
-      },
-    });
-    console.log(`What’s New set for ${loc.attributes?.locale || loc.id}.`);
+      });
+      console.log(`What’s New set for ${loc.attributes?.locale || loc.id}.`);
+    } catch (err) {
+      const detail = String(err.message || "");
+      if (err.status === 409 && /whatsNew|cannot be edited/i.test(detail)) {
+        console.log(
+          `What’s New not editable for ${loc.attributes?.locale || loc.id}. Continuing.`
+        );
+        continue;
+      }
+      throw err;
+    }
   }
 }
 
@@ -591,8 +602,11 @@ async function submitVersionForReview(appId, versionId) {
     console.log(`Added version ${versionId} to review submission.`);
   } catch (err) {
     const detail = String(err.message || "");
-    if (err.status !== 409 && !/already/i.test(detail)) throw err;
-    console.log("Version already on the review submission.");
+    if (err.status === 409 && /already/i.test(detail)) {
+      console.log("Version already on the review submission.");
+    } else {
+      throw err;
+    }
   }
 
   const submitted = await asc(`/v1/reviewSubmissions/${submission.id}`, {
