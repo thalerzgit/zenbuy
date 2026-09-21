@@ -22,6 +22,7 @@ on:
       - "swift/**"
       - ".github/workflows/ios-testflight.yml"
       - "tools/asc-ios.mjs"
+      - "tools/asc-listing.mjs"
       - "!swift/**/*.md"
       - "!swift/**/*.txt"
       - "!swift/ZenBuyTV/**"
