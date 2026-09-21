@@ -10,7 +10,9 @@
 #   1) Validate rails — ExportOptions (manual Dist) / scheme / team / secrets / Xcode.
 #   2) Archive and upload — import Dist p12 + App Store profile, archive with
 #      CODE_SIGN_STYLE=Manual (no -allowProvisioningUpdates), export+upload,
-#      then ensure thalerz@me.com is in Internal Testers (quiet; no re-invite).
+#      then ensure thalerz@me.com is in Internal Quiet (quiet; no re-invite).
+#      Do not assign-build on this happy path. workflow_dispatch assign_build=true
+#      is the only way to POST a Dist build onto Internal Quiet (never External).
 #   3) Submit review — Ubuntu + ASC API only (no signing). Wait VALID, retract
 #      in-review if needed, attach latest Dist build, set What’s New, submit.
 name: TestFlight
@@ -31,6 +33,14 @@ on:
       - "!swift/Config/TVOS.xcconfig"
       - "!swift/ZenBuy.xcodeproj/xcshareddata/xcschemes/ZenBuyTV.xcscheme"
   workflow_dispatch:
+    inputs:
+      assign_build:
+        description: >
+          Assign the latest Dist build to Internal Quiet after upload.
+          Off by default so routine CI does not POST build→group (no TestFlight
+          email flood). Never assigns External groups.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -366,7 +376,7 @@ jobs:
           echo "Upload requested via ExportOptions destination=upload. Review submit is the following Ubuntu job."
           echo "uploaded=true" >> "${GITHUB_OUTPUT}"
 
-      - name: Ensure internal tester (quiet)
+      - name: Ensure Internal Quiet tester (quiet)
         if: success() && steps.export_upload.outputs.uploaded == 'true'
         continue-on-error: true
         working-directory: ${{ github.workspace }}
@@ -376,8 +386,24 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ASC_BUNDLE_ID: info.zenbuy.app
           ASC_TESTER_EMAIL: thalerz@me.com
-          ASC_GROUP_NAME: Internal Testers
+          ASC_GROUP_NAME: Internal Quiet
+          ASC_GROUP_ID: 13d2bec7-2568-4bf3-91cc-5e99f48fdf17
         run: node tools/asc-ios.mjs invite-tester
+
+      # Opt-in only. Routine push / default dispatch leaves Internal Quiet
+      # unassigned so Apple does not mail "new build" for every Dist upload.
+      - name: Assign Dist build to Internal Quiet
+        if: ${{ success() && steps.export_upload.outputs.uploaded == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.assign_build == 'true' }}
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_BUNDLE_ID: info.zenbuy.app
+          ASC_GROUP_NAME: Internal Quiet
+          ASC_GROUP_ID: 13d2bec7-2568-4bf3-91cc-5e99f48fdf17
+        run: node tools/asc-ios.mjs assign-build
 
       - name: Remove secrets and CI keychain
         if: always()

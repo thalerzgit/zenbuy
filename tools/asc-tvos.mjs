@@ -5,7 +5,8 @@
  *
  * Commands:
  *   ensure-app      READ-ONLY: app exists AND Apple TV / TV_OS platform is present
- *   invite-tester   Quiet ensure: assign Dist tvOS build; invite only if email is missing from the group
+ *   invite-tester   Quiet ensure Internal Quiet: invite only if email is missing (no routine assign-build)
+ *   assign-build    Explicit: assign latest Dist tvOS build to Internal Quiet (never External)
  *   status          Latest TV_OS versions + Dist builds
  *   wait-valid      Wait until the stamped Dist build is VALID
  *   submit-review   Wait VALID, retract in-flight TV review, submit latest Dist build
@@ -25,7 +26,12 @@ import {
   uploadAppleTvScreenshot,
   waitForEditableVersion,
 } from "./asc-listing.mjs";
-import { assignLatestDistBuild, ensureQuietTester } from "./asc-tf-invite.mjs";
+import {
+  assignLatestDistBuild,
+  loadInternalQuietGroup,
+  resolveQuietGroupEnv,
+  runQuietInvite,
+} from "./asc-tf-invite.mjs";
 
 const API = "https://api.appstoreconnect.apple.com";
 const DEFAULT_BUNDLE = "info.zenbuy.app";
@@ -204,63 +210,34 @@ async function ensureApp() {
   return app;
 }
 
-async function findOrCreateInternalGroup(appId, groupName) {
-  const listed = await asc(
-    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({ limit: "50" })}`
-  );
-  const groups = listed.data || [];
-  const match = groups.find((g) => g.attributes?.name === groupName);
-  if (match) {
-    console.log(`Beta group exists: ${match.id} (${groupName})`);
-    return match;
-  }
-  const internal = groups.find((g) => g.attributes?.isInternalGroup);
-  if (internal) {
-    console.log(
-      `Using existing internal group ${internal.id} (${internal.attributes?.name || "internal"})`
-    );
-    return internal;
-  }
-  const created = await asc("/v1/betaGroups", {
-    method: "POST",
-    body: {
-      data: {
-        type: "betaGroups",
-        attributes: {
-          name: groupName,
-          isInternalGroup: true,
-          hasAccessToAllBuilds: true,
-        },
-        relationships: {
-          app: { data: { type: "apps", id: appId } },
-        },
-      },
-    },
-  });
-  console.log(`Created internal beta group ${created.data.id}`);
-  return created.data;
-}
-
 async function findTester(email) {
   const q = new URLSearchParams({ "filter[email]": email, limit: "5" });
   const data = await asc(`/v1/betaTesters?${q}`);
   return data.data?.[0] ?? null;
 }
 
-async function inviteTester() {
-  const bundleId = process.env.ASC_BUNDLE_ID || DEFAULT_BUNDLE;
-  const email = (process.env.ASC_TESTER_EMAIL || "thalerz@me.com").toLowerCase();
-  const groupName = process.env.ASC_GROUP_NAME || "Internal Testers";
-
+async function requireApp(bundleId) {
   const app = await findApp(bundleId);
   if (!app) {
     printAscUiBlocker(bundleId, { hasApp: false, hasBundle: false });
     process.exit(1);
   }
+  return app;
+}
 
-  const group = await findOrCreateInternalGroup(app.id, groupName);
-  await assignLatestDistBuild(asc, { appId: app.id, group, platform: "TV_OS" });
-  return ensureQuietTester(asc, { email, group, groupName, findTester });
+async function inviteTester() {
+  const bundleId = process.env.ASC_BUNDLE_ID || DEFAULT_BUNDLE;
+  const email = (process.env.ASC_TESTER_EMAIL || "thalerz@me.com").toLowerCase();
+  const app = await requireApp(bundleId);
+  return runQuietInvite(asc, { appId: app.id, email, platform: "TV_OS", findTester });
+}
+
+async function assignBuild() {
+  const bundleId = process.env.ASC_BUNDLE_ID || DEFAULT_BUNDLE;
+  const app = await requireApp(bundleId);
+  const { groupId, groupName } = resolveQuietGroupEnv();
+  const group = await loadInternalQuietGroup(asc, app.id, { groupId, groupName });
+  return assignLatestDistBuild(asc, { appId: app.id, group, platform: "TV_OS" });
 }
 
 function sleep(ms) {
@@ -764,6 +741,8 @@ try {
     await ensureApp();
   } else if (cmd === "invite-tester") {
     await inviteTester();
+  } else if (cmd === "assign-build") {
+    await assignBuild();
   } else if (cmd === "status") {
     await printStatus();
   } else if (cmd === "wait-valid") {
@@ -772,7 +751,7 @@ try {
     await submitReview();
   } else {
     console.error(
-      "Usage: node tools/asc-tvos.mjs <ensure-app|invite-tester|status|wait-valid|submit-review>"
+      "Usage: node tools/asc-tvos.mjs <ensure-app|invite-tester|assign-build|status|wait-valid|submit-review>"
     );
     process.exit(2);
   }

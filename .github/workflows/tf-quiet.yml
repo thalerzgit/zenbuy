@@ -1,0 +1,43 @@
+# Prove the Internal Quiet / no-routine-assign-build path without a Dist archive.
+name: TestFlight quiet
+
+on:
+  pull_request:
+    paths:
+      - "tools/asc-tf-invite.mjs"
+      - "tools/asc-tf-invite.test.mjs"
+      - "tools/asc-ios.mjs"
+      - "tools/asc-tvos.mjs"
+      - ".github/workflows/ios-testflight.yml"
+      - ".github/workflows/tvos-testflight.yml"
+      - ".github/workflows/tf-quiet.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tools/asc-tf-invite.mjs"
+      - "tools/asc-tf-invite.test.mjs"
+      - "tools/asc-ios.mjs"
+      - "tools/asc-tvos.mjs"
+      - ".github/workflows/ios-testflight.yml"
+      - ".github/workflows/tvos-testflight.yml"
+      - ".github/workflows/tf-quiet.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  quiet:
+    name: Quiet path unit + workflow review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Prove Internal Quiet + no routine assign-build
+        run: node --test tools/asc-tf-invite.test.mjs

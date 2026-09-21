@@ -16,7 +16,7 @@ This session / cloud agents cannot run Xcode. Archives happen on GitHub `macos-2
 | Info.plist keys | `swift/ZenBuyTV/Info.plist` merged via `TVOS.xcconfig` (`CFBundleIcons.CFBundlePrimaryIcon`, `TVTopShelfImage.TVTopShelfPrimaryImageWide`) |
 | ExportOptions | `swift/ExportOptions-tvos.plist` (manual Dist, upload) |
 | Dist workflow | `.github/workflows/tvos-testflight.yml` |
-| ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `status`, `wait-valid`, `submit-review`) — submit fills required listing copy, privacy text, and `APP_APPLE_TV` screenshot via `tools/asc-listing.mjs` |
+| ASC helper | `tools/asc-tvos.mjs` (`ensure-app`, `invite-tester`, `assign-build`, `status`, `wait-valid`, `submit-review`) — submit fills required listing copy, privacy text, and `APP_APPLE_TV` screenshot via `tools/asc-listing.mjs`. Default beta group is **Internal Quiet** (`13d2bec7-2568-4bf3-91cc-5e99f48fdf17`). |
 | Marketing version | `1.6` from `swift/Config/Shared.xcconfig` |
 | Build number | `GITHUB_RUN_NUMBER + TVOS_BUILD_NUMBER_OFFSET` (default **5000** so it does not collide with iOS Dist builds on the same app) |
 
@@ -155,7 +155,7 @@ CI will:
 
 1. Fail clearly if the Apple TV platform or `ASC_PROFILE_TVOS_BASE64` is missing (no fake upload).
 2. Archive `ZenBuyTV` for `generic/platform=tvOS` with manual Dist.
-3. Upload and invite **`thalerz@me.com`** (groups listed client-side — no `filter[name]` on betaGroups).
+3. Upload and quiet-ensure **`thalerz@me.com`** in **Internal Quiet** (id `13d2bec7-2568-4bf3-91cc-5e99f48fdf17`). Already a member → silent skip, no invite email. Routine CI does **not** assign-build. Set workflow_dispatch **`assign_build`** to assign the Dist build to Internal Quiet only (never External).
 4. Wait until the Dist build is **VALID**.
 5. Submit the VALID tvOS Dist build for App Store review (unless the merge carries `[no-appstore]`).
 

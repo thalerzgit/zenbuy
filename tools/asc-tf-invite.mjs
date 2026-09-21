@@ -1,11 +1,18 @@
 /**
- * Quiet TestFlight membership + Dist build assign for Dist CI.
+ * Quiet TestFlight membership for Dist CI.
  *
- * POST betaTesters / group membership only when the email is missing from
- * the target group. Existing members → one-line skip (no invite email).
- * Always ensure the latest Dist build is assigned to the group.
+ * Default target is ASC Internal Quiet (hasAccessToAllBuilds=false).
+ * POST betaTesters / group membership only when the email is missing.
+ * Existing members → one-line skip (no invite email).
+ * Dist build→group assignment is opt-in only (never on routine CI).
+ * Never invent a replacement group. Never assign External groups.
  */
+
 const API = "https://api.appstoreconnect.apple.com";
+
+/** COO-created ZenBuy Internal Quiet — do not invent another group. */
+export const INTERNAL_QUIET_GROUP_ID = "13d2bec7-2568-4bf3-91cc-5e99f48fdf17";
+export const INTERNAL_QUIET_GROUP_NAME = "Internal Quiet";
 
 export function normalizeTesterEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -21,6 +28,35 @@ export function groupHasTesterEmail(testers, email) {
 
 export function quietSkipLog(email, groupName) {
   return `Quiet skip: ${normalizeTesterEmail(email)} already in ${groupName}.`;
+}
+
+export function shouldAssignBuild(value) {
+  return /^(1|true|yes)$/i.test(String(value ?? "").trim());
+}
+
+export function resolveQuietGroupEnv(env = process.env) {
+  return {
+    groupId: String(env.ASC_GROUP_ID || INTERNAL_QUIET_GROUP_ID).trim(),
+    groupName: String(env.ASC_GROUP_NAME || INTERNAL_QUIET_GROUP_NAME).trim(),
+    assignBuild: shouldAssignBuild(env.ASC_ASSIGN_BUILD),
+  };
+}
+
+export function isExternalGroup(group) {
+  if (group?.attributes?.isInternalGroup === false) return true;
+  return /^external\b/i.test(String(group?.attributes?.name || ""));
+}
+
+/**
+ * Resolve Internal Quiet by id first, then exact name.
+ * Never fall back to another internal group. Never invent one.
+ */
+export function resolveInternalQuietGroup(groups, { groupId, groupName } = {}) {
+  const id = String(groupId || INTERNAL_QUIET_GROUP_ID).trim();
+  const name = String(groupName || INTERNAL_QUIET_GROUP_NAME).trim();
+  const byId = (groups || []).find((g) => g.id === id);
+  if (byId) return byId;
+  return (groups || []).find((g) => g.attributes?.name === name) || null;
 }
 
 export function toAscPath(urlOrPath) {
@@ -47,6 +83,25 @@ export async function listGroupTesters(asc, groupId) {
   return testers;
 }
 
+export async function loadInternalQuietGroup(asc, appId, { groupId, groupName } = {}) {
+  const wantId = String(groupId || INTERNAL_QUIET_GROUP_ID).trim();
+  const wantName = String(groupName || INTERNAL_QUIET_GROUP_NAME).trim();
+  const listed = await asc(
+    `/v1/apps/${appId}/betaGroups?${new URLSearchParams({ limit: "50" })}`
+  );
+  const match = resolveInternalQuietGroup(listed.data || [], {
+    groupId: wantId,
+    groupName: wantName,
+  });
+  if (!match) {
+    throw new Error(
+      `Beta group not found: id=${wantId} name=${wantName}. Do not invent another group.`
+    );
+  }
+  console.log(`Beta group: ${match.id} (${match.attributes?.name || wantName})`);
+  return match;
+}
+
 export function pickLatestDistBuild(payload, platform) {
   for (const build of payload.data || []) {
     const preId = build.relationships?.preReleaseVersion?.data?.id;
@@ -63,6 +118,13 @@ export function pickLatestDistBuild(payload, platform) {
 
 export async function assignLatestDistBuild(asc, { appId, group, platform }) {
   const groupName = group.attributes?.name || group.id;
+  if (isExternalGroup(group)) {
+    console.log(
+      `Build assign refused: ${groupName} is External. Never assign External groups from CI.`
+    );
+    return { assigned: false, reason: "external", build: null };
+  }
+
   const auto = Boolean(group.attributes?.hasAccessToAllBuilds);
 
   const q = new URLSearchParams({
@@ -182,4 +244,32 @@ export async function ensureQuietTester(asc, { email, group, groupName, findTest
     throw err;
   }
   return { skipped: false, invited: true, tester };
+}
+
+/**
+ * Routine Dist happy path: resolve Internal Quiet + quiet-ensure tester.
+ * Assigns a Dist build only when assignBuild / ASC_ASSIGN_BUILD is explicit.
+ */
+export async function runQuietInvite(
+  asc,
+  { appId, email, platform, findTester, assignBuild }
+) {
+  const resolved = resolveQuietGroupEnv();
+  const group = await loadInternalQuietGroup(asc, appId, resolved);
+  const doAssign = assignBuild === undefined ? resolved.assignBuild : Boolean(assignBuild);
+  let assigned = null;
+  if (doAssign) {
+    assigned = await assignLatestDistBuild(asc, { appId, group, platform });
+  } else {
+    console.log(
+      `Build assign skipped (routine CI). Use workflow_dispatch assign_build=true or ASC_ASSIGN_BUILD=1 to assign Dist ${platform} to ${group.attributes?.name || resolved.groupName}.`
+    );
+  }
+  const tester = await ensureQuietTester(asc, {
+    email,
+    group,
+    groupName: resolved.groupName,
+    findTester,
+  });
+  return { group, assigned, ...tester };
 }
