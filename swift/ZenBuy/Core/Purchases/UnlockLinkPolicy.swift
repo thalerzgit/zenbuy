@@ -43,9 +43,17 @@ enum UnlockLinkPolicy {
         }
     }
 
-    /// Hide subscribe / IAP / quota-spent purchase UI for every TF tester.
+    /// Whether to hide subscribe / IAP purchase UI.
+    ///
+    /// Always `false`. App Review exercises StoreKit in the **sandbox**
+    /// environment — the same environment signal TestFlight uses — so treating
+    /// sandbox as "hide the paywall" made Monthly / Buy once invisible to
+    /// reviewers (Guideline 2.1(b)). TestFlight complimentary unlock still
+    /// redeems via `shouldRedeemTestFlight`; unlocked testers never hit the
+    /// quota gate. If they do, showing IAP is correct and review-safe.
     static func hidesPaywall(isTestFlight: Bool) -> Bool {
-        isTestFlight
+        _ = isTestFlight
+        return false
     }
 
     /// Redeem the sandbox AppTransaction once so the Worker grants quota.
