@@ -1100,7 +1100,8 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertFalse(UnlockLinkPolicy.isTestFlightEnvironment("Production"))
         XCTAssertFalse(UnlockLinkPolicy.isTestFlightEnvironment(nil))
         XCTAssertFalse(UnlockLinkPolicy.isTestFlightEnvironment(""))
-        XCTAssertTrue(UnlockLinkPolicy.hidesPaywall(isTestFlight: true))
+        // Sandbox == App Review as well as TestFlight; never hide IAP UI.
+        XCTAssertFalse(UnlockLinkPolicy.hidesPaywall(isTestFlight: true))
         XCTAssertFalse(UnlockLinkPolicy.hidesPaywall(isTestFlight: false))
         XCTAssertTrue(UnlockLinkPolicy.shouldRedeemTestFlight(isTestFlight: true, hasSession: false))
         XCTAssertFalse(UnlockLinkPolicy.shouldRedeemTestFlight(isTestFlight: true, hasSession: true))

@@ -110,14 +110,11 @@ struct TVReportView: View {
                 // The allowance gate is the one failure with a next step. Left
                 // as prose it is also the one screen on Apple TV with nothing
                 // focusable on it, which reads as a broken remote.
+                // Always offer IAP when unlock lifts the gate. Do not hide the
+                // paywall for StoreKit sandbox — App Review uses sandbox too
+                // (Guideline 2.1(b)); see UnlockLinkPolicy.hidesPaywall.
                 if let block = viewModel.quotaBlock {
-                    if UnlockLinkPolicy.hidesPaywall(isTestFlight: store.isTestFlight) {
-                        Button("Try the report again") {
-                            viewModel.retryBlockedRequest()
-                        }
-                        .buttonStyle(.tvPrimary)
-                        .tvFocusRow()
-                    } else if block.unlockLifts {
+                    if block.unlockLifts {
                         TVUnlockView(
                             store: store,
                             unlock: unlock,
