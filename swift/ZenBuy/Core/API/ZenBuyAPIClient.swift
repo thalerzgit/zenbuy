@@ -230,17 +230,22 @@ final class ZenBuyAPIClient {
 
     /// Peers ranked against this report's score profile. `scores` may be empty —
     /// the Worker then ranks against a neutral profile.
+    /// - Parameter sector: `true` (default) keeps same/similar industry; `false` widens.
     func similar(
         symbol: String,
         scores: [String: Int],
         exclude: [String],
-        limit: Int = 3
-    ) async throws -> [String] {
+        limit: Int = 3,
+        sector: Bool = true
+    ) async throws -> SimilarResponse {
         var components = URLComponents(
             url: ZenBuyEnvironment.apiBaseURL.appending(path: "api/similar"),
             resolvingAgainstBaseURL: false
         )
-        var items = [URLQueryItem(name: "symbol", value: symbol)]
+        var items = [
+            URLQueryItem(name: "symbol", value: symbol),
+            URLQueryItem(name: "sector", value: sector ? "1" : "0"),
+        ]
         if !scores.isEmpty,
            let json = try? encoder.encode(scores),
            let text = String(data: json, encoding: .utf8) {
@@ -251,8 +256,15 @@ final class ZenBuyAPIClient {
         }
         components?.queryItems = items
         guard let url = components?.url else { throw ZenBuyAPIError.invalidURL }
-        let payload: SimilarResponse = try await get(url)
-        return Array(payload.symbols.prefix(limit))
+        var payload: SimilarResponse = try await get(url)
+        let clipped = Array(payload.symbols.prefix(limit))
+        // Re-wrap so callers always see the clipped list + widen flag.
+        payload = SimilarResponse(
+            symbols: clipped,
+            source: payload.source,
+            widened: payload.widened ?? !sector
+        )
+        return payload
     }
 
     func streamResearch(

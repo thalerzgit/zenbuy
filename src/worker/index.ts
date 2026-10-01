@@ -624,15 +624,26 @@ async function handleSimilar(request: Request, env: Env): Promise<Response> {
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
 
+  // Default sector=1 (same/similar industry). sector=0 = Widen (score-only).
+  const sectorRaw = (url.searchParams.get("sector") ?? "1").trim().toLowerCase();
+  const useSector = !(sectorRaw === "0" || sectorRaw === "false" || sectorRaw === "no");
+
   try {
-    const symbols = await findSimilarSymbols(env, symbol, scores, exclude, 3);
-    if (!symbols.length) {
+    const result = await findSimilarSymbols(env, symbol, scores, exclude, {
+      sector: useSector,
+      limit: 3,
+    });
+    if (!result.symbols.length) {
       return json(
         { error: "No similar names found right now. Try again later.", code: "empty" },
         404
       );
     }
-    return json({ symbols, source: symbol });
+    return json({
+      symbols: result.symbols,
+      source: symbol,
+      widened: result.widened,
+    });
   } catch (e) {
     console.error("similar lookup failed", e);
     return json({ error: "Couldn't find similar companies.", code: "similar_failed" }, 500);
