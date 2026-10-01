@@ -20,6 +20,7 @@ import {
   attachBuild,
   EDITABLE_VERSION_STATES,
   ensureVersionCopyright,
+  ensureVersionOnReviewSubmission,
   fillAppPrivacy,
   fillVersionLocalization,
   formatAssociatedErrors,
@@ -622,38 +623,9 @@ async function submitVersionForReview(appId, versionId) {
     );
   }
 
-  try {
-    await asc("/v1/reviewSubmissionItems", {
-      method: "POST",
-      body: {
-        data: {
-          type: "reviewSubmissionItems",
-          relationships: {
-            reviewSubmission: {
-              data: { type: "reviewSubmissions", id: submission.id },
-            },
-            appStoreVersion: {
-              data: { type: "appStoreVersions", id: versionId },
-            },
-          },
-        },
-      },
-    });
-    console.log(`Added tvOS version ${versionId} to review submission.`);
-  } catch (err) {
-    const detail = String(err.message || "");
-    if (err.status === 409 && /already/i.test(detail)) {
-      console.log("tvOS version already on the review submission.");
-    } else {
-      if (/cannot be reviewed/i.test(detail)) {
-        console.error(
-          "tvOS listing is not review-ready after listing prep. Associated: " +
-            formatAssociatedErrors(err)
-        );
-      }
-      throw err;
-    }
-  }
+  await ensureVersionOnReviewSubmission(asc, submission.id, versionId, {
+    label: "tvOS version",
+  });
 
   const submitted = await asc(`/v1/reviewSubmissions/${submission.id}`, {
     method: "PATCH",

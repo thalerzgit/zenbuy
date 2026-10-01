@@ -142,6 +142,115 @@ export function formatAssociatedErrors(err) {
   return (assoc || []).filter(Boolean).join(" | ").slice(0, 4000);
 }
 
+/** List items on a review submission (include appStoreVersion ids). */
+export async function listReviewSubmissionItems(asc, submissionId) {
+  const q = new URLSearchParams({
+    include: "appStoreVersion",
+    limit: "50",
+  });
+  const payload = await asc(`/v1/reviewSubmissions/${submissionId}/items?${q}`);
+  return payload.data || [];
+}
+
+export function submissionHasAppStoreVersion(items, versionId) {
+  return (items || []).some(
+    (item) => item.relationships?.appStoreVersion?.data?.id === versionId
+  );
+}
+
+/**
+ * Ensure the App Store version is on the review submission before submitted:true.
+ * Never trust a 409 "already" alone — first-platform ASC can return a false
+ * already while items is empty (tvOS never-approved case).
+ */
+export async function ensureVersionOnReviewSubmission(
+  asc,
+  submissionId,
+  versionId,
+  { label = "version" } = {}
+) {
+  const postItem = () =>
+    asc("/v1/reviewSubmissionItems", {
+      method: "POST",
+      body: {
+        data: {
+          type: "reviewSubmissionItems",
+          relationships: {
+            reviewSubmission: {
+              data: { type: "reviewSubmissions", id: submissionId },
+            },
+            appStoreVersion: {
+              data: { type: "appStoreVersions", id: versionId },
+            },
+          },
+        },
+      },
+    });
+
+  let items = await listReviewSubmissionItems(asc, submissionId);
+  if (submissionHasAppStoreVersion(items, versionId)) {
+    console.log(
+      `${label} ${versionId} already on review submission (verified via items).`
+    );
+    return items;
+  }
+
+  try {
+    await postItem();
+    console.log(`Added ${label} ${versionId} to review submission.`);
+  } catch (err) {
+    const detail = String(err.message || "");
+    if (err.status === 409) {
+      items = await listReviewSubmissionItems(asc, submissionId);
+      if (submissionHasAppStoreVersion(items, versionId)) {
+        console.log(
+          `${label} ${versionId} already on review submission (verified after 409).`
+        );
+        return items;
+      }
+      console.log(
+        `409 adding ${label}, but items listing has no appStoreVersion ${versionId} — retrying add…`
+      );
+      try {
+        await postItem();
+        console.log(`Added ${label} ${versionId} to review submission (retry).`);
+      } catch (err2) {
+        items = await listReviewSubmissionItems(asc, submissionId);
+        if (submissionHasAppStoreVersion(items, versionId)) {
+          console.log(
+            `${label} ${versionId} present on review submission after retry 409.`
+          );
+          return items;
+        }
+        if (/cannot be reviewed/i.test(String(err2.message || ""))) {
+          console.error(
+            `${label} listing is not review-ready after listing prep. Associated: ` +
+              formatAssociatedErrors(err2)
+          );
+        }
+        throw err2;
+      }
+    } else {
+      if (/cannot be reviewed/i.test(detail)) {
+        console.error(
+          `${label} listing is not review-ready after listing prep. Associated: ` +
+            formatAssociatedErrors(err)
+        );
+      }
+      throw err;
+    }
+  }
+
+  items = await listReviewSubmissionItems(asc, submissionId);
+  if (!submissionHasAppStoreVersion(items, versionId)) {
+    throw new Error(
+      `Review submission ${submissionId} has no appStoreVersion item for ${versionId} ` +
+        `after add (items=${items.length}). Refusing submitted:true.`
+    );
+  }
+  return items;
+}
+
 const EDITABLE_APP_INFO_STATES = new Set([
   "PREPARE_FOR_SUBMISSION",
   "DEVELOPER_REJECTED",
