@@ -1028,6 +1028,32 @@ export function mountApp(root: HTMLElement): void {
    * per suggested ticker plus the button that runs them. All suggestions ride
    * along — the labels are not toggles.
    */
+  async function fetchSimilarSymbols(
+    symbol: string,
+    scores: Scorecard,
+    sector: boolean
+  ): Promise<{ symbols: string[]; widened: boolean }> {
+    const params = new URLSearchParams({
+      symbol,
+      scores: JSON.stringify(scores),
+      exclude: reportSymbols.join(","),
+      sector: sector ? "1" : "0",
+    });
+    const res = await fetch(`/api/similar?${params}`);
+    const data = (await res.json()) as {
+      symbols?: string[];
+      widened?: boolean;
+      error?: string;
+    };
+    if (!res.ok || !data.symbols?.length) {
+      throw new Error(data.error || "Couldn't find similar companies.");
+    }
+    return {
+      symbols: data.symbols.slice(0, 3),
+      widened: Boolean(data.widened) || !sector,
+    };
+  }
+
   async function revealSimilarPicks(
     symbol: string,
     scores: Scorecard,
@@ -1037,19 +1063,8 @@ export function mountApp(root: HTMLElement): void {
     const prev = btn.textContent;
     btn.textContent = "Finding peers…";
     try {
-      const params = new URLSearchParams({
-        symbol,
-        scores: JSON.stringify(scores),
-        exclude: reportSymbols.join(","),
-      });
-      const res = await fetch(`/api/similar?${params}`);
-      const data = (await res.json()) as { symbols?: string[]; error?: string };
-      if (!res.ok || !data.symbols?.length) {
-        throw new Error(data.error || "Couldn't find similar companies.");
-      }
-
-      const symbols = data.symbols.slice(0, 3);
-      btn.replaceWith(similarPicksRow(symbols));
+      const { symbols, widened } = await fetchSimilarSymbols(symbol, scores, true);
+      btn.replaceWith(similarPicksRow(symbol, scores, symbols, widened));
       symbols.forEach((s) => {
         void fetch(`/api/prefetch?symbol=${encodeURIComponent(s)}`).catch(
           () => {}
@@ -1066,9 +1081,47 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
-  function similarPicksRow(symbols: string[]): HTMLDivElement {
+  function similarPicksRow(
+    sourceSymbol: string,
+    scores: Scorecard,
+    symbols: string[],
+    widened: boolean
+  ): HTMLDivElement {
     const row = el("div", "similar-picks");
     symbols.forEach((symbol) => row.append(el("span", "similar-pick", symbol)));
+
+    if (!widened) {
+      const widen = el("button", "btn ghost similar-widen");
+      widen.type = "button";
+      widen.textContent = "Widen";
+      widen.title = "Don't care about sector";
+      widen.onclick = () => {
+        void (async () => {
+          widen.disabled = true;
+          const prev = widen.textContent;
+          widen.textContent = "Widening…";
+          try {
+            const next = await fetchSimilarSymbols(sourceSymbol, scores, false);
+            row.replaceWith(
+              similarPicksRow(sourceSymbol, scores, next.symbols, true)
+            );
+            next.symbols.forEach((s) => {
+              void fetch(`/api/prefetch?symbol=${encodeURIComponent(s)}`).catch(
+                () => {}
+              );
+            });
+          } catch (e) {
+            widen.disabled = false;
+            widen.textContent = prev || "Widen";
+            showError(
+              e instanceof Error ? e.message : "Couldn't widen peers.",
+              true
+            );
+          }
+        })();
+      };
+      row.append(widen);
+    }
 
     const run = el("button", "btn primary similar-run");
     run.type = "button";

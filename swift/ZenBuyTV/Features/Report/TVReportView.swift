@@ -162,12 +162,10 @@ struct TVReportView: View {
                     )
                 }
 
-                if viewModel.allowSimilar, !viewModel.similarSymbols.isEmpty, !viewModel.isStreaming {
-                    Button("Show more like this") {
-                        onRunSimilar(viewModel.similarSymbols, mode)
-                    }
-                    .buttonStyle(.tvSecondary)
-                    .padding(.top, 8)
+                // find → chips → Widen → Run (same contract as iOS; no up-front sector ask)
+                if viewModel.canOfferSimilar, !viewModel.isStreaming {
+                    TVSimilarPeersSection(viewModel: viewModel, onRun: onRunSimilar)
+                        .padding(.top, 8)
                 }
 
                 if isFinished {
@@ -769,5 +767,89 @@ private struct TVSourceRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// tvOS peer flow: Show more → chips + optional Widen → Run Report.
+private struct TVSimilarPeersSection: View {
+    let viewModel: ReportViewModel
+    let onRun: ([String], ReportMode) -> Void
+
+    @State private var askingMode = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if viewModel.similarSymbols.isEmpty {
+                Button {
+                    viewModel.findSimilar()
+                } label: {
+                    HStack(spacing: 12) {
+                        if viewModel.isFindingSimilar {
+                            ProgressView()
+                        }
+                        Text(viewModel.isFindingSimilar ? "Finding peers…" : "Show more like this")
+                    }
+                }
+                .buttonStyle(.tvSecondary)
+                .disabled(viewModel.isFindingSimilar)
+            } else {
+                HStack(spacing: 16) {
+                    ForEach(viewModel.similarSymbols, id: \.self) { symbol in
+                        Text(symbol)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(ZenBuyTheme.ink)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 12)
+                            .background(ZenBuyTheme.card)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(ZenBuyTheme.border, lineWidth: 1))
+                    }
+                }
+
+                HStack(spacing: 20) {
+                    if !viewModel.similarWidened {
+                        Button {
+                            viewModel.widenSimilar()
+                        } label: {
+                            HStack(spacing: 10) {
+                                if viewModel.isFindingSimilar {
+                                    ProgressView()
+                                }
+                                Text(viewModel.isFindingSimilar ? "Widening…" : "Widen")
+                            }
+                        }
+                        .buttonStyle(.tvSecondary)
+                        .disabled(viewModel.isFindingSimilar)
+                    }
+
+                    Button("Run Report on these?") {
+                        if viewModel.similarSymbols.count > 1 {
+                            askingMode = true
+                        } else {
+                            onRun(viewModel.similarSymbols, .separate)
+                        }
+                    }
+                    .buttonStyle(.tvPrimary)
+                    .disabled(viewModel.isFindingSimilar)
+                }
+            }
+
+            if let similarError = viewModel.similarError {
+                Text(similarError)
+                    .font(.footnote)
+                    .foregroundStyle(ZenBuyTheme.muted)
+            }
+        }
+        .confirmationDialog(
+            "How should we analyze these?",
+            isPresented: $askingMode,
+            titleVisibility: .visible
+        ) {
+            Button("Separate reports") { onRun(viewModel.similarSymbols, .separate) }
+            Button("Comparative report") { onRun(viewModel.similarSymbols, .comparative) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("One full report per company, or rank them and pick the best fit.")
+        }
     }
 }

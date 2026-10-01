@@ -227,6 +227,23 @@ private struct SimilarPeersView: View {
                             .overlay(Capsule().stroke(ZenBuyTheme.border, lineWidth: 1))
                     }
 
+                    if !viewModel.similarWidened {
+                        Button {
+                            viewModel.widenSimilar()
+                        } label: {
+                            HStack(spacing: 6) {
+                                if viewModel.isFindingSimilar {
+                                    ProgressView()
+                                }
+                                Text(viewModel.isFindingSimilar ? "Widening…" : "Widen")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(ZenBuyTheme.muted)
+                        .disabled(viewModel.isFindingSimilar)
+                        .accessibilityHint("Don't care about sector")
+                    }
+
                     Button("Run Report on these?") {
                         if viewModel.similarSymbols.count > 1 {
                             askingMode = true
@@ -236,6 +253,7 @@ private struct SimilarPeersView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(ZenBuyTheme.sage)
+                    .disabled(viewModel.isFindingSimilar)
                 }
             }
 

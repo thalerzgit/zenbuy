@@ -234,6 +234,12 @@ body {
   background: var(--sage-light);
 }
 
+.similar-widen {
+  font-size: 0.82rem;
+  padding: 0.45rem 0.75rem;
+  white-space: nowrap;
+}
+
 .similar-run {
   font-size: 0.88rem;
   padding: 0.5rem 0.9rem;

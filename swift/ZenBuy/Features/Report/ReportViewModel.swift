@@ -145,6 +145,8 @@ final class ReportViewModel {
     /// Successor reports hide "Show more like this" to avoid rabbit holes.
     private(set) var allowSimilar = true
     private(set) var similarSymbols: [String] = []
+    /// True after sector gate was skipped (Widen) or Worker fell back.
+    private(set) var similarWidened = false
     private(set) var isFindingSimilar = false
     private(set) var similarError: String?
     private(set) var activeRequest: ReportRequest?
@@ -233,21 +235,25 @@ final class ReportViewModel {
             && activeRequest?.mode == .separate
     }
 
-    func findSimilar() {
+    func findSimilar(sector: Bool = true) {
         guard let request = activeRequest, let symbol = request.symbols.first else { return }
-        guard !isFindingSimilar, similarSymbols.isEmpty else { return }
+        guard !isFindingSimilar else { return }
+        // First find only when empty; Widen may replace an existing chip set.
+        if sector, !similarSymbols.isEmpty { return }
         isFindingSimilar = true
         similarError = nil
 
         Task {
             do {
-                let found = try await api.similar(
+                let payload = try await api.similar(
                     symbol: symbol,
                     scores: ReportHTML.scoreProfile(from: scorecardHTML),
-                    exclude: request.symbols
+                    exclude: request.symbols,
+                    sector: sector
                 )
-                similarSymbols = found
-                if found.isEmpty {
+                similarSymbols = payload.symbols
+                similarWidened = payload.widened ?? !sector
+                if payload.symbols.isEmpty {
                     similarError = "No similar names found right now. Try again later."
                 }
             } catch {
@@ -256,6 +262,12 @@ final class ReportViewModel {
             }
             isFindingSimilar = false
         }
+    }
+
+    /// Re-fetch peers without the sector gate (escape hatch after chips appear).
+    func widenSimilar() {
+        guard !similarWidened else { return }
+        findSimilar(sector: false)
     }
 
     func handleScenePhase(_ phase: ScenePhase) {
@@ -307,6 +319,7 @@ final class ReportViewModel {
         emptyContentRetries = 0
         allowSimilar = true
         similarSymbols = []
+        similarWidened = false
         isFindingSimilar = false
         similarError = nil
         processing.start(symbolCount: request.symbols.count, mode: request.mode)

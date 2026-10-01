@@ -31,6 +31,8 @@ struct DiscoverResponse: Codable, Sendable {
 struct SimilarResponse: Codable, Sendable {
     let symbols: [String]
     let source: String?
+    /// True when the Worker skipped or exhausted the sector gate.
+    let widened: Bool?
 }
 
 struct APIErrorResponse: Codable, Sendable {
