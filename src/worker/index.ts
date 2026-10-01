@@ -56,7 +56,7 @@ import {
   streamResearchParallel,
   verifyTurnstile,
 } from "./research";
-import { openQuotaGate } from "./quota";
+import { isTrustedOps, openQuotaGate } from "./quota";
 import { legalPageResponse } from "./legal-pages";
 import { handleReportEmail } from "./report-email";
 import {
@@ -823,7 +823,8 @@ async function handleResearch(
   const unlock = await resolveUnlock(request, env);
   const subject = unlock.unlocked ? unlock.sub : null;
 
-  if (!isNativeAppleClient(request) && !unlock.unlocked) {
+  // Trusted ops (X-ZenBuy-Ops) skips Turnstile the same way native clients do.
+  if (!isNativeAppleClient(request) && !unlock.unlocked && !isTrustedOps(request, env)) {
     const turnstileOk = await verifyTurnstile(env, body.turnstileToken ?? "", ip);
     if (!turnstileOk) {
       return json(

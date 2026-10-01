@@ -22,6 +22,17 @@ interface Env {
   RATE_LIMIT_FREE_WEEKLY?: string;
   /** Daily reports for a signed-in buyer, counted per Apple subject. */
   RATE_LIMIT_PRO_DAILY?: string;
+  /**
+   * Daily safety ceiling for trusted ops (`X-ZenBuy-Ops` + `HEALTHCHECK_TOKEN`).
+   * Defaults to 100. Does not share the free weekly or pro daily buckets.
+   */
+  RATE_LIMIT_OPS_DAILY?: string;
+  /**
+   * Shared secret for first-party ops (horizon healthcheck). Compared
+   * timing-safe against header `X-ZenBuy-Ops`. Worker secret — never a var.
+   * Unset disables the ops path (fail closed).
+   */
+  HEALTHCHECK_TOKEN?: string;
   CACHE_TTL_SECONDS?: string;
 
   /** Services ID for Sign in with Apple on the web (the OAuth client id). */

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { networkKey, openQuotaGate, VISITOR_COOKIE } from "./quota.ts";
+import {
+  isTrustedOps,
+  networkKey,
+  openQuotaGate,
+  OPS_HEADER,
+  timingSafeEqualString,
+  VISITOR_COOKIE,
+} from "./quota.ts";
 
 /**
  * The point of these tests is the free-tier identity clustering: a visitor
@@ -36,10 +43,13 @@ function envWith(kv: ReturnType<typeof fakeKv>, extra: Record<string, string> = 
   } as unknown as Env;
 }
 
-function request(options: { cookie?: string; device?: string } = {}): Request {
+function request(
+  options: { cookie?: string; device?: string; ops?: string } = {}
+): Request {
   const headers = new Headers();
   if (options.cookie) headers.set("cookie", `${VISITOR_COOKIE}=${options.cookie}`);
   if (options.device) headers.set("X-ZenBuy-Device", options.device);
+  if (options.ops) headers.set(OPS_HEADER, options.ops);
   return new Request("https://zenbuy.info/api/research", { method: "POST", headers });
 }
 
@@ -287,4 +297,94 @@ test("networkKey coarsens to /24 and /48", () => {
   assert.equal(networkKey("203.0.113.7"), "203.0.113.0/24");
   assert.equal(networkKey("2001:db8:1234:5678::1"), "2001:db8:1234::/48");
   assert.equal(networkKey("unknown"), "unknown");
+});
+
+test("valid ops token bypasses free_limit and uses the ops bucket", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, { HEALTHCHECK_TOKEN: "ops-secret-value" });
+  const seed = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
+  await seed.consume();
+  await spend(env, 2, request({ cookie: mintedCookie(seed.setCookie) }), SIGNAL);
+
+  const exhausted = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
+  assert.equal(exhausted.allowed, false);
+  assert.equal(exhausted.code, "free_limit");
+
+  const ops = await openQuotaGate(
+    request({ ops: "ops-secret-value" }),
+    env,
+    "203.0.113.7",
+    null,
+    SIGNAL
+  );
+  assert.equal(ops.allowed, true);
+  assert.equal(isTrustedOps(request({ ops: "ops-secret-value" }), env), true);
+  await ops.consume();
+  assert.equal(
+    kv.store.get(`rl:ops:${new Date().toISOString().slice(0, 10)}`),
+    "1"
+  );
+});
+
+test("invalid or missing ops token does not bypass free_limit", async () => {
+  const env = envWith(fakeKv(), { HEALTHCHECK_TOKEN: "ops-secret-value" });
+  const seed = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
+  await seed.consume();
+  await spend(env, 2, request({ cookie: mintedCookie(seed.setCookie) }), SIGNAL);
+
+  const wrong = await openQuotaGate(
+    request({ ops: "wrong-token" }),
+    env,
+    "203.0.113.7",
+    null,
+    SIGNAL
+  );
+  assert.equal(wrong.allowed, false);
+  assert.equal(wrong.code, "free_limit");
+  assert.equal(isTrustedOps(request({ ops: "wrong-token" }), env), false);
+
+  const missing = await openQuotaGate(request(), env, "203.0.113.7", null, SIGNAL);
+  assert.equal(missing.allowed, false);
+  assert.equal(missing.code, "free_limit");
+});
+
+test("ops daily ceiling still enforces", async () => {
+  const kv = fakeKv();
+  const env = envWith(kv, {
+    HEALTHCHECK_TOKEN: "ops-secret-value",
+    RATE_LIMIT_OPS_DAILY: "3",
+  });
+  for (let i = 0; i < 3; i++) {
+    const gate = await openQuotaGate(
+      request({ ops: "ops-secret-value" }),
+      env,
+      "203.0.113.7",
+      null,
+      SIGNAL
+    );
+    assert.equal(gate.allowed, true, `ops report ${i + 1}`);
+    await gate.consume();
+  }
+  const denied = await openQuotaGate(
+    request({ ops: "ops-secret-value" }),
+    env,
+    "203.0.113.7",
+    null,
+    SIGNAL
+  );
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.code, "ops_limit");
+  assert.match(denied.message ?? "", /Ops safety ceiling/);
+});
+
+test("empty HEALTHCHECK_TOKEN never authenticates ops", async () => {
+  const env = envWith(fakeKv(), { HEALTHCHECK_TOKEN: "" });
+  assert.equal(isTrustedOps(request({ ops: "" }), env), false);
+  assert.equal(isTrustedOps(request({ ops: "anything" }), env), false);
+});
+
+test("timingSafeEqualString is length-aware and exact", () => {
+  assert.equal(timingSafeEqualString("abc", "abc"), true);
+  assert.equal(timingSafeEqualString("abc", "abd"), false);
+  assert.equal(timingSafeEqualString("abc", "ab"), false);
 });
