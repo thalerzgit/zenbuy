@@ -43,6 +43,7 @@ const WEEK_TTL_SECONDS = 7 * 24 * 60 * 60 + 60;
 const DAY_TTL_SECONDS = 24 * 60 * 60;
 const DEFAULT_FREE_WEEKLY_LIMIT = 3;
 const DEFAULT_PRO_DAILY_LIMIT = 25;
+const DEFAULT_OPS_DAILY_LIMIT = 100;
 
 /** Above this many distinct networks a device signal is a model, not a person. */
 const FP_GENERIC_NETS = 6;
@@ -53,6 +54,13 @@ const VISITOR_COOKIE_SECONDS = 60 * 60 * 24 * 400;
 /** `X-ZenBuy-Device` — the native app's Keychain id, its device signal. */
 const DEVICE_HEADER = "X-ZenBuy-Device";
 
+/**
+ * Trusted first-party ops (BuyMan horizon healthcheck). Header value must
+ * timing-safe-match Worker secret `HEALTHCHECK_TOKEN`. Valid ops skip the
+ * anonymous free weekly bucket and use a separate daily safety ceiling.
+ */
+export const OPS_HEADER = "X-ZenBuy-Ops";
+
 function freeWeeklyLimit(env: Env): number {
   return Math.max(
     1,
@@ -62,6 +70,42 @@ function freeWeeklyLimit(env: Env): number {
 
 function proDailyLimit(env: Env): number {
   return Math.max(1, Number(env.RATE_LIMIT_PRO_DAILY || DEFAULT_PRO_DAILY_LIMIT));
+}
+
+function opsDailyLimit(env: Env): number {
+  return Math.max(1, Number(env.RATE_LIMIT_OPS_DAILY || DEFAULT_OPS_DAILY_LIMIT));
+}
+
+function opsKey(): string {
+  return `rl:ops:${new Date().toISOString().slice(0, 10)}`;
+}
+
+/** Constant-time string compare for the ops shared secret. */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const aa = enc.encode(a);
+  const bb = enc.encode(b);
+  if (aa.byteLength !== bb.byteLength) {
+    let sink = 0;
+    for (let i = 0; i < aa.byteLength; i++) sink |= aa[i] ^ aa[i];
+    void sink;
+    return false;
+  }
+  let out = 0;
+  for (let i = 0; i < aa.byteLength; i++) out |= aa[i] ^ bb[i];
+  return out === 0;
+}
+
+/**
+ * True when `X-ZenBuy-Ops` matches `HEALTHCHECK_TOKEN`. Missing or empty
+ * secret never authenticates (fail closed).
+ */
+export function isTrustedOps(request: Request, env: Env): boolean {
+  const expected = (env.HEALTHCHECK_TOKEN ?? "").trim();
+  if (!expected) return false;
+  const got = (request.headers.get(OPS_HEADER) ?? "").trim();
+  if (!got) return false;
+  return timingSafeEqualString(got, expected);
 }
 
 function readCookie(request: Request, name: string): string | null {
@@ -272,7 +316,7 @@ function formatWait(ms: number): string {
 export interface QuotaGate {
   allowed: boolean;
   message?: string;
-  code?: "free_limit" | "pro_limit";
+  code?: "free_limit" | "pro_limit" | "ops_limit";
   /** Attach to the response so a minted visitor id survives the request. */
   setCookie?: string;
   /** Spend the allowance. Called only once a report actually finishes. */
@@ -298,6 +342,30 @@ export async function openQuotaGate(
   complimentary = false
 ): Promise<QuotaGate> {
   if (complimentary) return { allowed: true, consume: noop };
+
+  // First-party ops: never burn the anonymous free weekly bucket.
+  if (isTrustedOps(request, env)) {
+    const limit = opsDailyLimit(env);
+    const key = opsKey();
+    const used = Number((await env.CACHE.get(key)) || 0);
+    if (used >= limit) {
+      return {
+        allowed: false,
+        code: "ops_limit",
+        message: `Ops safety ceiling hit (${limit}/day). Check for a stuck healthcheck loop.`,
+        consume: noop,
+      };
+    }
+    return {
+      allowed: true,
+      consume: async () => {
+        const current = Number((await env.CACHE.get(key)) || 0);
+        await env.CACHE.put(key, String(current + 1), {
+          expirationTtl: DAY_TTL_SECONDS,
+        });
+      },
+    };
+  }
 
   if (subject) {
     const limit = proDailyLimit(env);

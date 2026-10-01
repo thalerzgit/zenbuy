@@ -23,6 +23,7 @@ wrangler secret put AI_GATEWAY_ID           # optional
 wrangler secret put AI_GATEWAY_TOKEN        # optional
 wrangler secret put TURNSTILE_SECRET_KEY    # optional
 wrangler secret put RESEND_API_KEY          # optional — Apple TV "Email PDF"
+wrangler secret put HEALTHCHECK_TOKEN       # ops header X-ZenBuy-Ops (BuyMan healthcheck)
 ```
 
 `RESEND_API_KEY` pairs with the `REPORT_EMAIL_FROM` var in `wrangler.jsonc`, whose
@@ -127,7 +128,16 @@ SwiftUI iPhone app plus an Apple TV target (`ZenBuyTV`) in `swift/` (not a WebVi
 |-----|-----------|-----------------|
 | Unlocked buyer | `RATE_LIMIT_PRO_DAILY` (25) per day | Apple `sub` |
 | Free visitor | `RATE_LIMIT_FREE_WEEKLY` (3) per rolling 7×24h | Identity cluster |
+| Trusted ops | `RATE_LIMIT_OPS_DAILY` (100) per day | Shared ops bucket |
 | `APPLE_ID_WHITELIST` Apple IDs | unlimited | — |
+
+**Trusted ops** (BuyMan horizon healthcheck and similar first-party routines):
+send header `X-ZenBuy-Ops: <token>` matching Worker secret `HEALTHCHECK_TOKEN`
+(timing-safe compare). Valid ops **skip** the anonymous free weekly bucket so
+healthchecks do not burn outsider quota; they still hit a separate daily
+safety ceiling (`RATE_LIMIT_OPS_DAILY`, default 100) so a stuck loop cannot
+drain LLM spend. Missing/invalid token → unchanged free/pro path. Stamp with
+`wrangler secret put HEALTHCHECK_TOKEN` (never commit the value).
 
 No IP address is exempt: an unlimited allowance is granted only by Apple ID,
 never by network. `APPLE_ID_WHITELIST` is complimentary unlock — signing in

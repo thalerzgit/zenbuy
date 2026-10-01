@@ -31,6 +31,9 @@
     // per IP. Unlocked buyers are counted per Apple subject, per day.
     "RATE_LIMIT_FREE_WEEKLY": "3",
     "RATE_LIMIT_PRO_DAILY": "25",
+    // First-party ops (X-ZenBuy-Ops + HEALTHCHECK_TOKEN secret) daily ceiling.
+    // Keeps a stuck healthcheck from draining LLM spend; never shares free/pro.
+    "RATE_LIMIT_OPS_DAILY": "100",
     "CACHE_TTL_SECONDS": "3600",
     // Sign in with Apple. APPLE_KEY_ID and APPLE_PRIVATE_KEY are Worker
     // secrets; everything here is public by design (the Services ID travels
