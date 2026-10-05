@@ -17,24 +17,34 @@ export const RESEARCH_MAX_TOKENS = 12_000;
 
 export type ProviderId = "xai" | "anthropic";
 
-export const DEFAULT_PRIMARY_MODEL = "grok-4.5";
+export const DEFAULT_PRIMARY_MODEL = "grok-4.7";
 export const DEFAULT_PRIMARY_PROVIDER: ProviderId = "xai";
-export const DEFAULT_BACKUP_MODEL = "claude-sonnet-5";
+export const DEFAULT_BACKUP_MODEL = "claude-sonnet-5-5";
 export const DEFAULT_BACKUP_PROVIDER: ProviderId = "anthropic";
 
 /**
- * Grok 4.5 Chat Completions: `high` is the quality/speed balance for streamed
- * equity reports (finance reasoning without the TTFT hit). `xhigh` is grok-4.6+
- * and inflates latency; grok-4.5 treats `xhigh` as `high` anyway. Do not use
- * `max`. Explicit so a later model swap cannot silently pick a slower default.
+ * Grok 4.7 Chat Completions: `high` matches `xhigh` on AA Finance & Accounting
+ * Index (52) at lower cost/task ($2.73 vs $3.74). `xhigh` only burns tokens /
+ * TTFT for ZenBuy equity streams. Do not use `max`. Explicit so a later model
+ * swap cannot silently pick a slower default.
  */
 export const XAI_REASONING_EFFORT = "high" as const;
 
 /**
- * Claude Sonnet 5 backup: `medium` (~1.8s TTFT on Artificial Analysis) vs
+ * Claude Sonnet 5.5 backup: `medium` (~2.65s TTFT on Artificial Analysis) vs
  * default `high` or `max` (minutes). Do not use `max`/`xhigh` on ZenBuy streams.
  */
 export const ANTHROPIC_OUTPUT_EFFORT = "medium" as const;
+
+/** Sonnet 5.5 rejects `thinking: disabled`; this is the no-up-front-thinking mode. */
+export function anthropicThinkingFor(
+  model: string
+): { type: "between_tools" } | undefined {
+  if (model.startsWith("claude-sonnet-5-5")) {
+    return { type: "between_tools" };
+  }
+  return undefined;
+}
 
 /** Headers must arrive before we treat the primary as unresponsive. */
 const TTFB_TIMEOUT_MS = 45_000;
@@ -88,9 +98,9 @@ export interface ModelAttempt {
 }
 
 /**
- * Grok 4.5 first (when the xAI key is present), then Claude Sonnet 5.
+ * Grok 4.7 first (when the xAI key is present), then Claude Sonnet 5.5.
  * Same-provider Grok retry is the 404 live-id resolve inside consumeXai —
- * we do not add grok-4.6 or Opus to this chain.
+ * we do not add Opus to this chain.
  */
 export function planFailoverChain(env: Env): ModelAttempt[] {
   const primary: ModelAttempt = {
@@ -172,14 +182,17 @@ export function buildAnthropicMessagesBody(
   stream: true;
   system: string;
   output_config: { effort: typeof ANTHROPIC_OUTPUT_EFFORT };
+  thinking?: { type: "between_tools" };
   messages: Array<{ role: "user"; content: string }>;
 } {
+  const thinking = anthropicThinkingFor(model);
   return {
     model,
     max_tokens: maxTokens,
     stream: true,
     system,
     output_config: { effort: ANTHROPIC_OUTPUT_EFFORT },
+    ...(thinking ? { thinking } : {}),
     messages: [{ role: "user", content: user }],
   };
 }
@@ -281,7 +294,7 @@ const XAI_FALLBACK_MODEL_KEY = "model:fallback:xai";
 /**
  * Model ids get retired, which otherwise takes every report down until
  * someone edits a var. Resolve a live id once and remember it for a day.
- * Prefer Sonnet — Opus is not in the ZenBuy chain.
+ * Prefer Sonnet 5.5, then any Sonnet — Opus is not in the ZenBuy chain.
  */
 async function resolveLiveAnthropicModel(
   env: Env,
@@ -303,6 +316,7 @@ async function resolveLiveAnthropicModel(
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
     const ids = (body.data ?? []).map((m) => m.id).filter(Boolean) as string[];
     const pick =
+      ids.find((id) => id.startsWith("claude-sonnet-5-5") && id !== rejected) ??
       ids.find((id) => id.startsWith("claude-sonnet") && id !== rejected) ??
       ids.find((id) => id !== rejected && !id.startsWith("claude-opus")) ??
       null;
@@ -318,17 +332,13 @@ async function resolveLiveAnthropicModel(
   }
 }
 
-/** Same 404 self-heal for Grok. Prefer 4.5; never pick grok-4.6. */
+/** Same 404 self-heal for Grok. Prefer 4.7, then 4.6, then 4.5. */
 async function resolveLiveXaiModel(
   env: Env,
   rejected: string
 ): Promise<string | null> {
   const cached = await env.CACHE.get(XAI_FALLBACK_MODEL_KEY);
-  if (
-    cached &&
-    cached !== rejected &&
-    !cached.startsWith("grok-4.6")
-  ) {
+  if (cached && cached !== rejected) {
     return cached;
   }
 
@@ -340,14 +350,11 @@ async function resolveLiveXaiModel(
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
     const ids = (body.data ?? []).map((m) => m.id).filter(Boolean) as string[];
     const pick =
+      ids.find((id) => id.startsWith("grok-4.7") && id !== rejected) ??
+      ids.find((id) => id.startsWith("grok-4.6") && id !== rejected) ??
       ids.find((id) => id.startsWith("grok-4.5") && id !== rejected) ??
-      ids.find(
-        (id) =>
-          id.startsWith("grok-4") &&
-          !id.startsWith("grok-4.6") &&
-          id !== rejected
-      ) ??
-      ids.find((id) => id.startsWith("grok-") && !id.startsWith("grok-4.6") && id !== rejected) ??
+      ids.find((id) => id.startsWith("grok-4") && id !== rejected) ??
+      ids.find((id) => id.startsWith("grok-") && id !== rejected) ??
       null;
     if (pick) {
       await env.CACHE.put(XAI_FALLBACK_MODEL_KEY, pick, { expirationTtl: 86_400 });
@@ -399,7 +406,16 @@ function parseAnthropicEvent(evt: Record<string, unknown>): {
     | undefined;
   const message = evt.message as { stop_reason?: string | null } | undefined;
   const out: { text?: string; stopReason?: string | null } = {};
-  if (type === "content_block_delta" && delta?.text) out.text = delta.text;
+  if (
+    type === "content_block_delta" &&
+    delta?.type === "text_delta" &&
+    delta?.text
+  ) {
+    out.text = delta.text;
+  } else if (type === "content_block_delta" && delta?.text && !delta?.type) {
+    // Older gateways may omit delta.type; keep text-only fallback.
+    out.text = delta.text;
+  }
   const reason = delta?.stop_reason ?? message?.stop_reason ?? null;
   if (reason) out.stopReason = reason;
   return out;
@@ -646,7 +662,7 @@ async function consumeProvider(
 }
 
 /**
- * Grok 4.5 → (404 live-id retry inside consume) → Claude Sonnet 5.
+ * Grok 4.7 → (404 live-id retry inside consume) → Claude Sonnet 5.5.
  * Failover only when no tokens were already painted to the client.
  * Empty-balance / auth on the current provider skips any remaining
  * same-provider hop and continues to the other provider.

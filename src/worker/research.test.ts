@@ -9,6 +9,7 @@ import {
   DEFAULT_PRIMARY_PROVIDER,
   RESEARCH_MAX_TOKENS,
   XAI_REASONING_EFFORT,
+  anthropicThinkingFor,
   buildAnthropicMessagesBody,
   buildXaiChatBody,
   classifyUpstreamFailure,
@@ -58,13 +59,13 @@ describe("Anthropic failure classification", () => {
 });
 
 describe("research stack defaults", () => {
-  it("uses Grok 4.5 primary and Claude Sonnet 5 backup — not Opus", () => {
-    assert.equal(DEFAULT_PRIMARY_MODEL, "grok-4.5");
+  it("uses Grok 4.7 primary and Claude Sonnet 5.5 backup — not Opus", () => {
+    assert.equal(DEFAULT_PRIMARY_MODEL, "grok-4.7");
     assert.equal(DEFAULT_PRIMARY_PROVIDER, "xai");
-    assert.equal(DEFAULT_BACKUP_MODEL, "claude-sonnet-5");
+    assert.equal(DEFAULT_BACKUP_MODEL, "claude-sonnet-5-5");
     assert.equal(DEFAULT_BACKUP_PROVIDER, "anthropic");
     assert.notEqual(DEFAULT_PRIMARY_MODEL, "claude-opus-5");
-    assert.notEqual(DEFAULT_BACKUP_MODEL, "grok-4.5");
+    assert.notEqual(DEFAULT_BACKUP_MODEL, "grok-4.7");
     assert.equal(XAI_REASONING_EFFORT, "high");
     assert.equal(ANTHROPIC_OUTPUT_EFFORT, "medium");
   });
@@ -75,8 +76,8 @@ describe("research stack defaults", () => {
       ANTHROPIC_API_KEY: "ant-test",
     } as Env);
     assert.deepEqual(chain, [
-      { provider: "xai", model: "grok-4.5" },
-      { provider: "anthropic", model: "claude-sonnet-5" },
+      { provider: "xai", model: "grok-4.7" },
+      { provider: "anthropic", model: "claude-sonnet-5-5" },
     ]);
   });
 
@@ -85,7 +86,7 @@ describe("research stack defaults", () => {
       ANTHROPIC_API_KEY: "ant-test",
     } as Env);
     assert.deepEqual(chain, [
-      { provider: "anthropic", model: "claude-sonnet-5" },
+      { provider: "anthropic", model: "claude-sonnet-5-5" },
     ]);
   });
 
@@ -93,7 +94,7 @@ describe("research stack defaults", () => {
     const chain = planFailoverChain({
       XAI_API_KEY: "xai-test",
     } as Env);
-    assert.deepEqual(chain, [{ provider: "xai", model: "grok-4.5" }]);
+    assert.deepEqual(chain, [{ provider: "xai", model: "grok-4.7" }]);
   });
 });
 
@@ -107,17 +108,18 @@ describe("Anthropic Messages payload shape", () => {
       2
     );
     const body = buildAnthropicMessagesBody(
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       system,
       user,
       RESEARCH_MAX_TOKENS
     );
 
-    assert.equal(body.model, "claude-sonnet-5");
+    assert.equal(body.model, "claude-sonnet-5-5");
     assert.equal(body.stream, true);
     assert.equal(body.max_tokens, 12_000);
     assert.equal(body.output_config.effort, "medium");
     assert.notEqual(body.output_config.effort, "max");
+    assert.deepEqual(body.thinking, { type: "between_tools" });
     assert.ok(Number.isInteger(body.max_tokens) && body.max_tokens > 0);
     assert.equal(typeof body.system, "string");
     assert.ok(body.system.length > 200);
@@ -140,7 +142,7 @@ describe("Anthropic Messages payload shape", () => {
 
   it("keeps long-window Aggressive Growth on the directive 18-year STRUCTURE", () => {
     const body = buildAnthropicMessagesBody(
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       getSystemPrompt("aggressive_growth", 18),
       buildUserPrompt("separate", [{ symbol: "AVGO" }], "aggressive_growth", 18),
       RESEARCH_MAX_TOKENS
@@ -154,12 +156,12 @@ describe("Anthropic Messages payload shape", () => {
 describe("xAI Chat Completions payload shape", () => {
   it("omits deprecated search_parameters (xAI 410 Live search is deprecated)", () => {
     const body = buildXaiChatBody(
-      "grok-4.5",
+      "grok-4.7",
       getSystemPrompt("aggressive_growth", 2),
       buildUserPrompt("separate", [{ symbol: "AVGO" }], "aggressive_growth", 2),
       RESEARCH_MAX_TOKENS
     );
-    assert.equal(body.model, "grok-4.5");
+    assert.equal(body.model, "grok-4.7");
     assert.equal(body.stream, true);
     assert.equal(body.max_completion_tokens, 12_000);
     assert.equal(body.reasoning_effort, "high");
