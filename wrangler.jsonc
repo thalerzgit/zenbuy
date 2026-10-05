@@ -22,9 +22,9 @@
     }
   ],
   "vars": {
-    "ZENBUY_MODEL": "grok-4.5",
+    "ZENBUY_MODEL": "grok-4.7",
     "ZENBUY_PRIMARY_PROVIDER": "xai",
-    "ZENBUY_BACKUP_MODEL": "claude-sonnet-5",
+    "ZENBUY_BACKUP_MODEL": "claude-sonnet-5-5",
     "ZENBUY_BACKUP_PROVIDER": "anthropic",
     // Free web/app allowance: reports per visitor per rolling 7 days, counted
     // per identity cluster (zb_vid cookie + device signal + network), not

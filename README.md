@@ -2,7 +2,7 @@
 
 Calm equity research — **Know before you trade.**
 
-Alpha stack: Cloudflare Workers, Finnhub fundamentals, xAI Grok 4.5 primary with Anthropic Claude Sonnet 5 backup, KV cache.
+Alpha stack: Cloudflare Workers, Finnhub fundamentals, xAI Grok 4.7 primary with Anthropic Claude Sonnet 5.5 backup, KV cache.
 
 ## Quick start
 
@@ -17,7 +17,7 @@ npm run dev                 # http://localhost:5173
 ```bash
 wrangler secret put FINNHUB_API_KEY   # one key, or "key1,key2" to pool budgets
 wrangler secret put ANTHROPIC_API_KEY
-wrangler secret put XAI_API_KEY             # primary research path (grok-4.5)
+wrangler secret put XAI_API_KEY             # primary research path (grok-4.7)
 wrangler secret put AI_GATEWAY_ACCOUNT_ID   # optional
 wrangler secret put AI_GATEWAY_ID           # optional
 wrangler secret put AI_GATEWAY_TOKEN        # optional
@@ -79,12 +79,12 @@ Optional Worker vars (also in `wrangler.jsonc`):
 
 | Var | Default | Role |
 |-----|---------|------|
-| `ZENBUY_MODEL` | `grok-4.5` | Primary model |
+| `ZENBUY_MODEL` | `grok-4.7` | Primary model |
 | `ZENBUY_PRIMARY_PROVIDER` | `xai` | Primary provider (`xai` or `anthropic`) |
-| `ZENBUY_BACKUP_MODEL` | `claude-sonnet-5` | Cross-provider backup when Grok is down |
+| `ZENBUY_BACKUP_MODEL` | `claude-sonnet-5-5` | Cross-provider backup when Grok is down |
 | `ZENBUY_BACKUP_PROVIDER` | `anthropic` | Backup provider id |
 
-`XAI_API_KEY` is required for the default Grok-first path. Without it, reports skip to Claude Sonnet 5. Anthropic empty-balance / spend-cap errors do not block the Grok primary path.
+`XAI_API_KEY` is required for the default Grok-first path. Without it, reports skip to Claude Sonnet 5.5. Anthropic empty-balance / spend-cap errors do not block the Grok primary path.
 
 Manual redeploy: Actions → **Deploy** → **Run workflow**.
 
@@ -205,9 +205,9 @@ within budget:
   not a substitute.
 - **Model retirement self-heals:** a `404` on the current provider’s model
   resolves a live id from that provider’s `/v1/models`, retries once, and
-  caches the result for a day (Grok prefers `grok-4.5`, never `grok-4.6`;
-  Anthropic prefers Sonnet, never Opus). Chain is **Grok 4.5 → Claude
-  Sonnet 5**. Ordinary `400` prompt errors do not fail over. Empty-balance /
+  caches the result for a day (Grok prefers `grok-4.7`, then `grok-4.6` /
+  `grok-4.5`; Anthropic prefers Sonnet 5.5, never Opus). Chain is **Grok 4.7 →
+  Claude Sonnet 5.5**. Ordinary `400` prompt errors do not fail over. Empty-balance /
   spend-cap `400`s do — same-provider retry is skipped and the other
   provider runs. Anthropic billing cannot block a healthy Grok primary.
 
