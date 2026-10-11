@@ -45,6 +45,12 @@
     // TestFlight purchases run through Apple's sandbox. Set to "0" once the
     // app is selling on the App Store.
     "APPLE_ALLOW_SANDBOX": "1",
+    // TestFlight complimentary unlock (verified sandbox AppTransaction).
+    // "0" pauses NEW grants so App Review, which runs in the same sandbox,
+    // reaches the Monthly / Buy once paywall (Guideline 2.1(b)). Existing
+    // grants and sessions stay valid; sandbox IAP purchases and the whitelist
+    // are unaffected. Set back to "1" once tvOS 1.7 is approved.
+    "TESTFLIGHT_COMPLIMENTARY": "0",
     // Complimentary unlock, no App Store purchase, and never counted against
     // any report limit. Comma-separated; each entry is either an email address
     // (matched case-insensitively against the claim Apple sends) or

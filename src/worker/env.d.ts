@@ -49,6 +49,13 @@ interface Env {
   /** "0" rejects sandbox (TestFlight) purchases once the app is on sale. */
   APPLE_ALLOW_SANDBOX?: string;
   /**
+   * "0" pauses new TestFlight (sandbox AppTransaction) complimentary grants,
+   * e.g. while a build is in App Review so the reviewer sees the paywall.
+   * Unset or anything else keeps the grant. Existing grants stay valid.
+   * A `wrangler.jsonc` var, so every deploy applies the committed value.
+   */
+  TESTFLIGHT_COMPLIMENTARY?: string;
+  /**
    * Comma-separated Apple IDs granted complimentary access with no purchase.
    * Each entry is either an email address (case-insensitive) or
    * `sub:<apple subject id>`. Never counted against any report limit.
