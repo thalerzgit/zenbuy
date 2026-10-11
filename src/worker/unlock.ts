@@ -171,12 +171,26 @@ export function isTestFlightAppTransaction(
   return Boolean(transaction.appTransactionId) || transaction.productId === bundleId(env);
 }
 
+/**
+ * `TESTFLIGHT_COMPLIMENTARY = "0"` pauses *new* TestFlight complimentary
+ * grants. App Review runs in the same sandbox TestFlight uses, so while a
+ * build is in review the free unlock hides Monthly / Buy once from the
+ * reviewer (Guideline 2.1(b)). Unset or any other value keeps the grant.
+ * Grants and sessions already stored in KV stay valid; real sandbox IAP
+ * purchases (gated only by `APPLE_ALLOW_SANDBOX`) and the
+ * `APPLE_ID_WHITELIST` path are unaffected.
+ */
+export function testFlightComplimentaryPaused(env: Env): boolean {
+  return env.TESTFLIGHT_COMPLIMENTARY?.trim() === "0";
+}
+
 /** Complimentary app-only grant for a verified TestFlight AppTransaction. */
 export function testFlightEntitlementFromTransaction(
   env: Env,
   transaction: SignedTransaction,
   now: number
 ): Entitlement | null {
+  if (testFlightComplimentaryPaused(env)) return null;
   if (!isTestFlightAppTransaction(env, transaction)) return null;
   return {
     productId: TESTFLIGHT_PRODUCT_ID,
@@ -835,6 +849,17 @@ export async function handleUnlockApp(request: Request, env: Env): Promise<Respo
     ? `${STOREKIT_SUBJECT_PREFIX}${entitlement.originalTransactionId.trim()}`
     : null;
   if (!entitlement || !subject) {
+    logUnlockTrace("unlock_trace.unlock_app", {
+      route: "/api/unlock-app",
+      http_status: 402,
+      unlock_path: "app_unlock_app",
+      caller: unlockCaller(request),
+      storekit_on_this_path: true,
+      ...sandboxConfigFields(env.APPLE_ALLOW_SANDBOX),
+      testflight_complimentary: testFlightComplimentaryPaused(env) ? "paused" : "active",
+      branch: "no_purchase_and_no_testflight_grant",
+      response_error: "no active purchase",
+    });
     return json({ error: "no active purchase" }, 402);
   }
 

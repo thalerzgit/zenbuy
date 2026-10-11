@@ -15,6 +15,7 @@ import {
   isWhitelisted,
   normalizeEmail,
   resolveUnlock,
+  testFlightComplimentaryPaused,
   testFlightEntitlementFromTransaction,
   TESTFLIGHT_PRODUCT_ID,
   type Entitlement,
@@ -433,6 +434,79 @@ test("TestFlight complimentary still works when sandbox purchases are blocked", 
   );
 });
 
+test("TESTFLIGHT_COMPLIMENTARY unset or non-zero keeps the TestFlight grant", () => {
+  const now = Date.now();
+  const sandboxDownload = paidAppDownload({ receiptType: "ProductionSandbox" });
+  for (const value of [undefined, "", "1", "true", "on"]) {
+    const env = purchaseEnv(fakeKv(), { TESTFLIGHT_COMPLIMENTARY: value } as Partial<Env>);
+    assert.equal(testFlightComplimentaryPaused(env), false, `value=${value}`);
+    assert.equal(
+      testFlightEntitlementFromTransaction(env, sandboxDownload, now)?.productId,
+      TESTFLIGHT_PRODUCT_ID,
+      `value=${value}`
+    );
+  }
+});
+
+test('TESTFLIGHT_COMPLIMENTARY="0" pauses new TestFlight grants', () => {
+  const now = Date.now();
+  const sandboxDownload = paidAppDownload({ receiptType: "ProductionSandbox" });
+  for (const value of ["0", " 0 "]) {
+    const env = purchaseEnv(fakeKv(), { TESTFLIGHT_COMPLIMENTARY: value });
+    assert.equal(testFlightComplimentaryPaused(env), true);
+    assert.equal(isTestFlightAppTransaction(env, sandboxDownload), true);
+    assert.equal(testFlightEntitlementFromTransaction(env, sandboxDownload, now), null);
+  }
+});
+
+test("paused TestFlight grants still accept real sandbox IAP purchases", () => {
+  const env = purchaseEnv(fakeKv(), { TESTFLIGHT_COMPLIMENTARY: "0" });
+  const now = Date.now();
+  const lifetime = iapLifetime({ environment: "Sandbox" });
+  assert.equal(acceptTransaction(env, lifetime, now), true);
+  assert.equal(entitlementFromTransaction(env, lifetime, now)?.productId, "info.zenbuy.app.lifetime");
+  const monthly = iapLifetime({
+    productId: "info.zenbuy.app.pro.monthly",
+    environment: "Sandbox",
+    expiresDate: now + 60_000,
+  });
+  assert.equal(entitlementFromTransaction(env, monthly, now)?.productId, "info.zenbuy.app.pro.monthly");
+});
+
+test("paused TestFlight grants keep existing TestFlight sessions unlocked", async () => {
+  const kv = fakeKv();
+  const subject = "txn:0:1000000123456789";
+  kv.store.set(`apple:session:${SESSION}`, subject);
+  kv.store.set(
+    `apple:entitlement:${subject}`,
+    JSON.stringify({
+      productId: TESTFLIGHT_PRODUCT_ID,
+      originalTransactionId: "0:1000000123456789",
+      expiresAt: null,
+      environment: "Sandbox",
+      updatedAt: Date.now(),
+    })
+  );
+  const request = new Request("https://zenbuy.info/api/research", {
+    headers: { authorization: `Bearer ${SESSION}`, "X-ZenBuy-Client": "tvos" },
+  });
+  const state = await resolveUnlock(request, purchaseEnv(kv, { TESTFLIGHT_COMPLIMENTARY: "0" }));
+  assert.equal(state.unlocked, true);
+  assert.equal(state.complimentary, true);
+});
+
+test("paused TestFlight grants leave the APPLE_ID_WHITELIST path alone", async () => {
+  const kv = fakeKv();
+  const env = purchaseEnv(kv, {
+    TESTFLIGHT_COMPLIMENTARY: "0",
+    APPLE_ID_WHITELIST: "friend@example.com",
+  });
+  assert.equal(await applyWhitelistGrant(env, { sub: SUB, email: "friend@example.com" }), true);
+  const state = await resolveUnlock(signedIn(kv), env);
+  assert.equal(state.unlocked, true);
+  assert.equal(state.complimentary, true);
+});
+
 test("a Production App Store download is never a TestFlight grant", () => {
   const env = purchaseEnv();
   assert.equal(isTestFlightAppTransaction(env, paidAppDownload()), false);
@@ -602,4 +676,16 @@ test("a StoreKit-only session earns the purchased allowance, not a complimentary
   assert.equal(state.unlocked, true);
   assert.equal(state.complimentary, false);
   assert.equal(state.sub, subject);
+});
+
+test("unlock-app with TestFlight grants paused answers 402 and stores nothing", async () => {
+  const kv = fakeKv();
+  const env = purchaseEnv(kv, { TESTFLIGHT_COMPLIMENTARY: "0" });
+  const response = await handleUnlockApp(
+    unlockAppRequest({ transactions: ["not.a.jws"] }),
+    env
+  );
+  assert.equal(response.status, 402);
+  assert.deepEqual(await response.json(), { error: "no active purchase" });
+  assert.equal(kv.store.size, 0);
 });
