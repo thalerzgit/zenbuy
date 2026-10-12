@@ -1037,17 +1037,17 @@ final class ZenBuyTests: XCTestCase {
     }
 
     @MainActor
-    func testPrepareSharePDFRefusesInvalidCachedFile() {
+    func testPrepareSharePDFRefusesInvalidCachedFile() async {
         let vm = ReportViewModel(api: ZenBuyAPIClient())
         vm.bottomLineHTML = "<h2>BOTTOM LINE</h2><p>Buy DIS.</p>"
         vm.bodyHTML = "<h2>FUNDAMENTALS</h2><p>Wide moat.</p>"
-        guard let payload = vm.prepareSharePDF(title: "DIS") else {
+        guard let payload = await vm.prepareSharePDF(title: "DIS") else {
             return XCTFail("Fixture report must export a real PDF")
         }
         XCTAssertTrue(ReportPDFValidation.isValidPDF(payload.data))
         try? Data().write(to: payload.url, options: .atomic)
         XCTAssertEqual((try? Data(contentsOf: payload.url))?.count, 0)
-        let recovered = vm.prepareSharePDF(title: "DIS")
+        let recovered = await vm.prepareSharePDF(title: "DIS")
         XCTAssertNotNil(recovered, "Empty cache must be discarded and rebuilt")
         XCTAssertTrue(ReportPDFValidation.isValidPDF(recovered!.data))
         XCTAssertGreaterThan(recovered!.data.count, 0)

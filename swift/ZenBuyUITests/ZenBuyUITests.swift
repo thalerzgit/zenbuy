@@ -38,4 +38,11 @@ final class ZenBuyUITests: XCTestCase {
         app.buttons["Continue"].tap()
         XCTAssertTrue(app.buttons["Find stocks for my goal"].waitForExistence(timeout: 8))
     }
+
+    /// Perf Phase 3: cold-launch regression guard (Xcode baseline per device).
+    func testLaunchPerformance() throws {
+        measure(metrics: [XCTApplicationLaunchMetric()]) {
+            XCUIApplication().launch()
+        }
+    }
 }

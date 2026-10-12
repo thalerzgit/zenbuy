@@ -9,6 +9,8 @@ struct ReportStreamView: View {
     /// Runs the peers in this same report view — never a Safari tab.
     var onRunSimilar: ([String], ReportMode) -> Void = { _, _ in }
     @State private var shareError: String?
+    /// Share PDF is built off main; ignore re-taps meanwhile (button looks the same).
+    @State private var isPreparingShare = false
 
     private var title: String { symbols.joined(separator: ", ") }
     /// Last parsed snapshot (built off main). Content below draws from it so
@@ -86,10 +88,16 @@ struct ReportStreamView: View {
 
     private func shareReport() {
         #if canImport(UIKit)
-        guard let payload = viewModel.prepareSharePDF(title: title),
-              ReportPDFSharePresenter.present(url: payload.url, data: payload.data) else {
-            shareError = ReportPDFValidation.shareFailedMessage
-            return
+        guard !isPreparingShare else { return }
+        isPreparingShare = true
+        let title = title
+        Task { @MainActor in
+            defer { isPreparingShare = false }
+            guard let payload = await viewModel.prepareSharePDF(title: title),
+                  ReportPDFSharePresenter.present(url: payload.url, data: payload.data) else {
+                shareError = ReportPDFValidation.shareFailedMessage
+                return
+            }
         }
         #else
         shareError = ReportPDFValidation.shareFailedMessage

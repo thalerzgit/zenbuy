@@ -164,8 +164,10 @@ final class ReportViewModel {
     private var resumeAttempts = 0
     private let maxResumeAttempts = 2
     private var abandoned = false
-    private var cachedShareKey = ""
-    private var cachedShareURL: URL?
+    @ObservationIgnored private var cachedShare: (key: ShareCacheKey, url: URL, data: Data)?
+    /// Bumped whenever `render` is replaced; keys the Share PDF cache instead of
+    /// concatenating every HTML fragment.
+    @ObservationIgnored private var renderVersion = 0
     private var lastReportId: String?
     private var sseTrace: [String] = []
     private var emptyContentRetries = 0
@@ -319,8 +321,7 @@ final class ReportViewModel {
         didFinishSuccessfully = false
         isStreaming = true
         lastFlush = .distantPast
-        cachedShareKey = ""
-        cachedShareURL = nil
+        cachedShare = nil
         lastReportId = nil
         sseTrace = []
         emptyContentRetries = 0
@@ -652,6 +653,7 @@ final class ReportViewModel {
 
     private func resetRender() {
         renderEpoch += 1
+        renderVersion += 1
         queuedRender = nil
         render = .empty
     }
@@ -682,6 +684,7 @@ final class ReportViewModel {
             // A new report (start/reset) since this parse began: drop it.
             if epoch == renderEpoch {
                 render = model
+                renderVersion += 1
             }
         }
         renderTask = nil
@@ -697,46 +700,60 @@ final class ReportViewModel {
     /// Local PDF for the system share sheet (Files / Messages / Mail / AirDrop).
     /// Returns `nil` when the renderer produced empty/invalid bytes — never a
     /// 0-byte `ZenBuy-*-report.pdf` for Print or Save to Files.
-    func sharePDFURL(title: String) -> URL? {
-        prepareSharePDF(title: title)?.url
+    func sharePDFURL(title: String) async -> URL? {
+        await prepareSharePDF(title: title)?.url
     }
 
-    func prepareSharePDF(title: String) -> (url: URL, data: Data)? {
+    /// Builds the Share PDF off the main thread from the already-parsed render
+    /// model (no re-parse), in one render pass, and keeps the bytes in memory
+    /// (written to the temp file once, never read back).
+    func prepareSharePDF(title: String) async -> (url: URL, data: Data)? {
         #if os(iOS)
         ReportVerboseLog.log("sharePDF attempt titleLen=\(title.count)")
-        let key = [
-            title,
-            scorecardHTML,
-            bottomLineHTML,
-            bodyHTML,
-            badges?.recommendation ?? "",
-            badges?.sentiment ?? "",
-            badges?.conviction ?? "",
-        ].joined(separator: "\u{1e}")
-        if key == cachedShareKey, let cached = cachedShareURL {
-            if let data = try? Data(contentsOf: cached),
-               ReportPDFValidation.isValidPDF(data) {
-                ReportVerboseLog.log("sharePDF cache hit bytes=\(data.count)")
-                return (cached, data)
-            }
-            ReportVerboseLog.log("sharePDF cache miss — cached file empty or missing")
-            cachedShareKey = ""
-            cachedShareURL = nil
+        await waitForRender()
+        let live = liveRenderInputs
+        let snapshot: ReportRenderModel?
+        if render.inputs == live {
+            snapshot = render
+        } else {
+            // Fragments set without a scheduled parse (tests / REST fill): parse now, off main.
+            snapshot = nil
         }
-        guard let url = ReportPDFExporter.makePDF(
-            title: title,
-            badges: badges,
-            scorecardHTML: scorecardHTML,
-            bottomLineHTML: bottomLineHTML,
-            bodyHTML: bodyHTML
-        ), let data = try? Data(contentsOf: url), ReportPDFValidation.isValidPDF(data) else {
+        let key = ShareCacheKey(title: title, renderVersion: snapshot == nil ? -1 : renderVersion, badges: badges)
+
+        if let cached = cachedShare, snapshot != nil, cached.key == key {
+            // Empty-PDF guard without reading the file back: the temp file must
+            // still hold exactly our validated bytes, else rewrite it.
+            let size = (try? FileManager.default.attributesOfItem(atPath: cached.url.path)[.size] as? NSNumber)?.intValue
+            if size == cached.data.count {
+                ReportVerboseLog.log("sharePDF cache hit bytes=\(cached.data.count)")
+                return (cached.url, cached.data)
+            }
+            ReportVerboseLog.log("sharePDF cache file empty or missing — rewriting")
+            if let url = ReportPDFExporter.write(cached.data, title: title) {
+                cachedShare = (key, url, cached.data)
+                return (url, cached.data)
+            }
+            cachedShare = nil
+        }
+
+        let badges = self.badges
+        let built = await Task.detached(priority: .userInitiated) { () -> (URL, Data)? in
+            let model = snapshot ?? ReportRenderModel.build(live)
+            guard let data = ReportPDFExporter.makePDFData(title: title, badges: badges, render: model),
+                  ReportPDFValidation.isValidPDF(data),
+                  let url = ReportPDFExporter.write(data, title: title) else {
+                return nil
+            }
+            return (url, data)
+        }.value
+        guard let built else {
             ReportVerboseLog.log("sharePDF failed — exporter returned nil or empty PDF")
-            cachedShareKey = ""
-            cachedShareURL = nil
+            cachedShare = nil
             return nil
         }
-        cachedShareKey = key
-        cachedShareURL = url
+        let (url, data) = built
+        cachedShare = snapshot == nil ? nil : (key, url, data)
         ReportVerboseLog.log("sharePDF ok bytes=\(data.count)")
         return (url, data)
         #else
@@ -763,4 +780,10 @@ final class ReportViewModel {
         backgroundTask = .invalid
         #endif
     }
+}
+
+struct ShareCacheKey: Equatable {
+    let title: String
+    let renderVersion: Int
+    let badges: ReportBadges?
 }

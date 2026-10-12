@@ -52,7 +52,13 @@ enum ReportPDFExporter {
             bottomLineHTML: bottomLineHTML,
             bodyHTML: bodyHTML
         ) else { return nil }
+        return write(data, title: title)
+    }
 
+    /// Writes already-validated PDF bytes to the share temp file (once; callers
+    /// keep `data` in memory, so nothing is read back).
+    static func write(_ data: Data, title: String) -> URL? {
+        guard ReportPDFValidation.isValidPDF(data) else { return nil }
         let filename = ReportPDFValidation.filename(forTitle: title)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
@@ -76,11 +82,39 @@ enum ReportPDFExporter {
         bodyHTML: String
     ) -> Data? {
         let hasScorecard = !scorecardHTML.isEmpty
-        let scoreRows = parseScoreRows(from: scorecardHTML)
         let bottom = ReportHTML.parseProgressive(bottomLineHTML, hasScorecard: hasScorecard)
         let body = ReportHTML.parseProgressive(bodyHTML, hasScorecard: hasScorecard)
-        let bottomSections = ReportHTML.sections(from: bottom.nodes, hasScorecard: hasScorecard)
-        let bodySections = ReportHTML.sections(from: body.nodes, hasScorecard: hasScorecard)
+        return makePDFData(
+            title: title,
+            badges: badges,
+            scoreRows: scoreRows(from: ReportHTML.parse(scorecardHTML)),
+            bottomSections: ReportHTML.sections(from: bottom.nodes, hasScorecard: hasScorecard),
+            bodySections: ReportHTML.sections(from: body.nodes, hasScorecard: hasScorecard)
+        )
+    }
+
+    /// Same PDF from an already-parsed `ReportRenderModel` — no re-parse.
+    static func makePDFData(title: String, badges: ReportBadges?, render: ReportRenderModel) -> Data? {
+        makePDFData(
+            title: title,
+            badges: badges,
+            scoreRows: scoreRows(from: render.scoreNodes),
+            bottomSections: sections(of: render.bottomLine),
+            bodySections: sections(of: render.body)
+        )
+    }
+
+    /// Safe off the main thread (UIGraphicsPDFRenderer + NSAttributedString
+    /// drawing; palette colors are static, not trait-dynamic).
+    static func makePDFData(
+        title: String,
+        badges: ReportBadges?,
+        scoreRows: [ReportHTMLNode.ScoreRow],
+        bottomSections: [ReportSection],
+        bodySections: [ReportSection]
+    ) -> Data? {
+        let signpost = PerfSignpost.begin("report.pdf")
+        defer { PerfSignpost.end(signpost) }
         let pills = badgePills(badges)
 
         let bounds = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
@@ -90,18 +124,17 @@ enum ReportPDFExporter {
             kCGPDFContextCreator as String: "ZenBuy",
         ]
 
-        // Fresh renderer per pass so a failed probe cannot poison the final PDF.
-        let probe = renderPDF(
+        // Page count for "Page X of Y" from a layout-only pass into a 1×1
+        // scratch bitmap (layout does not depend on the context), instead of a
+        // full probe PDF render + CGPDFDocument read-back.
+        let totalPages = layoutPageCount(
             bounds: bounds,
-            format: format,
-            totalPages: nil,
             title: title,
             pills: pills,
             scoreRows: scoreRows,
             bottomSections: bottomSections,
             bodySections: bodySections
         )
-        let totalPages = pageCount(of: probe)
         let data = renderPDF(
             bounds: bounds,
             format: format,
@@ -114,6 +147,39 @@ enum ReportPDFExporter {
         )
         guard ReportPDFValidation.isValidPDF(data) else { return nil }
         return data
+    }
+
+    private static func sections(of fragment: ReportFragmentModel) -> [ReportSection] {
+        if case let .sections(keyed, _) = fragment {
+            return keyed.map(\.section)
+        }
+        return []
+    }
+
+    private static func layoutPageCount(
+        bounds: CGRect,
+        title: String,
+        pills: [ReportPDFPill],
+        scoreRows: [ReportHTMLNode.ScoreRow],
+        bottomSections: [ReportSection],
+        bodySections: [ReportSection]
+    ) -> Int? {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        var pages = 0
+        _ = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { _ in
+            pages = render(
+                context: nil,
+                bounds: bounds,
+                totalPages: nil,
+                title: title,
+                pills: pills,
+                scoreRows: scoreRows,
+                bottomSections: bottomSections,
+                bodySections: bodySections
+            )
+        }
+        return pages > 0 ? pages : nil
     }
 
     private static func renderPDF(
@@ -143,8 +209,9 @@ enum ReportPDFExporter {
 
     // MARK: - Page composition
 
+    @discardableResult
     private static func render(
-        context: UIGraphicsPDFRendererContext,
+        context: UIGraphicsPDFRendererContext?,
         bounds: CGRect,
         totalPages: Int?,
         title: String,
@@ -152,7 +219,7 @@ enum ReportPDFExporter {
         scoreRows: [ReportHTMLNode.ScoreRow],
         bottomSections: [ReportSection],
         bodySections: [ReportSection]
-    ) {
+    ) -> Int {
         let canvas = ReportPDFCanvas(
             context: context,
             bounds: bounds,
@@ -203,6 +270,7 @@ enum ReportPDFExporter {
         drawSections(bottomSections, canvas: canvas)
         canvas.clearFloat()
         drawSections(bodySections, canvas: canvas)
+        return canvas.pageCount
     }
 
     private static func drawSections(_ sections: [ReportSection], canvas: ReportPDFCanvas) {
@@ -331,19 +399,13 @@ enum ReportPDFExporter {
         return ReportPDFPill(text: text, background: Palette.greenLight, foreground: Palette.greenDark)
     }
 
-    private static func parseScoreRows(from html: String) -> [ReportHTMLNode.ScoreRow] {
-        for node in ReportHTML.parse(html) {
+    private static func scoreRows(from nodes: [ReportHTMLNode]) -> [ReportHTMLNode.ScoreRow] {
+        for node in nodes {
             if case let .scorecard(rows) = node {
                 return rows
             }
         }
         return []
-    }
-
-    private static func pageCount(of data: Data) -> Int? {
-        guard let provider = CGDataProvider(data: data as CFData),
-              let document = CGPDFDocument(provider) else { return nil }
-        return document.numberOfPages > 0 ? document.numberOfPages : nil
     }
 }
 
@@ -432,7 +494,8 @@ private struct ReportPDFPill {
 /// Cursor-based drawing over a `UIGraphicsPDFRendererContext`: keeps the running
 /// `y`, page breaks, the right-hand scorecard float and the page footer.
 private final class ReportPDFCanvas {
-    private let context: UIGraphicsPDFRendererContext
+    /// `nil` = layout-only pass (page counting); drawing goes to a scratch context.
+    private let context: UIGraphicsPDFRendererContext?
     private let bounds: CGRect
     private let inset: CGFloat
     private let totalPages: Int?
@@ -444,7 +507,7 @@ private final class ReportPDFCanvas {
     var y: CGFloat = 0
 
     init(
-        context: UIGraphicsPDFRendererContext,
+        context: UIGraphicsPDFRendererContext?,
         bounds: CGRect,
         inset: CGFloat,
         totalPages: Int?
@@ -461,8 +524,10 @@ private final class ReportPDFCanvas {
     /// Narrower while content flows beside the floated scorecard.
     var currentWidth: CGFloat { y < floatBottom ? floatWidth : fullWidth }
 
+    var pageCount: Int { pageIndex }
+
     func beginPage() {
-        context.beginPage()
+        context?.beginPage()
         pageIndex += 1
         y = inset
         floatBottom = 0
