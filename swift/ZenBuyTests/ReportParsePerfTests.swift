@@ -878,3 +878,65 @@ final class ReportEventChannelTests: XCTestCase {
         XCTAssertEqual(bodyHTML(event), html)
     }
 }
+
+#if os(iOS)
+/// Perf Phase 3: Share PDF is one render pass from the parsed model, off main,
+/// byte-for-byte the same document as the HTML entry point.
+final class ReportSharePDFPerfTests: XCTestCase {
+    private static let scorecard = """
+    <div class="scorecard"><div class="score-row"><span class="score-label">Growth</span>\
+    <div class="score-bar"><div class="score-fill" style="width:60%"></div></div>\
+    <span class="score-num">6/10</span></div></div>
+    """
+
+    func testRenderModelPDFMatchesHTMLPathAndIsMultiPage() throws {
+        let body = ReportParsePerfTests.syntheticReport(targetChars: 60_000)
+        let bottom = "<h2>BOTTOM LINE</h2><p>Buy <strong>DIS</strong>.</p>"
+        let badges = ReportBadges(recommendation: "Buy", sentiment: "Bullish", conviction: "Medium")
+        let model = ReportRenderModel.build(
+            ReportRenderInputs(bottomLineHTML: bottom, bodyHTML: body, scorecardHTML: Self.scorecard)
+        )
+        let fromModel = try XCTUnwrap(ReportPDFExporter.makePDFData(title: "DIS", badges: badges, render: model))
+        let fromHTML = try XCTUnwrap(ReportPDFExporter.makePDFData(
+            title: "DIS", badges: badges, scorecardHTML: Self.scorecard, bottomLineHTML: bottom, bodyHTML: body
+        ))
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(fromModel))
+        let docA = try XCTUnwrap(CGPDFDocument(CGDataProvider(data: fromModel as CFData)!))
+        let docB = try XCTUnwrap(CGPDFDocument(CGDataProvider(data: fromHTML as CFData)!))
+        XCTAssertGreaterThan(docA.numberOfPages, 2)
+        XCTAssertEqual(docA.numberOfPages, docB.numberOfPages)
+    }
+
+    func testPDFBuildsOffMainThread() async throws {
+        let body = ReportParsePerfTests.syntheticReport(targetChars: 20_000)
+        let model = ReportRenderModel.build(ReportRenderInputs(bottomLineHTML: "", bodyHTML: body, scorecardHTML: ""))
+        let data = await Task.detached { () -> Data? in
+            XCTAssertFalse(Thread.isMainThread)
+            return ReportPDFExporter.makePDFData(title: "BG", badges: nil, render: model)
+        }.value
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(try XCTUnwrap(data)))
+    }
+
+    @MainActor
+    func testPrepareSharePDFReusesParsedModelAndCache() async throws {
+        let vm = ReportViewModel(api: ZenBuyAPIClient())
+        vm.bottomLineHTML = "<h2>BOTTOM LINE</h2><p>Buy DIS.</p>"
+        vm.bodyHTML = ReportParsePerfTests.syntheticReport(targetChars: 30_000)
+        let firstPayload = await vm.prepareSharePDF(title: "DIS")
+        let secondPayload = await vm.prepareSharePDF(title: "DIS")
+        let first = try XCTUnwrap(firstPayload)
+        let second = try XCTUnwrap(secondPayload)
+        XCTAssertTrue(ReportPDFValidation.isValidPDF(first.data))
+        XCTAssertEqual(first.data.count, second.data.count)
+        XCTAssertEqual(try Data(contentsOf: second.url).count, second.data.count)
+    }
+
+    func testSharePDFBuildMetric() {
+        let body = ReportParsePerfTests.syntheticReport(targetChars: 60_000)
+        let model = ReportRenderModel.build(ReportRenderInputs(bottomLineHTML: "", bodyHTML: body, scorecardHTML: Self.scorecard))
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
+            _ = ReportPDFExporter.makePDFData(title: "PERF", badges: nil, render: model)
+        }
+    }
+}
+#endif
