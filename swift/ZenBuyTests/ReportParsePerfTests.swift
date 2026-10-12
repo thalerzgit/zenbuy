@@ -756,13 +756,17 @@ enum LegacyReportHTML {
     }
 
     private static func attribute(_ openTagAndRest: String, name: String) -> String? {
-        guard let start = openTagAndRest.range(of: "\(name)=\"") ?? openTagAndRest.range(of: "\(name)='") else {
-            return nil
+        // Only look inside the opening tag so a later tag's attribute is never picked up.
+        let openTag = openTagAndRest.firstIndex(of: ">").map { openTagAndRest[..<$0] }
+            ?? Substring(openTagAndRest)
+        for quote in ["\"", "'"] {
+            guard let start = openTag.range(of: "\(name)=\(quote)") else { continue }
+            // `start.upperBound` is already past the opening quote; value runs to the closing one.
+            let value = openTag[start.upperBound...]
+            guard let end = value.range(of: quote) else { return nil }
+            return String(value[..<end.lowerBound])
         }
-        let quote = openTagAndRest[start.upperBound]
-        let after = openTagAndRest[start.upperBound...]
-        guard let end = after.dropFirst().firstIndex(of: quote) else { return nil }
-        return String(after.dropFirst().prefix(upTo: end))
+        return nil
     }
 
     private static func capture(_ text: String, start: String, end: String) -> String? {
