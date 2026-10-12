@@ -270,7 +270,9 @@ enum ReportHTML {
                     break
                 }
             } else if remaining.hasPrefix("<a") {
-                let href = attribute(remaining, name: "href") ?? ""
+                // String copy keeps Foundation `range(of:)` indices valid
+                // (Substring + range(of:) mis-maps offsets). Paragraph-sized only.
+                let href = attribute(String(remaining), name: "href") ?? ""
                 if let inner = consumeTag(&remaining, name: "a") {
                     let label = plainText(String(inner))
                     if !label.isEmpty {
@@ -679,7 +681,7 @@ enum ReportHTML {
         return found
     }
 
-    private static func attribute(_ openTagAndRest: Substring, name: String) -> String? {
+    private static func attribute(_ openTagAndRest: String, name: String) -> String? {
         guard let start = openTagAndRest.range(of: "\(name)=\"") ?? openTagAndRest.range(of: "\(name)='") else {
             return nil
         }

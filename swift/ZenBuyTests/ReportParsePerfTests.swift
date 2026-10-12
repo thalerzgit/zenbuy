@@ -92,6 +92,8 @@ final class ReportParsePerfTests: XCTestCase {
                 "<div class=\"score-row\"><span class=\"score-label\">Growth</span>" +
                 "<span style=\"width: 70%\"></span><span class=\"score-num\">7/10</span></div></div>",
             "<ul>\n <li>one</li>\n</ul>\n\u{00A0}<p>nbsp lead</p>", "<p/>after self-close", "<ul\n",
+            "<p>Buy <strong>AAPL</strong> via <a class=\"src-link\" href=\"https://example.com\">Yahoo</a>.</p>",
+            "<ul><li>lead text <a href='https://www.sec.gov/x'>SEC</a> tail</li></ul>",
         ]
         for html in cases {
             assertGolden(html)
