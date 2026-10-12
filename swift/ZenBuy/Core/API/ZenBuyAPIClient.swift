@@ -267,74 +267,87 @@ final class ZenBuyAPIClient {
         return payload
     }
 
+    /// SSE report stream. Headers and body are built on the main actor (they
+    /// read main-actor token providers); the network read, SSE framing and JSON
+    /// decoding of every event (~675K chars of full-body HTML per report) run in a
+    /// detached task off the main actor. Unconsumed adjacent `body` events
+    /// collapse to the newest (each one is the full body), so a slow consumer
+    /// only ever sees the latest body. Cancelling the consuming task cancels the
+    /// network task, as before.
     func streamResearch(
         symbols: [String],
         mode: ReportMode,
         directive: String = "growth",
         profitHorizonYears: Int? = nil
     ) -> AsyncThrowingStream<ReportStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    let url = ZenBuyEnvironment.apiBaseURL.appending(path: "api/research")
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    request.timeoutInterval = 300
-                    applyClientHeaders(to: &request)
+        let channel = ReportEventChannel()
+        let prepared: Result<URLRequest, Error> = Result {
+            let url = ZenBuyEnvironment.apiBaseURL.appending(path: "api/research")
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.timeoutInterval = 300
+            applyClientHeaders(to: &request)
 
-                    let body = ResearchRequest(
-                        symbols: symbols,
-                        mode: mode,
-                        directive: directive,
-                        profitHorizonYears: profitHorizonYears
-                    )
-                    request.httpBody = try encoder.encode(body)
+            let body = ResearchRequest(
+                symbols: symbols,
+                mode: mode,
+                directive: directive,
+                profitHorizonYears: profitHorizonYears
+            )
+            request.httpBody = try encoder.encode(body)
+            return request
+        }
+        let researchSession = researchSession
 
-                    let (bytes, response) = try await researchSession.bytes(for: request)
-                    guard let http = response as? HTTPURLResponse else {
-                        throw ZenBuyAPIError.transport(URLError(.badServerResponse))
-                    }
-
-                    if http.statusCode != 200 {
-                        var data = Data()
-                        for try await chunk in bytes {
-                            data.append(chunk)
-                        }
-                        let payload = try? decoder.decode(APIErrorResponse.self, from: data)
-                        if http.statusCode == 429 {
-                            throw ZenBuyAPIError.quota(
-                                code: payload?.code,
-                                message: payload?.error
-                            )
-                        }
-                        throw ZenBuyAPIError.http(status: http.statusCode, message: payload?.error)
-                    }
-
-                    let reader = SSEStreamReader(bytes: bytes)
-                    for try await event in reader.events() {
-                        let parsed = ReportStreamEvent(sseEvent: event)
-                        // Yield first. Finish only after `done` — never drop
-                        // already-yielded sticky/body because companies is long.
-                        continuation.yield(parsed)
-                        if ReportSSEClientPolicy.shouldFinish(afterYielding: parsed) {
-                            continuation.finish()
-                            return
-                        }
-                    }
-                    continuation.finish()
-                } catch let error as ZenBuyAPIError {
-                    continuation.finish(throwing: error)
-                } catch {
-                    continuation.finish(throwing: ZenBuyAPIError.transport(error))
+        let task = Task.detached(priority: .userInitiated) { [weak channel] in
+            do {
+                let request = try prepared.get()
+                let (bytes, response) = try await researchSession.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw ZenBuyAPIError.transport(URLError(.badServerResponse))
                 }
-            }
 
-            continuation.onTermination = { _ in
-                task.cancel()
+                if http.statusCode != 200 {
+                    var data = Data()
+                    for try await chunk in bytes {
+                        data.append(chunk)
+                    }
+                    let payload = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
+                    if http.statusCode == 429 {
+                        throw ZenBuyAPIError.quota(
+                            code: payload?.code,
+                            message: payload?.error
+                        )
+                    }
+                    throw ZenBuyAPIError.http(status: http.statusCode, message: payload?.error)
+                }
+
+                let reader = SSEStreamReader(bytes: bytes)
+                for try await event in reader.events() {
+                    let parsed = ReportStreamEvent(sseEvent: event)
+                    guard let channel else { return }
+                    // Yield first. Finish only after `done` — never drop
+                    // already-yielded sticky/body because companies is long.
+                    channel.send(parsed)
+                    if ReportSSEClientPolicy.shouldFinish(afterYielding: parsed) {
+                        channel.finish()
+                        return
+                    }
+                }
+                channel?.finish()
+            } catch let error as ZenBuyAPIError {
+                channel?.finish(throwing: error)
+            } catch {
+                channel?.finish(throwing: ZenBuyAPIError.transport(error))
             }
         }
+        channel.producer = task
+
+        return AsyncThrowingStream(unfolding: {
+            try await channel.next()
+        })
     }
 
     private func get<T: Decodable>(_ url: URL) async throws -> T {
@@ -359,5 +372,127 @@ final class ZenBuyAPIClient {
         } catch {
             throw ZenBuyAPIError.transport(error)
         }
+    }
+}
+
+/// Ordered hand-off of decoded report events from the network task to the
+/// consumer. A new `body` replaces an unconsumed `body` at the tail of the queue
+/// (latest wins; Worker bodies are full snapshots), so ordering relative to
+/// sticky / done / error is preserved. Consumer cancellation, or the stream
+/// being released, cancels the network task.
+final class ReportEventChannel: @unchecked Sendable {
+    private let lock = NSLock()
+    private var queue: [ReportStreamEvent] = []
+    private var head = 0
+    private var finished = false
+    private var failure: Error?
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var cancelled = false
+    private var _producer: Task<Void, Never>?
+    private var _coalesced = 0
+
+    var producer: Task<Void, Never>? {
+        get { lock.withLock { _producer } }
+        set {
+            let cancelNow = lock.withLock { () -> Bool in
+                _producer = newValue
+                return cancelled
+            }
+            if cancelNow { newValue?.cancel() }
+        }
+    }
+
+    /// Bodies dropped because a newer one arrived before the consumer read them.
+    var coalescedBodies: Int { lock.withLock { _coalesced } }
+
+    deinit {
+        _producer?.cancel()
+    }
+
+    func send(_ event: ReportStreamEvent) {
+        let resume = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard !finished else { return nil }
+            if event.isBody, queue.count > head, queue[queue.count - 1].isBody {
+                queue[queue.count - 1] = event
+                _coalesced += 1
+            } else {
+                queue.append(event)
+            }
+            defer { waiter = nil }
+            return waiter
+        }
+        resume?.resume()
+    }
+
+    func finish(throwing error: Error? = nil) {
+        let resume = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            if !finished {
+                finished = true
+                failure = error
+            }
+            defer { waiter = nil }
+            return waiter
+        }
+        resume?.resume()
+    }
+
+    /// Next event in order; `nil` at the end of the stream or when the consuming
+    /// task is cancelled (same contract as the previous AsyncThrowingStream).
+    func next() async throws -> ReportStreamEvent? {
+        while true {
+            if Task.isCancelled {
+                cancel()
+                return nil
+            }
+            enum Step { case event(ReportStreamEvent), end, fail(Error), wait }
+            let step = lock.withLock { () -> Step in
+                if cancelled { return .end }
+                if head < queue.count {
+                    let event = queue[head]
+                    head += 1
+                    if head > 64, head * 2 > queue.count {
+                        queue.removeFirst(head)
+                        head = 0
+                    }
+                    return .event(event)
+                }
+                if finished {
+                    if let failure {
+                        self.failure = nil
+                        return .fail(failure)
+                    }
+                    return .end
+                }
+                return .wait
+            }
+            switch step {
+            case let .event(event): return event
+            case .end: return nil
+            case let .fail(error): throw error
+            case .wait:
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                        let resumeNow = lock.withLock { () -> Bool in
+                            if head < queue.count || finished || cancelled { return true }
+                            waiter = continuation
+                            return false
+                        }
+                        if resumeNow { continuation.resume() }
+                    }
+                } onCancel: {
+                    self.cancel()
+                }
+            }
+        }
+    }
+
+    private func cancel() {
+        let (task, resume) = lock.withLock { () -> (Task<Void, Never>?, CheckedContinuation<Void, Never>?) in
+            cancelled = true
+            defer { waiter = nil }
+            return (_producer, waiter)
+        }
+        task?.cancel()
+        resume?.resume()
     }
 }

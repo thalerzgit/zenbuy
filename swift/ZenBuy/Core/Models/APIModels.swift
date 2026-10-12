@@ -64,6 +64,13 @@ enum ReportStreamEvent: Sendable {
     case error(message: String)
     case skipped(name: String, dataLength: Int)
 
+    /// Full-body snapshot; a newer one supersedes an unconsumed older one.
+    var isBody: Bool {
+        if case .body = self { return true }
+        return false
+    }
+
+    /// Pure, nonisolated decode — called on the SSE network task, never on main.
     init(sseEvent: SSEEvent) {
         let name = sseEvent.name
         let dataLength = sseEvent.data.utf8.count
