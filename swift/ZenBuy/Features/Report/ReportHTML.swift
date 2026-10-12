@@ -347,7 +347,11 @@ enum ReportHTML {
         text.contains("Â") || text.contains("Ã") || text.contains("â€") || text.contains("â†")
     }
 
+    private static let numericEntityRegex = try? NSRegularExpression(pattern: #"&#(x[0-9a-fA-F]+|\d+);"#)
+
     private static func decodeEntities(_ text: String) -> String {
+        // Every entity starts with "&" — skip 15 replace passes + regex otherwise.
+        guard text.contains("&") else { return text }
         var s = text
         let named: [(String, String)] = [
             ("&nbsp;", " "),
@@ -371,8 +375,7 @@ enum ReportHTML {
         }
 
         // Numeric: &#123; and &#x1F; / &#X1f;
-        let pattern = #"&#(x[0-9a-fA-F]+|\d+);"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return s }
+        guard let regex = numericEntityRegex else { return s }
         let ns = s as NSString
         let matches = regex.matches(in: s, range: NSRange(location: 0, length: ns.length))
         var rebuilt = s
