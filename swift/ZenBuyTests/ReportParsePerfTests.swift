@@ -922,8 +922,10 @@ final class ReportSharePDFPerfTests: XCTestCase {
         let vm = ReportViewModel(api: ZenBuyAPIClient())
         vm.bottomLineHTML = "<h2>BOTTOM LINE</h2><p>Buy DIS.</p>"
         vm.bodyHTML = ReportParsePerfTests.syntheticReport(targetChars: 30_000)
-        let first = try XCTUnwrap(await vm.prepareSharePDF(title: "DIS"))
-        let second = try XCTUnwrap(await vm.prepareSharePDF(title: "DIS"))
+        let firstPayload = await vm.prepareSharePDF(title: "DIS")
+        let secondPayload = await vm.prepareSharePDF(title: "DIS")
+        let first = try XCTUnwrap(firstPayload)
+        let second = try XCTUnwrap(secondPayload)
         XCTAssertTrue(ReportPDFValidation.isValidPDF(first.data))
         XCTAssertEqual(first.data.count, second.data.count)
         XCTAssertEqual(try Data(contentsOf: second.url).count, second.data.count)
