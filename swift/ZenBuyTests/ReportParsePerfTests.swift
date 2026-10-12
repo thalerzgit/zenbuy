@@ -818,10 +818,12 @@ final class ReportEventChannelTests: XCTestCase {
     func testDoesNotCoalesceAlreadyConsumedBody() async throws {
         let channel = ReportEventChannel()
         channel.send(.body(html: "a"))
-        XCTAssertEqual(bodyHTML(try await channel.next()), "a")
+        let first = try await channel.next()
+        XCTAssertEqual(bodyHTML(first), "a")
         channel.send(.body(html: "b"))
         channel.finish()
-        XCTAssertEqual(bodyHTML(try await channel.next()), "b")
+        let second = try await channel.next()
+        XCTAssertEqual(bodyHTML(second), "b")
         let end = try await channel.next()
         XCTAssertNil(end)
     }
@@ -830,7 +832,8 @@ final class ReportEventChannelTests: XCTestCase {
         let channel = ReportEventChannel()
         channel.send(.body(html: "x"))
         channel.finish(throwing: ZenBuyAPIError.http(status: 500, message: "boom"))
-        XCTAssertEqual(bodyHTML(try await channel.next()), "x")
+        let queued = try await channel.next()
+        XCTAssertEqual(bodyHTML(queued), "x")
         do {
             _ = try await channel.next()
             XCTFail("expected error")
@@ -844,7 +847,8 @@ final class ReportEventChannelTests: XCTestCase {
         let reader = Task { try await channel.next() }
         try await Task.sleep(for: .milliseconds(50))
         channel.send(.body(html: "late"))
-        XCTAssertEqual(bodyHTML(try await reader.value), "late")
+        let woken = try await reader.value
+        XCTAssertEqual(bodyHTML(woken), "late")
     }
 
     func testCancellingConsumerEndsStreamAndCancelsProducer() async throws {
