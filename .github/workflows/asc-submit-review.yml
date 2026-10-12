@@ -51,7 +51,7 @@ jobs:
           ASC_WHATS_NEW: Email PDF no longer loops the Previously-Used Emails sheet on Apple TV. Pick or type an address once, then Send PDF.
         run: |
           set -euo pipefail
-          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          MARKETING="$(awk '$1=="MARKETING_VERSION[sdk=appletvos*]"{v=$3} $1=="MARKETING_VERSION"&&v==""{d=$3} END{print (v!=""?v:d)}' swift/Config/Shared.xcconfig)"
           export ASC_MARKETING_VERSION="${MARKETING}"
           echo "ASC API submit: marketing ${MARKETING} Dist tvOS build ${TVOS_BUILD_NUMBER:-latest VALID}."
           node tools/asc-tvos.mjs submit-review
@@ -80,7 +80,7 @@ jobs:
           ASC_WHATS_NEW: Shared report-email handling used by Apple TV Email PDF. iPhone share-sheet mailing is unchanged.
         run: |
           set -euo pipefail
-          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          MARKETING="$(awk '$1=="MARKETING_VERSION"{print $3}' swift/Config/Shared.xcconfig)"
           export ASC_MARKETING_VERSION="${MARKETING}"
           echo "ASC API submit: marketing ${MARKETING} Dist iOS build ${IOS_BUILD_NUMBER:-latest VALID}."
           node tools/asc-ios.mjs submit-review

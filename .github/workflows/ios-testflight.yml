@@ -455,7 +455,7 @@ jobs:
           ASC_WHATS_NEW: Shared report-email handling used by Apple TV Email PDF. iPhone share-sheet mailing is unchanged.
         run: |
           set -euo pipefail
-          MARKETING="$(awk '/^MARKETING_VERSION/{print $3}' swift/Config/Shared.xcconfig)"
+          MARKETING="$(awk '$1=="MARKETING_VERSION"{print $3}' swift/Config/Shared.xcconfig)"
           export ASC_MARKETING_VERSION="${MARKETING}"
           echo "ASC API submit: marketing ${MARKETING} Dist build ${IOS_BUILD_NUMBER}."
           echo "No signing on this job (Dist upload already finished)."
