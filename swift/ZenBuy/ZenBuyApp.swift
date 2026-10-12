@@ -8,6 +8,7 @@ struct ZenBuyApp: App {
     @State private var searchViewModel: SearchViewModel
 
     init() {
+        PerfMetrics.shared.start()
         let unlock = WebUnlockService()
         let store = ZenBuyStore()
         // A linked purchase earns the unlocked daily allowance in the app too,

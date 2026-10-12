@@ -11,18 +11,17 @@ struct ReportStreamView: View {
     @State private var shareError: String?
 
     private var title: String { symbols.joined(separator: ", ") }
-    private var hasScorecard: Bool { !viewModel.scorecardHTML.isEmpty }
+    /// Last parsed snapshot (built off main). Content below draws from it so
+    /// `body` never runs the HTML parser.
+    private var render: ReportRenderModel { viewModel.render }
+    private var hasScorecard: Bool { render.hasScorecard }
     private var canShare: Bool {
-        !viewModel.bottomLineHTML.isEmpty || !viewModel.bodyHTML.isEmpty || hasScorecard
+        !viewModel.bottomLineHTML.isEmpty || !viewModel.bodyHTML.isEmpty || !viewModel.scorecardHTML.isEmpty
     }
 
     /// Non-empty parsed sections / scorecard rows — not merely non-empty HTML strings.
     private var hasVisibleReportContent: Bool {
-        ReportHTML.hasVisibleContent(
-            bottomLineHTML: viewModel.bottomLineHTML,
-            bodyHTML: viewModel.bodyHTML,
-            scorecardHTML: viewModel.scorecardHTML
-        )
+        render.hasVisibleContent
     }
 
     private var shareErrorPresented: Binding<Bool> {
@@ -113,18 +112,16 @@ struct ReportStreamView: View {
                     scorecardBlock
                 }
 
-                if !viewModel.bottomLineHTML.isEmpty {
+                if !render.inputs.bottomLineHTML.isEmpty {
                     ReportHTMLView(
-                        html: viewModel.bottomLineHTML,
-                        hasScorecard: hasScorecard,
-                        showWritingIndicator: viewModel.isStreaming && viewModel.bodyHTML.isEmpty
+                        model: render.bottomLine,
+                        showWritingIndicator: viewModel.isStreaming && render.inputs.bodyHTML.isEmpty
                     )
                 }
 
-                if !viewModel.bodyHTML.isEmpty {
+                if !render.inputs.bodyHTML.isEmpty {
                     ReportHTMLView(
-                        html: viewModel.bodyHTML,
-                        hasScorecard: hasScorecard,
+                        model: render.body,
                         showWritingIndicator: viewModel.isStreaming
                     )
                 }
@@ -151,8 +148,8 @@ struct ReportStreamView: View {
                 if !shouldShowProcessingPanel,
                    !hasVisibleReportContent,
                    viewModel.errorMessage == nil,
-                   viewModel.bottomLineHTML.isEmpty,
-                   viewModel.bodyHTML.isEmpty,
+                   render.inputs.bottomLineHTML.isEmpty,
+                   render.inputs.bodyHTML.isEmpty,
                    !hasScorecard {
                     Text("Receiving report…")
                         .font(.body)
@@ -174,14 +171,14 @@ struct ReportStreamView: View {
 
     @ViewBuilder
     private var scorecardBlock: some View {
-        let scoreNodes = ReportHTML.parse(viewModel.scorecardHTML)
+        let scoreNodes = render.scoreNodes
         if scoreNodes.isEmpty {
             Text("Receiving scorecard…")
                 .font(.footnote)
                 .foregroundStyle(ZenBuyTheme.muted)
         } else {
-            ForEach(Array(scoreNodes.enumerated()), id: \.offset) { _, node in
-                if case let .scorecard(rows) = node {
+            ForEach(scoreNodes.indices, id: \.self) { index in
+                if case let .scorecard(rows) = scoreNodes[index] {
                     ScorecardView(rows: rows)
                 }
             }

@@ -151,6 +151,9 @@ final class ReportViewModel {
     private(set) var similarError: String?
     private(set) var activeRequest: ReportRequest?
     let processing = ProcessingProgress()
+    /// Parsed snapshot of the three HTML fragments, rebuilt off the main thread
+    /// (latest-wins) whenever they change. Views draw this, never the parser.
+    private(set) var render = ReportRenderModel.empty
 
     private let api: ZenBuyAPIClient
     private var streamTask: Task<Void, Never>?
@@ -166,6 +169,9 @@ final class ReportViewModel {
     private var lastReportId: String?
     private var sseTrace: [String] = []
     private var emptyContentRetries = 0
+    @ObservationIgnored private var queuedRender: ReportRenderInputs?
+    @ObservationIgnored private var renderTask: Task<Void, Never>?
+    @ObservationIgnored private var renderEpoch = 0
     private let maxEmptyContentRetries = 1
     #if os(iOS)
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -305,6 +311,7 @@ final class ReportViewModel {
         bodyHTML = ""
         scorecardHTML = ""
         pendingBody = ""
+        resetRender()
         badges = nil
         errorMessage = nil
         warningMessage = nil
@@ -375,13 +382,11 @@ final class ReportViewModel {
                     bottomLineHTML = bottomLineHtml
                     self.badges = badges
                     scorecardHTML = scorecardHtml ?? ""
-                    let visible = ReportHTML.hasVisibleContent(
-                        bottomLineHTML: bottomLineHTML,
-                        bodyHTML: bodyHTML,
-                        scorecardHTML: scorecardHTML
-                    )
+                    scheduleRender()
+                    PerfSignpost.event("report.firstSticky")
+                    // Parse only when verbose logging is on (autoclosure) — never per event on main.
                     ReportVerboseLog.log(
-                        "sse sticky \(ReportVerboseLog.htmlPreview(bottomLineHtml)) scorecardLen=\(scorecardHTML.count) visible=\(visible) processingVisible=\(processing.isVisible)"
+                        "sse sticky \(ReportVerboseLog.htmlPreview(bottomLineHtml)) scorecardLen=\(self.scorecardHTML.count) visible=\(ReportHTML.hasVisibleContent(bottomLineHTML: self.bottomLineHTML, bodyHTML: self.bodyHTML, scorecardHTML: self.scorecardHTML)) processingVisible=\(self.processing.isVisible)"
                     )
                 case let .body(html):
                     recordTrace("body:\(html.count)")
@@ -550,6 +555,7 @@ final class ReportViewModel {
         if let html = payload.scorecardHtml, !html.isEmpty {
             scorecardHTML = html
         }
+        scheduleRender()
         if let badges = payload.badges {
             self.badges = badges
         }
@@ -584,6 +590,7 @@ final class ReportViewModel {
         if scorecardHTML.isEmpty, let scorecardHtml, !scorecardHtml.isEmpty {
             scorecardHTML = scorecardHtml
         }
+        scheduleRender()
         if self.badges == nil {
             self.badges = badges
         }
@@ -606,13 +613,8 @@ final class ReportViewModel {
 
     private func finishSuccessfully(reason: String) {
         flushBodyIfNeeded(force: true)
-        let visible = ReportHTML.hasVisibleContent(
-            bottomLineHTML: bottomLineHTML,
-            bodyHTML: bodyHTML,
-            scorecardHTML: scorecardHTML
-        )
         ReportVerboseLog.log(
-            "\(reason) visible=\(visible) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count) scorecardLen=\(scorecardHTML.count) trace=\(sseTrace.joined(separator: ","))"
+            "\(reason) visible=\(ReportHTML.hasVisibleContent(bottomLineHTML: self.bottomLineHTML, bodyHTML: self.bodyHTML, scorecardHTML: self.scorecardHTML)) bottomLen=\(bottomLineHTML.count) bodyLen=\(bodyHTML.count) scorecardLen=\(scorecardHTML.count) trace=\(sseTrace.joined(separator: ","))"
         )
         if ReportStreamPolicy.isEmptyReport(
             bottomLineHTML: bottomLineHTML,
@@ -635,6 +637,61 @@ final class ReportViewModel {
         guard force || now.timeIntervalSince(lastFlush) >= flushInterval else { return }
         bodyHTML = pendingBody
         lastFlush = now
+        scheduleRender()
+    }
+
+    // MARK: - Off-main parse (latest-wins)
+
+    private var liveRenderInputs: ReportRenderInputs {
+        ReportRenderInputs(
+            bottomLineHTML: bottomLineHTML,
+            bodyHTML: bodyHTML,
+            scorecardHTML: scorecardHTML
+        )
+    }
+
+    private func resetRender() {
+        renderEpoch += 1
+        queuedRender = nil
+        render = .empty
+    }
+
+    /// Queue a parse of the current fragments. Only the newest queued inputs are
+    /// parsed; intermediate bodies that arrive mid-parse are dropped.
+    private func scheduleRender() {
+        let inputs = liveRenderInputs
+        if inputs.isEmpty {
+            resetRender()
+            return
+        }
+        if queuedRender == nil, inputs == render.inputs { return }
+        queuedRender = inputs
+        guard renderTask == nil else { return }
+        renderTask = Task { [weak self] in
+            await self?.drainRenderQueue()
+        }
+    }
+
+    private func drainRenderQueue() async {
+        while let inputs = queuedRender {
+            queuedRender = nil
+            let epoch = renderEpoch
+            let model = await Task.detached(priority: .userInitiated) {
+                ReportRenderModel.build(inputs)
+            }.value
+            // A new report (start/reset) since this parse began: drop it.
+            if epoch == renderEpoch {
+                render = model
+            }
+        }
+        renderTask = nil
+    }
+
+    /// Test hook: wait until the queued parse (if any) has been applied.
+    func waitForRender() async {
+        while let task = renderTask {
+            await task.value
+        }
     }
 
     /// Local PDF for the system share sheet (Files / Messages / Mail / AirDrop).
