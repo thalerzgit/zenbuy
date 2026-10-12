@@ -783,3 +783,94 @@ enum LegacyReportHTML {
         return out
     }
 }
+
+/// Perf Phase 2: off-main SSE decode hand-off keeps order, coalesces only
+/// adjacent unconsumed bodies (latest wins), and keeps cancel semantics.
+final class ReportEventChannelTests: XCTestCase {
+    private func bodyHTML(_ event: ReportStreamEvent?) -> String? {
+        if case let .body(html) = event { return html }
+        return nil
+    }
+
+    func testCoalescesAdjacentBodiesAndKeepsOrder() async throws {
+        let channel = ReportEventChannel()
+        channel.send(.meta(cached: false, asOf: nil, showAsOf: false))
+        channel.send(.body(html: "<p>1</p>"))
+        channel.send(.body(html: "<p>2</p>"))
+        channel.send(.sticky(bottomLineHtml: "<p>s</p>", badges: nil, scorecardHtml: nil))
+        channel.send(.body(html: "<p>3</p>"))
+        channel.send(.body(html: "<p>4</p>"))
+        channel.send(.body(html: "<p>5</p>"))
+        channel.send(.done(badges: nil, reportId: "r", warning: nil))
+        channel.finish()
+
+        var events: [ReportStreamEvent] = []
+        while let event = try await channel.next() { events.append(event) }
+        XCTAssertEqual(events.count, 5)
+        guard case .meta = events[0] else { return XCTFail("meta first") }
+        XCTAssertEqual(bodyHTML(events[1]), "<p>2</p>")
+        guard case .sticky = events[2] else { return XCTFail("sticky keeps its place") }
+        XCTAssertEqual(bodyHTML(events[3]), "<p>5</p>")
+        guard case .done = events[4] else { return XCTFail("done last") }
+        XCTAssertEqual(channel.coalescedBodies, 3)
+    }
+
+    func testDoesNotCoalesceAlreadyConsumedBody() async throws {
+        let channel = ReportEventChannel()
+        channel.send(.body(html: "a"))
+        XCTAssertEqual(bodyHTML(try await channel.next()), "a")
+        channel.send(.body(html: "b"))
+        channel.finish()
+        XCTAssertEqual(bodyHTML(try await channel.next()), "b")
+        let end = try await channel.next()
+        XCTAssertNil(end)
+    }
+
+    func testPropagatesErrorAfterQueuedEvents() async throws {
+        let channel = ReportEventChannel()
+        channel.send(.body(html: "x"))
+        channel.finish(throwing: ZenBuyAPIError.http(status: 500, message: "boom"))
+        XCTAssertEqual(bodyHTML(try await channel.next()), "x")
+        do {
+            _ = try await channel.next()
+            XCTFail("expected error")
+        } catch let error as ZenBuyAPIError {
+            guard case .http(500, _) = error else { return XCTFail("wrong error \(error)") }
+        }
+    }
+
+    func testWaitingConsumerWakesOnSend() async throws {
+        let channel = ReportEventChannel()
+        let reader = Task { try await channel.next() }
+        try await Task.sleep(for: .milliseconds(50))
+        channel.send(.body(html: "late"))
+        XCTAssertEqual(bodyHTML(try await reader.value), "late")
+    }
+
+    func testCancellingConsumerEndsStreamAndCancelsProducer() async throws {
+        let channel = ReportEventChannel()
+        let producer = Task<Void, Never> {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        channel.producer = producer
+        let reader = Task { try await channel.next() }
+        try await Task.sleep(for: .milliseconds(50))
+        reader.cancel()
+        let value = try await reader.value
+        XCTAssertNil(value)
+        await producer.value
+        XCTAssertTrue(producer.isCancelled)
+    }
+
+    func testDecodeRunsOffMainForLargeBody() async {
+        let html = ReportParsePerfTests.syntheticReport(targetChars: 200_000)
+        let data = String(decoding: try! JSONEncoder().encode(["html": html]), as: UTF8.self)
+        let event = await Task.detached {
+            XCTAssertFalse(Thread.isMainThread)
+            return ReportStreamEvent(sseEvent: SSEEvent(name: "body", data: data))
+        }.value
+        XCTAssertEqual(bodyHTML(event), html)
+    }
+}
