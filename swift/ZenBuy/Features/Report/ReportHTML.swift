@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Lightweight HTML subset produced by the Worker `renderMarkdown` / `scorecardHtml`.
 enum ReportHTMLNode: Equatable, Sendable {
@@ -64,28 +65,32 @@ enum ReportHTML {
         }
 
         var nodes: [ReportHTMLNode] = []
-        var remaining = trimmed
+        // Walk a Substring view of `trimmed` — never copy / re-trim the
+        // remainder per block (that made each parse O(n²) on long bodies).
+        // `trimmed` ends in non-whitespace, so trimming only the leading edge
+        // of each suffix is identical to the old two-sided trim.
+        var remaining = Substring(trimmed)
         while !remaining.isEmpty {
-            remaining = remaining.trimmingCharacters(in: .whitespacesAndNewlines)
+            remaining = dropLeadingWhitespace(remaining)
             guard !remaining.isEmpty else { break }
 
             if let match = consumeTag(&remaining, name: "h2") {
-                let text = plainText(match)
+                let text = plainText(String(match))
                 if !text.isEmpty {
                     nodes.append(.heading(level: 2, text: text))
                 }
             } else if remaining.hasPrefix("<h2") {
-                return ReportParseResult(nodes: nodes, incompleteTail: remaining)
+                return ReportParseResult(nodes: nodes, incompleteTail: String(remaining))
             } else if let match = consumeTag(&remaining, name: "h3") {
-                let text = plainText(match)
+                let text = plainText(String(match))
                 if !text.isEmpty {
                     nodes.append(.heading(level: 3, text: text))
                 }
             } else if remaining.hasPrefix("<h3") {
-                return ReportParseResult(nodes: nodes, incompleteTail: remaining)
+                return ReportParseResult(nodes: nodes, incompleteTail: String(remaining))
             } else if remaining.hasPrefix("<div") {
                 if let inner = consumeTag(&remaining, name: "div") {
-                    let nested = parseProgressive(inner, hasScorecard: hasScorecard)
+                    let nested = parseProgressive(String(inner), hasScorecard: hasScorecard)
                     nodes.append(contentsOf: nested.nodes)
                     if nested.isIncomplete {
                         return ReportParseResult(
@@ -94,17 +99,17 @@ enum ReportHTML {
                         )
                     }
                 } else {
-                    return ReportParseResult(nodes: nodes, incompleteTail: remaining)
+                    return ReportParseResult(nodes: nodes, incompleteTail: String(remaining))
                 }
             } else if remaining.hasPrefix("<table") {
                 if let table = consumeTag(&remaining, name: "table") {
-                    nodes.append(parseTable(table))
+                    nodes.append(parseTable(String(table)))
                 } else {
-                    return ReportParseResult(nodes: nodes, incompleteTail: remaining)
+                    return ReportParseResult(nodes: nodes, incompleteTail: String(remaining))
                 }
             } else if remaining.hasPrefix("<ul") {
                 if let list = consumeTag(&remaining, name: "ul") {
-                    let items = parseListItems(list, hasScorecard: hasScorecard)
+                    let items = parseListItems(String(list), hasScorecard: hasScorecard)
                     if !items.isEmpty {
                         nodes.append(.list(items: items))
                     }
@@ -119,31 +124,29 @@ enum ReportHTML {
             } else if remaining.hasPrefix("<p") {
                 if let para = consumeTag(&remaining, name: "p") {
                     if let node = makeParagraph(
-                        para.replacingOccurrences(of: "<br/>", with: "\n")
+                        String(para).replacingOccurrences(of: "<br/>", with: "\n")
                             .replacingOccurrences(of: "<br>", with: "\n"),
                         hasScorecard: hasScorecard
                     ) {
                         nodes.append(node)
                     }
                 } else {
-                    return ReportParseResult(nodes: nodes, incompleteTail: remaining)
+                    return ReportParseResult(nodes: nodes, incompleteTail: String(remaining))
                 }
             } else if remaining.hasPrefix("<") {
                 // Unknown / incomplete open tag — do not skip bytes (orphans content).
-                if remaining.firstIndex(of: ">") == nil {
-                    return ReportParseResult(nodes: nodes, incompleteTail: remaining)
+                guard let end = remaining.firstIndex(of: ">") else {
+                    return ReportParseResult(nodes: nodes, incompleteTail: String(remaining))
                 }
-                if let end = remaining.firstIndex(of: ">") {
-                    remaining = String(remaining[remaining.index(after: end)...])
-                }
+                remaining = remaining[remaining.index(after: end)...]
             } else if let nextTag = remaining.firstIndex(of: "<") {
                 let text = String(remaining[..<nextTag])
                 if let node = makeParagraph(text, hasScorecard: hasScorecard) {
                     nodes.append(node)
                 }
-                remaining = String(remaining[nextTag...])
+                remaining = remaining[nextTag...]
             } else {
-                if let node = makeParagraph(remaining, hasScorecard: hasScorecard) {
+                if let node = makeParagraph(String(remaining), hasScorecard: hasScorecard) {
                     nodes.append(node)
                 }
                 remaining = ""
@@ -256,11 +259,11 @@ enum ReportHTML {
 
     static func parseInlines(_ html: String) -> [ReportInline] {
         var result: [ReportInline] = []
-        var remaining = html
+        var remaining = Substring(html)
         while !remaining.isEmpty {
             if remaining.hasPrefix("<strong") {
                 if let inner = consumeTag(&remaining, name: "strong") {
-                    let text = plainText(inner)
+                    let text = plainText(String(inner))
                     if !text.isEmpty { result.append(.strong(text)) }
                 } else {
                     // Incomplete strong — surface any leading text already parsed; stop.
@@ -269,7 +272,7 @@ enum ReportHTML {
             } else if remaining.hasPrefix("<a") {
                 let href = attribute(remaining, name: "href") ?? ""
                 if let inner = consumeTag(&remaining, name: "a") {
-                    let label = plainText(inner)
+                    let label = plainText(String(inner))
                     if !label.isEmpty {
                         result.append(.link(label: label, url: href))
                     }
@@ -277,16 +280,14 @@ enum ReportHTML {
                     break
                 }
             } else if remaining.hasPrefix("<") {
-                if remaining.firstIndex(of: ">") == nil { break }
-                if let end = remaining.firstIndex(of: ">") {
-                    remaining = String(remaining[remaining.index(after: end)...])
-                }
+                guard let end = remaining.firstIndex(of: ">") else { break }
+                remaining = remaining[remaining.index(after: end)...]
             } else if let next = remaining.firstIndex(of: "<") {
                 let text = unescape(String(remaining[..<next]))
                 if !text.isEmpty { result.append(.text(text)) }
-                remaining = String(remaining[next...])
+                remaining = remaining[next...]
             } else {
-                let text = unescape(remaining)
+                let text = unescape(String(remaining))
                 if !text.isEmpty { result.append(.text(text)) }
                 break
             }
@@ -410,31 +411,31 @@ enum ReportHTML {
     }
 
     private static func parsePartialList(
-        _ html: String,
+        _ html: Substring,
         hasScorecard: Bool
     ) -> (items: [[ReportInline]], tail: String) {
         var copy = html
         // Drop the incomplete open <ul ...>
         if copy.hasPrefix("<ul"), let end = copy.firstIndex(of: ">") {
-            copy = String(copy[copy.index(after: end)...])
+            copy = copy[copy.index(after: end)...]
         }
         var items: [[ReportInline]] = []
         while !copy.isEmpty {
-            copy = copy.trimmingCharacters(in: .whitespacesAndNewlines)
+            copy = dropLeadingWhitespace(copy)
             guard copy.hasPrefix("<li") else { break }
             if let inner = consumeTag(&copy, name: "li") {
-                let inlines = parseInlines(inner)
+                let inlines = parseInlines(String(inner))
                 if !inlines.isEmpty,
                    !(hasScorecard && isScoreDump(inlines)),
                    !isLinkOnly(inlines) {
                     items.append(inlines)
                 }
             } else {
-                return (items, copy)
+                return (items, String(copy))
             }
         }
-        let tail = copy.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (items, tail.isEmpty ? html : tail)
+        let tail = dropLeadingWhitespace(copy)
+        return (items, tail.isEmpty ? String(html) : String(tail))
     }
 
     private static func isLinkOnly(_ inlines: [ReportInline]) -> Bool {
@@ -597,28 +598,45 @@ enum ReportHTML {
         return .table(headers: headers, rows: rows)
     }
 
-    private static func consumeTag(_ html: inout String, name: String) -> String? {
+    /// Leading-edge `trimmingCharacters(in: .whitespacesAndNewlines)` without
+    /// copying: same unicode-scalar test, returns a view into the same storage.
+    private static func dropLeadingWhitespace(_ text: Substring) -> Substring {
+        let scalars = text.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex, CharacterSet.whitespacesAndNewlines.contains(scalars[index]) {
+            index = scalars.index(after: index)
+        }
+        return index == scalars.startIndex ? text : text[index...]
+    }
+
+    /// Consume `<name ...>inner</name>` from the front of `html` (nesting-aware).
+    /// Works on Substring views, so no per-node copy of the remainder.
+    private static func consumeTag(_ html: inout Substring, name: String) -> Substring? {
         let open = "<\(name)"
         guard html.hasPrefix(open) else { return nil }
         guard let openEnd = html.firstIndex(of: ">") else { return nil }
         let afterOpen = html.index(after: openEnd)
         if html[html.index(before: openEnd)] == "/" {
-            html = String(html[afterOpen...])
+            html = html[afterOpen...]
             return ""
         }
         let close = "</\(name)>"
         var depth = 1
         var search = afterOpen
         while search < html.endIndex {
-            if html[search...].hasPrefix(close) {
+            // Only a "<" can start either tag — jump straight to the next one.
+            guard let lt = html[search...].firstIndex(of: "<") else { break }
+            search = lt
+            let rest = html[search...]
+            if rest.hasPrefix(close) {
                 depth -= 1
                 if depth == 0 {
-                    let inner = String(html[afterOpen..<search])
-                    html = String(html[html.index(search, offsetBy: close.count)...])
+                    let inner = html[afterOpen..<search]
+                    html = html[html.index(search, offsetBy: close.count)...]
                     return inner
                 }
                 search = html.index(search, offsetBy: close.count)
-            } else if html[search...].hasPrefix(open) {
+            } else if rest.hasPrefix(open) {
                 depth += 1
                 search = html.index(search, offsetBy: open.count)
             } else {
@@ -629,13 +647,13 @@ enum ReportHTML {
     }
 
     private static func extractTag(_ html: String, name: String) -> String? {
-        var copy = html
+        var copy = Substring(html)
         while !copy.isEmpty {
             if let inner = consumeTag(&copy, name: name) {
-                return inner
+                return String(inner)
             }
             if copy.first == "<", let end = copy.firstIndex(of: ">") {
-                copy = String(copy[copy.index(after: end)...])
+                copy = copy[copy.index(after: end)...]
             } else if copy.first != nil {
                 copy.removeFirst()
             } else {
@@ -646,14 +664,14 @@ enum ReportHTML {
     }
 
     private static func extractTags(_ html: String, name: String) -> [String] {
-        var copy = html
+        var copy = Substring(html)
         var found: [String] = []
         while !copy.isEmpty {
-            copy = copy.trimmingCharacters(in: .whitespacesAndNewlines)
+            copy = dropLeadingWhitespace(copy)
             if let inner = consumeTag(&copy, name: name) {
-                found.append(inner)
+                found.append(String(inner))
             } else if copy.first == "<", let end = copy.firstIndex(of: ">") {
-                copy = String(copy[copy.index(after: end)...])
+                copy = copy[copy.index(after: end)...]
             } else if !copy.isEmpty {
                 copy.removeFirst()
             }
@@ -661,7 +679,7 @@ enum ReportHTML {
         return found
     }
 
-    private static func attribute(_ openTagAndRest: String, name: String) -> String? {
+    private static func attribute(_ openTagAndRest: Substring, name: String) -> String? {
         guard let start = openTagAndRest.range(of: "\(name)=\"") ?? openTagAndRest.range(of: "\(name)='") else {
             return nil
         }
@@ -687,5 +705,132 @@ enum ReportHTML {
             if !inTag { out.append(ch) }
         }
         return out
+    }
+}
+
+// MARK: - Precomputed render model (parsed once, off the main thread)
+
+/// What `ReportHTMLView` draws for one HTML fragment. Built by
+/// `ReportRenderModel.build` on a background task so SwiftUI `body` never parses.
+enum ReportFragmentModel: Equatable, Sendable {
+    case sections([KeyedReportSection], isIncomplete: Bool)
+    case fallback(String, isIncomplete: Bool)
+
+    /// Same decision `ReportHTMLView` used to make inline in `body`.
+    static func build(html: String, hasScorecard: Bool) -> (model: ReportFragmentModel, sections: [ReportSection]) {
+        // Isolate parse work so empty/mid-stream fragments cannot blank report chrome.
+        let parsed = ReportHTML.parseProgressive(html, hasScorecard: hasScorecard)
+        let sections = ReportHTML.sections(from: parsed.nodes, hasScorecard: hasScorecard)
+        ReportVerboseLog.log(
+            "parse html=\(ReportVerboseLog.htmlPreview(html)) sections=\(sections.count) incomplete=\(parsed.isIncomplete)"
+        )
+        if sections.isEmpty {
+            let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return (.fallback("Receiving report…", isIncomplete: true), sections)
+            }
+            return (.fallback(ReportHTML.fallbackPlainText(html), isIncomplete: true), sections)
+        }
+        return (.sections(KeyedReportSection.key(sections), isIncomplete: parsed.isIncomplete), sections)
+    }
+}
+
+/// Section plus a stable identity for `ForEach` (ordinal + title), so a growing
+/// last section during streaming keeps its identity instead of `\.offset` churn.
+struct KeyedReportSection: Equatable, Sendable, Identifiable {
+    let id: String
+    let section: ReportSection
+
+    static func key(_ sections: [ReportSection]) -> [KeyedReportSection] {
+        sections.enumerated().map { index, section in
+            KeyedReportSection(id: "\(index)|\(section.title ?? "")", section: section)
+        }
+    }
+}
+
+struct ReportRenderInputs: Equatable, Sendable {
+    var bottomLineHTML = ""
+    var bodyHTML = ""
+    var scorecardHTML = ""
+
+    var isEmpty: Bool { bottomLineHTML.isEmpty && bodyHTML.isEmpty && scorecardHTML.isEmpty }
+}
+
+/// Everything `ReportStreamView` needs from the three HTML fragments, parsed
+/// once per update. Identical output to calling the parser from `body`.
+struct ReportRenderModel: Equatable, Sendable {
+    let inputs: ReportRenderInputs
+    /// `ReportHTML.parse(scorecardHTML)`.
+    let scoreNodes: [ReportHTMLNode]
+    let bottomLine: ReportFragmentModel
+    let body: ReportFragmentModel
+    /// `ReportHTML.hasVisibleContent(bottomLineHTML:bodyHTML:scorecardHTML:)`.
+    let hasVisibleContent: Bool
+
+    /// Scorecard flag the stream view passes to fragment views (non-empty HTML).
+    var hasScorecard: Bool { !inputs.scorecardHTML.isEmpty }
+
+    static let empty = ReportRenderModel.build(ReportRenderInputs())
+
+    static func build(_ inputs: ReportRenderInputs) -> ReportRenderModel {
+        let signpost = PerfSignpost.begin("report.parse")
+        defer { PerfSignpost.end(signpost) }
+
+        let hasScorecard = !inputs.scorecardHTML.isEmpty
+        let scoreNodes = ReportHTML.parse(inputs.scorecardHTML)
+        let bottom = ReportFragmentModel.build(html: inputs.bottomLineHTML, hasScorecard: hasScorecard)
+        let body = ReportFragmentModel.build(html: inputs.bodyHTML, hasScorecard: hasScorecard)
+
+        // Mirrors `ReportHTML.hasVisibleContent`, reusing the parses above when
+        // its own scorecard flag matches the view's (it trims; the view does not).
+        let visibleScorecard = !inputs.scorecardHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !scoreNodes.isEmpty
+        let visible: Bool
+        if visibleScorecard {
+            visible = true
+        } else if visibleScorecard == hasScorecard {
+            visible = !bottom.sections.isEmpty
+                || !body.sections.isEmpty
+                || !ReportHTML.plainText(inputs.bottomLineHTML).isEmpty
+                || !ReportHTML.plainText(inputs.bodyHTML).isEmpty
+        } else {
+            visible = ReportHTML.hasVisibleContent(
+                bottomLineHTML: inputs.bottomLineHTML,
+                bodyHTML: inputs.bodyHTML,
+                scorecardHTML: inputs.scorecardHTML
+            )
+        }
+        return ReportRenderModel(
+            inputs: inputs,
+            scoreNodes: scoreNodes,
+            bottomLine: bottom.model,
+            body: body.model,
+            hasVisibleContent: visible
+        )
+    }
+}
+
+/// Cheap os_signpost intervals (Instruments "Points of Interest"). Shared by
+/// iOS and tvOS; costs ~nothing when Instruments is not recording.
+enum PerfSignpost {
+    static let log = OSLog(subsystem: "info.zenbuy.app", category: .pointsOfInterest)
+
+    struct Interval {
+        let name: StaticString
+        let id: OSSignpostID
+    }
+
+    static func begin(_ name: StaticString) -> Interval {
+        let id = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: name, signpostID: id)
+        return Interval(name: name, id: id)
+    }
+
+    static func end(_ interval: Interval) {
+        os_signpost(.end, log: log, name: interval.name, signpostID: interval.id)
+    }
+
+    static func event(_ name: StaticString) {
+        os_signpost(.event, log: log, name: name)
     }
 }

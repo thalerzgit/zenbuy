@@ -2,9 +2,23 @@ import SwiftUI
 
 /// Native rendering of Worker HTML fragments — no WKWebView.
 struct ReportHTMLView: View {
-    let html: String
-    var hasScorecard: Bool = false
+    /// Parsed off the main thread by `ReportViewModel` (see `ReportRenderModel`);
+    /// `body` only draws it.
+    let model: ReportFragmentModel
     var showWritingIndicator: Bool = false
+
+    init(model: ReportFragmentModel, showWritingIndicator: Bool = false) {
+        self.model = model
+        self.showWritingIndicator = showWritingIndicator
+    }
+
+    /// Convenience for previews / one-off fragments: parses synchronously.
+    init(html: String, hasScorecard: Bool = false, showWritingIndicator: Bool = false) {
+        self.init(
+            model: ReportFragmentModel.build(html: html, hasScorecard: hasScorecard).model,
+            showWritingIndicator: showWritingIndicator
+        )
+    }
 
     var body: some View {
         renderedContent
@@ -13,12 +27,11 @@ struct ReportHTMLView: View {
 
     @ViewBuilder
     private var renderedContent: some View {
-        let model = Self.buildModel(html: html, hasScorecard: hasScorecard)
         switch model {
         case let .sections(sections, isIncomplete):
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                    sectionCard(section)
+                ForEach(sections) { keyed in
+                    sectionCard(keyed.section)
                 }
                 if showWritingIndicator && isIncomplete {
                     WritingIndicator()
@@ -49,31 +62,6 @@ struct ReportHTMLView: View {
         }
     }
 
-    private enum RenderModel {
-        case sections([ReportSection], isIncomplete: Bool)
-        case fallback(String, isIncomplete: Bool)
-    }
-
-    private static func buildModel(html: String, hasScorecard: Bool) -> RenderModel {
-        // Isolate parse work so empty/mid-stream fragments cannot blank report chrome.
-        let parsed = ReportHTML.parseProgressive(html, hasScorecard: hasScorecard)
-        let sections = ReportHTML.sections(from: parsed.nodes, hasScorecard: hasScorecard)
-        ReportVerboseLog.log(
-            "parse html=\(ReportVerboseLog.htmlPreview(html)) sections=\(sections.count) incomplete=\(parsed.isIncomplete)"
-        )
-        if sections.isEmpty {
-            let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                return .fallback("Receiving report…", isIncomplete: true)
-            }
-            return .fallback(
-                ReportHTML.fallbackPlainText(html),
-                isIncomplete: true
-            )
-        }
-        return .sections(sections, isIncomplete: parsed.isIncomplete)
-    }
-
     @ViewBuilder
     private func sectionCard(_ section: ReportSection) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -84,8 +72,8 @@ struct ReportHTMLView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textCase(.uppercase)
             }
-            ForEach(Array(section.nodes.enumerated()), id: \.offset) { _, node in
-                nodeView(node)
+            ForEach(section.nodes.indices, id: \.self) { index in
+                nodeView(section.nodes[index])
             }
             if !section.sources.isEmpty {
                 SourceChipRow(sources: section.sources)
@@ -117,7 +105,8 @@ struct ReportHTMLView: View {
                 .tint(ZenBuyTheme.sageDark)
         case let .list(items):
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                ForEach(items.indices, id: \.self) { index in
+                    let item = items[index]
                     HStack(alignment: .top, spacing: 8) {
                         Text("•")
                             .foregroundStyle(ZenBuyTheme.sage)
@@ -134,7 +123,8 @@ struct ReportHTMLView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if !headers.isEmpty {
                         HStack(spacing: 0) {
-                            ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
+                            ForEach(headers.indices, id: \.self) { index in
+                                let header = headers[index]
                                 Text(header)
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(ZenBuyTheme.ink)
@@ -144,9 +134,11 @@ struct ReportHTMLView: View {
                             }
                         }
                     }
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    ForEach(rows.indices, id: \.self) { rowIndex in
+                        let row = rows[rowIndex]
                         HStack(spacing: 0) {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            ForEach(row.indices, id: \.self) { cellIndex in
+                                let cell = row[cellIndex]
                                 Text(cell)
                                     .font(.caption)
                                     .foregroundStyle(ZenBuyTheme.ink)
@@ -208,7 +200,8 @@ struct ScorecardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+            ForEach(rows.indices, id: \.self) { index in
+                let row = rows[index]
                 HStack(spacing: 10) {
                     Text(row.label)
                         .font(.caption.weight(.semibold))
