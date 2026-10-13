@@ -50,7 +50,7 @@
     // reaches the Monthly / Buy once paywall (Guideline 2.1(b)). Existing
     // grants and sessions stay valid; sandbox IAP purchases and the whitelist
     // are unaffected. Set back to "1" once tvOS 1.7 is approved.
-    "TESTFLIGHT_COMPLIMENTARY": "0",
+    "TESTFLIGHT_COMPLIMENTARY": "1",
     // Complimentary unlock, no App Store purchase, and never counted against
     // any report limit. Comma-separated; each entry is either an email address
     // (matched case-insensitively against the claim Apple sends) or
