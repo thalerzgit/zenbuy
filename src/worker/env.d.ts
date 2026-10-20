@@ -15,6 +15,10 @@ interface Env {
   ZENBUY_PRIMARY_PROVIDER?: string;
   ZENBUY_BACKUP_MODEL?: string;
   ZENBUY_BACKUP_PROVIDER?: string;
+  /** Grok `reasoning_effort`: `low` | `medium` | `high`; anything else is `low`. */
+  ZENBUY_XAI_REASONING_EFFORT?: string;
+  /** ms from response headers to first report text before failing over (default 45000, clamped 10000–120000). */
+  ZENBUY_FIRST_TOKEN_MS?: string;
   /**
    * Reports per free visitor per rolling week, counted per identity cluster
    * (visitor cookie + device signal + network). Defaults to 3.

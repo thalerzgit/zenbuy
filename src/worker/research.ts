@@ -22,13 +22,23 @@ export const DEFAULT_PRIMARY_PROVIDER: ProviderId = "xai";
 export const DEFAULT_BACKUP_MODEL = "claude-sonnet-5-5";
 export const DEFAULT_BACKUP_PROVIDER: ProviderId = "anthropic";
 
+export type XaiReasoningEffort = "low" | "medium" | "high";
+
 /**
- * Grok 4.7 Chat Completions: `high` matches `xhigh` on AA Finance & Accounting
- * Index (52) at lower cost/task ($2.73 vs $3.74). `xhigh` only burns tokens /
- * TTFT for ZenBuy equity streams. Do not use `max`. Explicit so a later model
- * swap cannot silently pick a slower default.
+ * Grok 4.7 `reasoning_effort`, same prompt (TTFT / hidden reasoning tokens):
+ * low 4.9s / 333 · medium 27.4s / 1,748 · high 56.9s / 4,626. grok-4.5 `high`
+ * (prod before Oct 5) was 5.1s / 365, so 4.7 `low` is the old budget; 4.7
+ * `high` held live reports ~4 min before the first token. Override with
+ * `ZENBUY_XAI_REASONING_EFFORT`; `xhigh` / `max` are never sent.
  */
-export const XAI_REASONING_EFFORT = "high" as const;
+export const DEFAULT_XAI_REASONING_EFFORT: XaiReasoningEffort = "low";
+
+const XAI_REASONING_EFFORTS: readonly XaiReasoningEffort[] = ["low", "medium", "high"];
+
+export function xaiReasoningEffort(env: Env): XaiReasoningEffort {
+  const raw = env.ZENBUY_XAI_REASONING_EFFORT?.trim().toLowerCase();
+  return XAI_REASONING_EFFORTS.find((e) => e === raw) ?? DEFAULT_XAI_REASONING_EFFORT;
+}
 
 /**
  * Claude Sonnet 5.5 backup: `medium` (~2.65s TTFT on Artificial Analysis) vs
@@ -48,6 +58,19 @@ export function anthropicThinkingFor(
 
 /** Headers must arrive before we treat the primary as unresponsive. */
 const TTFB_TIMEOUT_MS = 45_000;
+
+const DEFAULT_FIRST_CONTENT_MS = 45_000;
+
+/**
+ * Headers → first report text. xAI sends headers in <1s and then reasons
+ * silently, so only this deadline catches a reasoning stall. Reasoning deltas
+ * never count. `ZENBUY_FIRST_TOKEN_MS`, clamped to 10s–120s.
+ */
+export function firstContentMs(env: Env): number {
+  const ms = Number(env.ZENBUY_FIRST_TOKEN_MS);
+  if (!Number.isFinite(ms) || ms <= 0) return DEFAULT_FIRST_CONTENT_MS;
+  return Math.min(120_000, Math.max(10_000, ms));
+}
 
 export interface StreamHandlers {
   onDelta: (text: string) => void;
@@ -226,19 +249,22 @@ export function buildXaiChatBody(
   model: string,
   system: string,
   user: string,
-  maxTokens: number
+  maxTokens: number,
+  effort: XaiReasoningEffort
 ): {
   model: string;
   max_completion_tokens: number;
   stream: true;
-  reasoning_effort: typeof XAI_REASONING_EFFORT;
+  stream_options: { include_usage: true };
+  reasoning_effort: XaiReasoningEffort;
   messages: Array<{ role: "system" | "user"; content: string }>;
 } {
   return {
     model,
     max_completion_tokens: maxTokens,
     stream: true,
-    reasoning_effort: XAI_REASONING_EFFORT,
+    stream_options: { include_usage: true },
+    reasoning_effort: effort,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -405,10 +431,23 @@ async function fetchHeaders(
 
 type StreamKind = "anthropic" | "openai";
 
+type StreamUsage = {
+  promptTokens?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+};
+
+type ParsedEvent = {
+  text?: string;
+  stopReason?: string | null;
+  usage?: StreamUsage;
+};
+
 type AttemptOk = {
   ok: true;
   text: string;
   stopReason: string | null;
+  usage: StreamUsage;
   /** Which provider/model actually served (after any 404 live-id retry). */
   provider?: ProviderId;
   model?: string;
@@ -423,16 +462,13 @@ type AttemptFail = {
 };
 type Attempt = AttemptOk | AttemptFail;
 
-function parseAnthropicEvent(evt: Record<string, unknown>): {
-  text?: string;
-  stopReason?: string | null;
-} {
+function parseAnthropicEvent(evt: Record<string, unknown>): ParsedEvent {
   const type = evt.type as string | undefined;
   const delta = evt.delta as
     | { type?: string; text?: string; stop_reason?: string | null }
     | undefined;
   const message = evt.message as { stop_reason?: string | null } | undefined;
-  const out: { text?: string; stopReason?: string | null } = {};
+  const out: ParsedEvent = {};
   if (
     type === "content_block_delta" &&
     delta?.type === "text_delta" &&
@@ -445,13 +481,20 @@ function parseAnthropicEvent(evt: Record<string, unknown>): {
   }
   const reason = delta?.stop_reason ?? message?.stop_reason ?? null;
   if (reason) out.stopReason = reason;
+  // Top-level usage only rides on message_delta (cumulative for the stream).
+  const usage = evt.usage as
+    | { input_tokens?: number; output_tokens?: number }
+    | undefined;
+  if (usage) {
+    out.usage = {
+      promptTokens: usage.input_tokens,
+      completionTokens: usage.output_tokens,
+    };
+  }
   return out;
 }
 
-function parseOpenaiEvent(evt: Record<string, unknown>): {
-  text?: string;
-  stopReason?: string | null;
-} {
+function parseOpenaiEvent(evt: Record<string, unknown>): ParsedEvent {
   const choices = evt.choices as
     | Array<{
         delta?: { content?: string | null };
@@ -459,57 +502,95 @@ function parseOpenaiEvent(evt: Record<string, unknown>): {
       }>
     | undefined;
   const choice = choices?.[0];
-  const out: { text?: string; stopReason?: string | null } = {};
+  const out: ParsedEvent = {};
   if (choice?.delta?.content) out.text = choice.delta.content;
   if (choice?.finish_reason === "length") out.stopReason = "max_tokens";
   else if (choice?.finish_reason) out.stopReason = choice.finish_reason;
+  // `stream_options.include_usage`: final chunk (empty choices); others null.
+  const usage = evt.usage as
+    | {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      }
+    | null
+    | undefined;
+  if (usage) {
+    out.usage = {
+      promptTokens: usage.prompt_tokens,
+      completionTokens: usage.completion_tokens,
+      reasoningTokens: usage.completion_tokens_details?.reasoning_tokens,
+    };
+  }
   return out;
 }
 
+/** Throws `timeout` when no report text arrives within `firstContentDeadlineMs`. */
 async function readSseStream(
   res: Response,
   onText: (text: string) => void,
-  kind: StreamKind
-): Promise<{ text: string; stopReason: string | null }> {
+  kind: StreamKind,
+  firstContentDeadlineMs: number
+): Promise<{ text: string; stopReason: string | null; usage: StreamUsage }> {
   if (!res.body) throw new Error("Empty response stream");
 
   let full = "";
   let stopReason: string | null = null;
+  let usage: StreamUsage = {};
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+  let stalled = false;
+  const watchdog = setTimeout(() => {
+    stalled = true;
+    reader.cancel().catch(() => {});
+  }, firstContentDeadlineMs);
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const payload = line.slice(6).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const evt = JSON.parse(payload) as Record<string, unknown>;
-        const parsed =
-          kind === "anthropic" ? parseAnthropicEvent(evt) : parseOpenaiEvent(evt);
-        if (parsed.text) {
-          full += parsed.text;
-          onText(parsed.text);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const evt = JSON.parse(payload) as Record<string, unknown>;
+          const parsed =
+            kind === "anthropic" ? parseAnthropicEvent(evt) : parseOpenaiEvent(evt);
+          if (parsed.text) {
+            clearTimeout(watchdog);
+            full += parsed.text;
+            onText(parsed.text);
+          }
+          if (parsed.stopReason) stopReason = parsed.stopReason;
+          if (parsed.usage) usage = parsed.usage;
+        } catch {
+          /* ignore partial json */
         }
-        if (parsed.stopReason) stopReason = parsed.stopReason;
-      } catch {
-        /* ignore partial json */
       }
     }
+  } catch (e) {
+    if (!stalled) throw e;
+  } finally {
+    clearTimeout(watchdog);
   }
 
-  return { text: full, stopReason };
+  if (stalled) throw new Error("timeout");
+  return { text: full, stopReason, usage };
+}
+
+function isTimeout(e: unknown): boolean {
+  return e instanceof Error && e.message === "timeout";
 }
 
 function networkFail(label: string, e: unknown): AttemptFail {
-  const timeout = e instanceof Error && e.message === "timeout";
+  const timeout = isTimeout(e);
   console.error(label, timeout ? "timeout" : e);
   return {
     ok: false,
@@ -524,7 +605,8 @@ async function consumeAnthropic(
   system: string,
   user: string,
   maxTokens: number,
-  onText: (text: string) => void
+  onText: (text: string) => void,
+  firstContentDeadlineMs: number
 ): Promise<Attempt> {
   const body = buildAnthropicMessagesBody(model, system, user, maxTokens);
 
@@ -576,7 +658,7 @@ async function consumeAnthropic(
   };
 
   try {
-    const result = await readSseStream(res, track, "anthropic");
+    const result = await readSseStream(res, track, "anthropic", firstContentDeadlineMs);
     if (!result.text.trim()) {
       console.error("Anthropic stream empty");
       return {
@@ -587,6 +669,7 @@ async function consumeAnthropic(
     }
     return { ok: true, ...result, provider: "anthropic", model: body.model };
   } catch (e) {
+    if (isTimeout(e)) return networkFail("anthropic first-token", e);
     console.error("stream read failed", e);
     return {
       ok: false,
@@ -602,9 +685,16 @@ async function consumeXai(
   system: string,
   user: string,
   maxTokens: number,
-  onText: (text: string) => void
+  onText: (text: string) => void,
+  firstContentDeadlineMs: number
 ): Promise<Attempt> {
-  const body = buildXaiChatBody(model, system, user, maxTokens);
+  const body = buildXaiChatBody(
+    model,
+    system,
+    user,
+    maxTokens,
+    xaiReasoningEffort(env)
+  );
 
   const post = (): Promise<Response> =>
     fetchHeaders(xaiUrl(env), {
@@ -654,7 +744,7 @@ async function consumeXai(
   };
 
   try {
-    const result = await readSseStream(res, track, "openai");
+    const result = await readSseStream(res, track, "openai", firstContentDeadlineMs);
     if (!result.text.trim()) {
       console.error("xAI stream empty");
       return {
@@ -665,6 +755,7 @@ async function consumeXai(
     }
     return { ok: true, ...result, provider: "xai", model: body.model };
   } catch (e) {
+    if (isTimeout(e)) return networkFail("xai first-token", e);
     console.error("xAI stream read failed", e);
     return {
       ok: false,
@@ -680,12 +771,11 @@ async function consumeProvider(
   system: string,
   user: string,
   maxTokens: number,
-  onText: (text: string) => void
+  onText: (text: string) => void,
+  firstContentDeadlineMs: number
 ): Promise<Attempt> {
-  if (attempt.provider === "xai") {
-    return consumeXai(env, attempt.model, system, user, maxTokens, onText);
-  }
-  return consumeAnthropic(env, attempt.model, system, user, maxTokens, onText);
+  const consume = attempt.provider === "xai" ? consumeXai : consumeAnthropic;
+  return consume(env, attempt.model, system, user, maxTokens, onText, firstContentDeadlineMs);
 }
 
 /**
@@ -700,7 +790,9 @@ export async function analyzeStream(
   system: string,
   user: string,
   maxTokens: number,
-  onText: (text: string) => void
+  onText: (text: string) => void,
+  /** Unclamped; production uses the clamped `ZENBUY_FIRST_TOKEN_MS`. */
+  firstContentDeadlineMs = firstContentMs(env)
 ): Promise<Attempt> {
   const chain = planFailoverChain(env);
   if (chain.length === 0) {
@@ -717,18 +809,40 @@ export async function analyzeStream(
     message: "Analysis service didn't respond. Try again in a moment?",
   };
 
+  const startedAt = Date.now();
+  let ttftMs: number | null = null;
+  const paint = (text: string): void => {
+    ttftMs ??= Date.now() - startedAt;
+    onText(text);
+  };
+
   for (let i = 0; i < chain.length; i++) {
     const attempt = chain[i];
     if (i > 0) {
       console.warn("failing over to", attempt.provider, attempt.model);
     }
-    last = await consumeProvider(env, attempt, system, user, maxTokens, onText);
+    last = await consumeProvider(
+      env,
+      attempt,
+      system,
+      user,
+      maxTokens,
+      paint,
+      firstContentDeadlineMs
+    );
     if (last.ok) {
-      // Provider/model names only — never keys or headers.
+      const provider = last.provider ?? attempt.provider;
+      // Names and numbers only — never keys or headers.
       console.log("analysis served by", {
-        provider: last.provider ?? attempt.provider,
+        provider,
         model: last.model ?? attempt.model,
         failover: i > 0,
+        effort: provider === "xai" ? xaiReasoningEffort(env) : ANTHROPIC_OUTPUT_EFFORT,
+        ttftMs,
+        totalMs: Date.now() - startedAt,
+        promptTokens: last.usage.promptTokens ?? null,
+        completionTokens: last.usage.completionTokens ?? null,
+        reasoningTokens: last.usage.reasoningTokens ?? null,
       });
       return last;
     }

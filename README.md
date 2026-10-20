@@ -83,6 +83,8 @@ Optional Worker vars (also in `wrangler.jsonc`):
 | `ZENBUY_PRIMARY_PROVIDER` | `xai` | Primary provider (`xai` or `anthropic`) |
 | `ZENBUY_BACKUP_MODEL` | `claude-sonnet-5-5` | Cross-provider backup when Grok is down |
 | `ZENBUY_BACKUP_PROVIDER` | `anthropic` | Backup provider id |
+| `ZENBUY_XAI_REASONING_EFFORT` | `low` | Grok `reasoning_effort`: `low` / `medium` / `high` (anything else is `low`). `high` delays grok-4.7's first token by minutes |
+| `ZENBUY_FIRST_TOKEN_MS` | `45000` (unset) | Response headers → first report text before failing over to the backup, clamped 10000–120000. Reasoning-only output never counts |
 
 `XAI_API_KEY` is required for the default Grok-first path. Without it, reports skip to Claude Sonnet 5.5. Anthropic empty-balance / spend-cap errors do not block the Grok primary path.
 
