@@ -9,6 +9,7 @@ import {
   DEFAULT_PRIMARY_PROVIDER,
   RESEARCH_MAX_TOKENS,
   XAI_REASONING_EFFORT,
+  analyzeStream,
   anthropicThinkingFor,
   buildAnthropicMessagesBody,
   buildXaiChatBody,
@@ -177,5 +178,196 @@ describe("xAI Chat Completions payload shape", () => {
     assert.doesNotMatch(serialized, /search_parameters/);
     assert.doesNotMatch(serialized, /"xhigh"|"max"/);
     assert.deepEqual(JSON.parse(serialized), body);
+  });
+});
+
+describe("provider failover on credential / billing rejection", () => {
+  const XAI_TEAM_BLOCKED_403 =
+    '{"code":"The caller does not have permission to execute the specified operation","error":"Your team is blocked."}';
+  const XAI_BAD_KEY_401 =
+    '{"code":"Client specified an invalid argument","error":"Incorrect API key provided."}';
+
+  function anthropicSse(text: string): Response {
+    const events = [
+      { type: "message_start", message: { stop_reason: null } },
+      { type: "content_block_delta", delta: { type: "text_delta", text } },
+      { type: "message_delta", delta: { stop_reason: "end_turn" } },
+    ];
+    const body = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }
+
+  function xaiSse(text: string): Response {
+    const body =
+      `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n` +
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n` +
+      "data: [DONE]\n\n";
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }
+
+  type Route = (url: string) => Response;
+
+  async function withFetch<T>(route: Route, fn: (calls: string[]) => Promise<T>): Promise<T> {
+    const calls: string[] = [];
+    const orig = globalThis.fetch;
+    const origLog = console.log;
+    const origWarn = console.warn;
+    const origErr = console.error;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      return route(url);
+    }) as typeof fetch;
+    console.log = console.warn = console.error = () => {};
+    try {
+      return await fn(calls);
+    } finally {
+      globalThis.fetch = orig;
+      console.log = origLog;
+      console.warn = origWarn;
+      console.error = origErr;
+    }
+  }
+
+  const bothKeys = {
+    XAI_API_KEY: "xai-test",
+    ANTHROPIC_API_KEY: "ant-test",
+  } as Env;
+
+  const isXai = (u: string) => u.includes("api.x.ai");
+  const isAnthropic = (u: string) => u.includes("api.anthropic.com");
+
+  for (const [status, errBody] of [
+    [403, XAI_TEAM_BLOCKED_403],
+    [401, XAI_BAD_KEY_401],
+  ] as const) {
+    it(`falls back to Claude when Grok returns ${status}`, async () => {
+      let painted = "";
+      const result = await withFetch(
+        (url) => {
+          if (isXai(url)) return new Response(errBody, { status });
+          if (isAnthropic(url)) return anthropicSse("## BOTTOM LINE\nAVGO from Claude");
+          throw new Error(`unexpected fetch ${url}`);
+        },
+        async (calls) => {
+          const r = await analyzeStream(bothKeys, "sys", "user", 100, (t) => {
+            painted += t;
+          });
+          assert.equal(calls.filter(isXai).length, 1);
+          assert.equal(calls.filter(isAnthropic).length, 1);
+          assert.ok(isXai(calls[0]), "Grok is tried first");
+          return r;
+        }
+      );
+      assert.equal(result.ok, true);
+      if (!result.ok) return;
+      assert.equal(result.provider, "anthropic");
+      assert.equal(result.model, "claude-sonnet-5-5");
+      assert.match(result.text, /AVGO from Claude/);
+      assert.match(painted, /AVGO from Claude/);
+    });
+  }
+
+  it("falls back on 402 and quota 429 from the primary", async () => {
+    for (const [status, errBody] of [
+      [402, '{"error":"billing_error"}'],
+      [429, '{"error":"Your team has either used all available credits or reached its monthly spending limit."}'],
+    ] as const) {
+      const result = await withFetch(
+        (url) =>
+          isXai(url) ? new Response(errBody, { status }) : anthropicSse("served by Claude"),
+        () => analyzeStream(bothKeys, "sys", "user", 100, () => {})
+      );
+      assert.equal(result.ok, true, `status ${status}`);
+      if (result.ok) assert.equal(result.provider, "anthropic");
+    }
+    assert.equal(
+      classifyUpstreamFailure(
+        429,
+        '{"error":"Your team has either used all available credits or reached its monthly spending limit."}'
+      ).sameProviderUseless,
+      true
+    );
+  });
+
+  it("is symmetric: Anthropic primary 403 falls back to Grok", async () => {
+    const env = {
+      ...bothKeys,
+      ZENBUY_PRIMARY_PROVIDER: "anthropic",
+      ZENBUY_MODEL: "claude-sonnet-5-5",
+      ZENBUY_BACKUP_PROVIDER: "xai",
+      ZENBUY_BACKUP_MODEL: "grok-4.7",
+    } as Env;
+    const result = await withFetch(
+      (url) =>
+        isAnthropic(url)
+          ? new Response('{"type":"error","error":{"type":"permission_error"}}', { status: 403 })
+          : xaiSse("served by Grok"),
+      () => analyzeStream(env, "sys", "user", 100, () => {})
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.provider, "xai");
+      assert.equal(result.model, "grok-4.7");
+    }
+  });
+
+  it("only shows the credentials error when both providers reject", async () => {
+    const result = await withFetch(
+      (url) =>
+        isXai(url)
+          ? new Response(XAI_TEAM_BLOCKED_403, { status: 403 })
+          : new Response('{"type":"error","error":{"type":"authentication_error"}}', { status: 401 }),
+      (calls) =>
+        analyzeStream(bothKeys, "sys", "user", 100, () => {}).then((r) => {
+          assert.equal(calls.length, 2);
+          return r;
+        })
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /rejected our credentials/);
+  });
+
+  it("serves from Grok without touching Claude when Grok is healthy", async () => {
+    const result = await withFetch(
+      (url) => (isXai(url) ? xaiSse("served by Grok") : anthropicSse("nope")),
+      (calls) =>
+        analyzeStream(bothKeys, "sys", "user", 100, () => {}).then((r) => {
+          assert.equal(calls.length, 1);
+          return r;
+        })
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.provider, "xai");
+  });
+
+  it("still does not fail over an ordinary 400 prompt bug", async () => {
+    const result = await withFetch(
+      (url) =>
+        isXai(url)
+          ? new Response('{"error":"max_completion_tokens: invalid"}', { status: 400 })
+          : anthropicSse("should not run"),
+      (calls) =>
+        analyzeStream(bothKeys, "sys", "user", 100, () => {}).then((r) => {
+          assert.equal(calls.length, 1);
+          return r;
+        })
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it("classifies 401/403 as failover", () => {
+    for (const s of [401, 402, 403]) {
+      assert.equal(shouldFailoverStatus(s), true);
+      const c = classifyUpstreamFailure(s, "");
+      assert.equal(c.failover, true);
+      assert.equal(c.sameProviderUseless, true);
+    }
   });
 });

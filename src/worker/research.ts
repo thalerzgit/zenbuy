@@ -129,9 +129,26 @@ export function modelForProvider(env: Env, provider: ProviderId): string | null 
   return null;
 }
 
-/** Outage / timeout / rate-limit / model-gone — never ordinary 400 prompt bugs. */
+/**
+ * Outage / timeout / rate-limit / model-gone, plus credential, permission and
+ * billing rejections (401 / 402 / 403) — the other provider has its own key
+ * and account, so it can still serve. Never ordinary 400 prompt bugs.
+ */
 export function shouldFailoverStatus(status: number): boolean {
-  return status === 408 || status === 429 || status === 404 || status >= 500;
+  return (
+    status === 401 ||
+    status === 402 ||
+    status === 403 ||
+    status === 404 ||
+    status === 408 ||
+    status === 429 ||
+    status >= 500
+  );
+}
+
+/** Credential / permission rejection (e.g. xAI 403 when the team is blocked). */
+export function isAuthFailureStatus(status: number): boolean {
+  return status === 401 || status === 403;
 }
 
 /**
@@ -144,7 +161,10 @@ export function isProviderBillingError(errText: string): boolean {
     /credit balance is too low/.test(text) ||
     /purchase credits/.test(text) ||
     /plans & billing/.test(text) ||
-    /spend (?:limit|cap)/.test(text) ||
+    /spend(?:ing)? (?:limit|cap)/.test(text) ||
+    /used all available credits/.test(text) ||
+    /insufficient[_ ]quota/.test(text) ||
+    /exceeded your current quota/.test(text) ||
     /usage (?:limit|cap)/.test(text) ||
     /"billing_error"/.test(text)
   );
@@ -165,7 +185,7 @@ export function classifyUpstreamFailure(
   }
   return {
     failover: shouldFailoverStatus(status),
-    sameProviderUseless: status === 401 || status === 403,
+    sameProviderUseless: isAuthFailureStatus(status),
     message: analysisErrorMessage(status),
   };
 }
@@ -385,7 +405,14 @@ async function fetchHeaders(
 
 type StreamKind = "anthropic" | "openai";
 
-type AttemptOk = { ok: true; text: string; stopReason: string | null };
+type AttemptOk = {
+  ok: true;
+  text: string;
+  stopReason: string | null;
+  /** Which provider/model actually served (after any 404 live-id retry). */
+  provider?: ProviderId;
+  model?: string;
+};
 type AttemptFail = {
   ok: false;
   failover: boolean;
@@ -558,7 +585,7 @@ async function consumeAnthropic(
         message: "The analysis stream dropped. Try again?",
       };
     }
-    return { ok: true, ...result };
+    return { ok: true, ...result, provider: "anthropic", model: body.model };
   } catch (e) {
     console.error("stream read failed", e);
     return {
@@ -636,7 +663,7 @@ async function consumeXai(
         message: "The analysis stream dropped. Try again?",
       };
     }
-    return { ok: true, ...result };
+    return { ok: true, ...result, provider: "xai", model: body.model };
   } catch (e) {
     console.error("xAI stream read failed", e);
     return {
@@ -664,10 +691,11 @@ async function consumeProvider(
 /**
  * Grok 4.7 → (404 live-id retry inside consume) → Claude Sonnet 5.5.
  * Failover only when no tokens were already painted to the client.
- * Empty-balance / auth on the current provider skips any remaining
- * same-provider hop and continues to the other provider.
+ * Empty-balance / auth (401/402/403, quota 429) on the current provider skips
+ * any remaining same-provider hop and continues to the other provider, so the
+ * credentials error only surfaces when every provider in the chain failed.
  */
-async function analyzeStream(
+export async function analyzeStream(
   env: Env,
   system: string,
   user: string,
@@ -695,7 +723,22 @@ async function analyzeStream(
       console.warn("failing over to", attempt.provider, attempt.model);
     }
     last = await consumeProvider(env, attempt, system, user, maxTokens, onText);
-    if (last.ok || !last.failover) return last;
+    if (last.ok) {
+      // Provider/model names only — never keys or headers.
+      console.log("analysis served by", {
+        provider: last.provider ?? attempt.provider,
+        model: last.model ?? attempt.model,
+        failover: i > 0,
+      });
+      return last;
+    }
+    console.warn("analysis attempt failed", {
+      provider: attempt.provider,
+      model: attempt.model,
+      status: last.status,
+      failover: last.failover,
+    });
+    if (!last.failover) return last;
     if (last.sameProviderUseless) {
       while (
         i + 1 < chain.length &&
