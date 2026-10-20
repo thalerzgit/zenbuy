@@ -235,6 +235,32 @@ final class ZenBuyTests: XCTestCase {
         XCTAssertEqual(ProcessingPhase.analysis.copy, "Verdict ready — finishing the full report…")
     }
 
+    func testProcessingQuoteStaysAtLeastFifteenSeconds() {
+        XCTAssertGreaterThanOrEqual(ProcessingProgressLogic.quoteRotation, 15)
+        let shown = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(ProcessingProgressLogic.quoteDelay(shownAt: shown, now: shown), 15, accuracy: 0.001)
+        XCTAssertEqual(
+            ProcessingProgressLogic.quoteDelay(shownAt: shown, now: shown.addingTimeInterval(5)), 10, accuracy: 0.001
+        )
+        XCTAssertEqual(ProcessingProgressLogic.quoteDelay(shownAt: shown, now: shown.addingTimeInterval(15)), 0)
+        XCTAssertEqual(ProcessingProgressLogic.quoteDelay(shownAt: shown, now: shown.addingTimeInterval(60)), 0)
+        XCTAssertEqual(
+            ProcessingProgressLogic.quoteDelay(shownAt: shown, now: shown.addingTimeInterval(-1)), 15, accuracy: 0.001
+        )
+        XCTAssertEqual(ProcessingProgressLogic.quoteDelay(shownAt: nil, now: shown), 0)
+    }
+
+    @MainActor
+    func testProcessingRestartKeepsFreshQuote() {
+        let progress = ProcessingProgress()
+        progress.start(symbolCount: 1, mode: .separate)
+        let first = progress.quote
+        XCTAssertNotNil(first)
+        progress.start(symbolCount: 1, mode: .separate, phase: .simplifying)
+        XCTAssertEqual(progress.quote, first)
+        progress.hide()
+    }
+
     func testProcessingQuotesIncludeDavidMorgenthaler() {
         let authors = Set(ProcessingProgressLogic.quotes.map(\.author))
         XCTAssertTrue(authors.contains("David Morgenthaler"))

@@ -252,7 +252,10 @@ function marketingVersion() {
     new URL("../swift/Config/Shared.xcconfig", import.meta.url),
     "utf8"
   );
-  const match = text.match(/^MARKETING_VERSION\s*=\s*(\S+)/m);
+  // Prefer the Apple TV override so tvOS keeps its own version train.
+  const match =
+    text.match(/^MARKETING_VERSION\[sdk=appletvos\*\]\s*=\s*(\S+)/m) ??
+    text.match(/^MARKETING_VERSION\s*=\s*(\S+)/m);
   if (!match) {
     throw new Error("MARKETING_VERSION not found in swift/Config/Shared.xcconfig");
   }

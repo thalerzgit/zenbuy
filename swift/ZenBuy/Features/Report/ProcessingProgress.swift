@@ -31,8 +31,16 @@ enum ProcessingPhase: String, Sendable {
 
 /// Web-parity timing / copy from `src/client/processing-progress.ts`.
 enum ProcessingProgressLogic {
-    static let quoteRotation: TimeInterval = 5
+    /// Minimum time each quote stays on screen before the next one (web `QUOTE_ROTATION_MS`).
+    static let quoteRotation: TimeInterval = 15
     static let tickInterval: TimeInterval = 0.4
+
+    /// Seconds to wait before the current quote may advance; never less than
+    /// `quoteRotation` after it appeared, whatever triggers the advance.
+    static func quoteDelay(shownAt: Date?, now: Date, minimum: TimeInterval = quoteRotation) -> TimeInterval {
+        guard let shownAt else { return 0 }
+        return max(0, minimum - max(0, now.timeIntervalSince(shownAt)))
+    }
 
     static func estimateProcessingMs(symbolCount: Int, mode: ReportMode) -> Int {
         if mode == .comparative { return 105_000 + symbolCount * 20_000 }
@@ -112,11 +120,15 @@ final class ProcessingProgress {
     private var hasVerdict = false
     private var quotes: [ProcessingQuote] = []
     private var quoteIndex = 0
+    private var quoteShownAt: Date?
     private var tickTask: Task<Void, Never>?
     private var quoteTask: Task<Void, Never>?
     private var hideTask: Task<Void, Never>?
 
     func start(symbolCount: Int, mode: ReportMode, phase: ProcessingPhase = .preparing) {
+        // A restart while a quote is still on screen keeps that quote until its 15s is up.
+        let keepQuote = isVisible && quote != nil && !quotes.isEmpty
+            && ProcessingProgressLogic.quoteDelay(shownAt: quoteShownAt, now: Date()) > 0
         stopTimers()
         startedAt = Date()
         estimateMs = ProcessingProgressLogic.estimateProcessingMs(
@@ -126,10 +138,13 @@ final class ProcessingProgress {
         percent = 2
         floor = 2
         hasVerdict = false
-        quotes = ProcessingProgressLogic.quotes.shuffled()
-        quoteIndex = 0
+        if !keepQuote {
+            quotes = ProcessingProgressLogic.quotes.shuffled()
+            quoteIndex = 0
+            quote = quotes.first
+            quoteShownAt = Date()
+        }
         self.phase = phase
-        quote = quotes.first
         isVisible = true
         render()
         tickTask = Task { [weak self] in
@@ -139,13 +154,7 @@ final class ProcessingProgress {
                 self?.tick()
             }
         }
-        quoteTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled else { return }
-                self?.rotateQuote()
-            }
-        }
+        quoteTask = makeQuoteTask()
     }
 
     func onMeta() {
@@ -204,13 +213,7 @@ final class ProcessingProgress {
             }
         }
         if quoteTask == nil {
-            quoteTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(5))
-                    guard !Task.isCancelled else { return }
-                    self?.rotateQuote()
-                }
-            }
+            quoteTask = makeQuoteTask()
         }
     }
 
@@ -226,10 +229,29 @@ final class ProcessingProgress {
         render()
     }
 
+    /// Sleeps until the current quote has been up for `quoteRotation`, then advances.
+    private func makeQuoteTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = self?.nextQuoteDelay() else { return }
+                try? await Task.sleep(for: .seconds(max(delay, 0.05)))
+                guard !Task.isCancelled else { return }
+                self?.rotateQuote()
+            }
+        }
+    }
+
+    private func nextQuoteDelay() -> TimeInterval {
+        let delay = ProcessingProgressLogic.quoteDelay(shownAt: quoteShownAt, now: Date())
+        return delay > 0 ? delay : ProcessingProgressLogic.quoteRotation
+    }
+
     private func rotateQuote() {
         guard !quotes.isEmpty else { return }
+        guard ProcessingProgressLogic.quoteDelay(shownAt: quoteShownAt, now: Date()) <= 0 else { return }
         quoteIndex += 1
         quote = quotes[quoteIndex % quotes.count]
+        quoteShownAt = Date()
     }
 
     private func render() {
