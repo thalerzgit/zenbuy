@@ -159,8 +159,21 @@ export const PROCESSING_QUOTES: readonly ProcessingQuote[] = [
   },
 ];
 
-/** How long each quote stays on screen during report / simplify wait. */
-export const QUOTE_ROTATION_MS = 5_000;
+/** Minimum time each quote stays fully on screen during report / simplify wait. */
+export const QUOTE_ROTATION_MS = 15_000;
+
+/**
+ * Milliseconds to wait before the current quote may advance. Every quote stays
+ * on screen for at least `QUOTE_ROTATION_MS`, whatever triggers the advance.
+ */
+export function quoteDelayMs(
+  shownAtMs: number | null,
+  nowMs: number,
+  minMs: number = QUOTE_ROTATION_MS
+): number {
+  if (shownAtMs === null) return 0;
+  return Math.max(0, minMs - Math.max(0, nowMs - shownAtMs));
+}
 
 const PHASES = {
   preparing: "Preparing your research request…",
@@ -243,12 +256,13 @@ export function createProcessingController(
   let quoteIndex = 0;
   let quotes: ProcessingQuote[] = [];
   let tickTimer: ReturnType<typeof setInterval> | null = null;
-  let quoteTimer: ReturnType<typeof setInterval> | null = null;
+  let quoteTimer: ReturnType<typeof setTimeout> | null = null;
+  let quoteShownAt: number | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   const stopTimers = () => {
     if (tickTimer) clearInterval(tickTimer);
-    if (quoteTimer) clearInterval(quoteTimer);
+    if (quoteTimer) clearTimeout(quoteTimer);
     if (hideTimer) clearTimeout(hideTimer);
     tickTimer = null;
     quoteTimer = null;
@@ -264,6 +278,13 @@ export function createProcessingController(
     const q = quotes[quoteIndex % quotes.length];
     quoteTextEl.textContent = `"${q.text}"`;
     quoteAuthorEl.textContent = `— ${q.author}`;
+    quoteShownAt = Date.now();
+  };
+
+  /** Schedule the next advance no sooner than 15s after the current quote appeared. */
+  const scheduleQuote = () => {
+    if (quoteTimer) clearTimeout(quoteTimer);
+    quoteTimer = setTimeout(rotateQuote, quoteDelayMs(quoteShownAt, Date.now()));
   };
 
   const render = () => {
@@ -283,11 +304,17 @@ export function createProcessingController(
   };
 
   const rotateQuote = () => {
+    quoteTimer = null;
+    if (quoteDelayMs(quoteShownAt, Date.now()) > 0) {
+      scheduleQuote();
+      return;
+    }
     quoteIndex += 1;
     quoteTextEl.classList.add("is-changing");
-    window.setTimeout(() => {
+    quoteTimer = setTimeout(() => {
       renderQuote();
       quoteTextEl.classList.remove("is-changing");
+      scheduleQuote();
     }, 220);
   };
 
@@ -299,20 +326,28 @@ export function createProcessingController(
 
   return {
     start(symbolCount, mode = "separate", phase = "preparing") {
+      // A restart while a quote is still on screen keeps that quote until its 15s is up.
+      const keepQuote =
+        !panel.classList.contains("hidden") &&
+        quotes.length > 0 &&
+        quoteDelayMs(quoteShownAt, Date.now()) > 0;
       stopTimers();
+      quoteTextEl.classList.remove("is-changing");
       startedAt = Date.now();
       estimateMs = estimateProcessingMs(Math.max(1, symbolCount), mode);
       progress = 2;
       floor = 2;
       hasVerdict = false;
-      quotes = shuffle(PROCESSING_QUOTES);
-      quoteIndex = 0;
+      if (!keepQuote) {
+        quotes = shuffle(PROCESSING_QUOTES);
+        quoteIndex = 0;
+      }
       setPhase(phase);
-      renderQuote();
+      if (!keepQuote) renderQuote();
       panel.classList.remove("hidden", "is-complete");
       render();
       tickTimer = setInterval(tick, 400);
-      quoteTimer = setInterval(rotateQuote, QUOTE_ROTATION_MS);
+      scheduleQuote();
     },
 
     onMeta() {
